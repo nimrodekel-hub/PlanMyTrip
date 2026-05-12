@@ -265,11 +265,14 @@ function VehicleHeader({trip,theme,onThemeToggle}){
   </div>;
 }
 
+const DAY_COLORS=['#ef4444','#3b82f6','#22c55e','#f97316','#a855f7','#ec4899','#14b8a6','#eab308'];
+
 /* ══════════════════════════════════
    מפת גוגל
 ══════════════════════════════════ */
-function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
+function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem}){
   const mapRef=useRef(null), mapInst=useRef(null), markers=useRef([]);
+  const hlDayMarkers=useRef([]), hlItemMarker=useRef(null);
   const [ready,setReady]=useState(false);
   const [wxOpen,setWxOpen]=useState(false);
   const [wxCity,setWxCity]=useState('');
@@ -575,8 +578,6 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
     });
   },[ready]);
 
-  const DAY_COLORS=['#ef4444','#3b82f6','#22c55e','#f97316','#a855f7','#ec4899','#14b8a6','#eab308'];
-
   // סמנים על המפה
   useEffect(()=>{
     if (!mapInst.current) return;
@@ -642,6 +643,54 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
       markers.current.push(m);
     });
   },[trip,ready]);
+
+  // הדגשת יום שלם — סמנים ממוספרים גדולים
+  useEffect(()=>{
+    hlDayMarkers.current.forEach(m=>m.setMap(null)); hlDayMarkers.current=[];
+    if (!highlightDay||!mapInst.current||!window.google?.maps) return;
+    const color=DAY_COLORS[highlightDay.dayIndex%DAY_COLORS.length];
+    const validBlocks=[...highlightDay.blocks]
+      .filter(b=>b.lat&&b.lng)
+      .sort((a,b)=>a.startTime.localeCompare(b.startTime));
+    if (validBlocks.length===0) return;
+    const bounds=new window.google.maps.LatLngBounds();
+    validBlocks.forEach((block,i)=>{
+      const m=new window.google.maps.Marker({
+        position:{lat:block.lat,lng:block.lng},
+        map:mapInst.current,
+        label:{text:String(i+1),color:'#fff',fontSize:'13px',fontWeight:'bold'},
+        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:18,fillColor:color,fillOpacity:1,strokeColor:'#fff',strokeWeight:3},
+        title:`${i+1}. ${block.title||''}`,
+        zIndex:100,
+      });
+      bounds.extend({lat:block.lat,lng:block.lng});
+      hlDayMarkers.current.push(m);
+    });
+    if (validBlocks.length===1){
+      mapInst.current.panTo({lat:validBlocks[0].lat,lng:validBlocks[0].lng});
+      mapInst.current.setZoom(15);
+    } else {
+      mapInst.current.fitBounds(bounds,{top:60,right:60,bottom:60,left:60});
+    }
+  },[highlightDay]);
+
+  // הדגשת פריט בודד — סמן מנפנף
+  useEffect(()=>{
+    if (hlItemMarker.current){hlItemMarker.current.setMap(null);hlItemMarker.current=null;}
+    if (!highlightItem||!mapInst.current||!window.google?.maps) return;
+    const m=new window.google.maps.Marker({
+      position:{lat:highlightItem.lat,lng:highlightItem.lng},
+      map:mapInst.current,
+      title:highlightItem.name||'',
+      icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:20,fillColor:'#fff',fillOpacity:0.95,strokeColor:'#4f8ef7',strokeWeight:4},
+      animation:window.google.maps.Animation.BOUNCE,
+      zIndex:200,
+    });
+    setTimeout(()=>{if(m.getMap())m.setAnimation(null);},1800);
+    mapInst.current.panTo({lat:highlightItem.lat,lng:highlightItem.lng});
+    if (mapInst.current.getZoom()<15) mapInst.current.setZoom(15);
+    hlItemMarker.current=m;
+  },[highlightItem]);
 
   if (!mapsKey) return (
     <div className="empty-state" style={{height:'100%',background:'var(--bg)'}}>
@@ -804,28 +853,35 @@ function BlockModal({block,onSave,onClose,onDelete}){
 /* ══════════════════════════════════
    בלוק בציר הזמן
 ══════════════════════════════════ */
-function BlockItem({block,onEdit}){
+function BlockItem({block,onEdit,onFocusItem}){
   const end=addMins(block.startTime,block.durationMins);
   const col=BLOCK_COLOR[block.type]||'var(--text3)';
   return <div className="timeline-block">
     <div className="timeline-dot" style={{background:col}}>{BLOCK_EMOJI[block.type]}</div>
-    <div className={`card block-${block.type}`} style={{flex:1,marginRight:4,cursor:'pointer',opacity:block.isCompleted?.6:1}} onClick={()=>onEdit(block)}>
-      <div style={{padding:'10px 14px'}}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
-          <span style={{fontSize:11,fontWeight:700,color:col}}>{block.startTime}–{end}</span>
-          <div style={{display:'flex',alignItems:'center',gap:6}}>
-            {block.isCompleted&&<span className="chip chip-green" style={{fontSize:10,padding:'2px 7px'}}>✓ הושלם</span>}
-            {block.rating>0&&<Stars value={block.rating} size={13}/>}
+    <div style={{flex:1,marginRight:4,display:'flex',gap:4,alignItems:'flex-start'}}>
+      <div className={`card block-${block.type}`} style={{flex:1,cursor:'pointer',opacity:block.isCompleted?.6:1}} onClick={()=>onEdit(block)}>
+        <div style={{padding:'10px 14px'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+            <span style={{fontSize:11,fontWeight:700,color:col}}>{block.startTime}–{end}</span>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              {block.isCompleted&&<span className="chip chip-green" style={{fontSize:10,padding:'2px 7px'}}>✓ הושלם</span>}
+              {block.rating>0&&<Stars value={block.rating} size={13}/>}
+            </div>
+          </div>
+          <div style={{fontSize:13,fontWeight:600,color:'var(--text)',marginTop:2}}>{block.title||`(${BLOCK_HE[block.type]} ללא שם)`}</div>
+          {block.location&&<div style={{fontSize:11,color:'var(--text3)',marginTop:1}}>📍 {block.location}</div>}
+          {block.notes&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,fontStyle:'italic',lineHeight:1.5}}>{block.notes}</div>}
+          <div style={{display:'flex',gap:10,marginTop:6,flexWrap:'wrap'}}>
+            {block.durationMins>0&&<span style={{fontSize:11,color:'var(--text3)'}}>⏱ {block.durationMins} דקות</span>}
+            {block.cost>0&&<span style={{fontSize:11,color:'var(--amber)'}}>💰 ₪{block.cost.toFixed(0)}</span>}
           </div>
         </div>
-        <div style={{fontSize:13,fontWeight:600,color:'var(--text)',marginTop:2}}>{block.title||`(${BLOCK_HE[block.type]} ללא שם)`}</div>
-        {block.location&&<div style={{fontSize:11,color:'var(--text3)',marginTop:1}}>📍 {block.location}</div>}
-        {block.notes&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,fontStyle:'italic',lineHeight:1.5}}>{block.notes}</div>}
-        <div style={{display:'flex',gap:10,marginTop:6,flexWrap:'wrap'}}>
-          {block.durationMins>0&&<span style={{fontSize:11,color:'var(--text3)'}}>⏱ {block.durationMins} דקות</span>}
-          {block.cost>0&&<span style={{fontSize:11,color:'var(--amber)'}}>💰 ₪{block.cost.toFixed(0)}</span>}
-        </div>
       </div>
+      {block.lat&&onFocusItem&&(
+        <button className="btn btn-secondary btn-icon btn-sm" title="הצג במפה"
+          style={{flexShrink:0,marginTop:4}}
+          onClick={e=>{e.stopPropagation();onFocusItem(block.lat,block.lng,block.title);}}>📍</button>
+      )}
     </div>
   </div>;
 }
@@ -833,7 +889,7 @@ function BlockItem({block,onEdit}){
 /* ══════════════════════════════════
    פאנל יום
 ══════════════════════════════════ */
-function DayPanel({day,idx,onUpdate,onDelete}){
+function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem}){
   const[open,setOpen]=useState(true),[editing,setEd]=useState(null);
   const updBlock=upd=>onUpdate({...day,blocks:day.blocks.map(b=>b.id===upd.id?upd:b)});
   const delBlock=id=>onUpdate({...day,blocks:day.blocks.filter(b=>b.id!==id)});
@@ -846,10 +902,12 @@ function DayPanel({day,idx,onUpdate,onDelete}){
   const total=day.blocks.reduce((s,b)=>s+(b.cost||0),0);
   const done=day.blocks.filter(b=>b.isCompleted).length;
   const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+  const dayColor=DAY_COLORS[idx%DAY_COLORS.length];
+  const hasMapBlocks=day.blocks.some(b=>b.lat&&b.lng);
 
   return <div className="card" style={{marginBottom:12,animation:'fadeIn .3s ease'}}>
     <div className="day-header" onClick={()=>setOpen(o=>!o)}>
-      <span style={{fontSize:20}}>📅</span>
+      <span style={{fontSize:20,color:dayColor}}>📅</span>
       <div style={{flex:1}}>
         <div style={{fontWeight:700,fontSize:14}}>יום {idx+1}{day.date?` — ${dateStr(day.date)}`:''}</div>
         {day.location&&<div style={{fontSize:11,color:'var(--text3)'}}>📍 {day.location}</div>}
@@ -857,6 +915,14 @@ function DayPanel({day,idx,onUpdate,onDelete}){
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         {day.blocks.length>0&&<span className="chip chip-blue" style={{fontSize:10}}>{done}/{day.blocks.length}</span>}
         {total>0&&<span style={{fontSize:11,color:'var(--amber)'}}>₪{total.toFixed(0)}</span>}
+        {onFocusDay&&hasMapBlocks&&(
+          <button className="btn btn-secondary btn-icon btn-sm"
+            title="הצג את כל עצירות היום על המפה"
+            style={{background:dayColor,color:'#fff',border:'none',fontSize:12,padding:'4px 8px'}}
+            onClick={e=>{e.stopPropagation();onFocusDay(day.id,idx,day.blocks);}}>
+            🗺️
+          </button>
+        )}
         <span style={{color:'var(--text3)',fontSize:13}}>{open?'▼':'◀'}</span>
       </div>
     </div>
@@ -879,7 +945,7 @@ function DayPanel({day,idx,onUpdate,onDelete}){
 
       <div className="timeline">
         {sorted.length===0&&<div style={{padding:'12px 0',color:'var(--text3)',fontSize:13,textAlign:'center'}}>אין בלוקים עדיין — הוסף בלוק למטה</div>}
-        {sorted.map(bl=><BlockItem key={bl.id} block={bl} onEdit={setEd}/>)}
+        {sorted.map(bl=><BlockItem key={bl.id} block={bl} onEdit={setEd} onFocusItem={onFocusItem}/>)}
       </div>
 
       <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:12}}>
@@ -909,7 +975,7 @@ function DayPanel({day,idx,onUpdate,onDelete}){
 /* ══════════════════════════════════
    פריט בנק אטרקציות
 ══════════════════════════════════ */
-function BankItem({item,days,onAddToDay,onDelete,onLocate}){
+function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem}){
   const[selDay,setSelDay]=useState('');
   return <div className="interest-item" style={{marginBottom:8,flexDirection:'column',alignItems:'stretch',gap:8}}>
     <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -917,9 +983,9 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate}){
         <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
         {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.address}</div>}
       </div>
-      {item.lat&&onLocate&&(
+      {item.lat&&(onLocate||onFocusItem)&&(
         <button className="btn btn-secondary btn-icon btn-sm" title="הצג במפה"
-          onClick={()=>onLocate(item.lat,item.lng)}>📍</button>
+          onClick={()=>{onLocate?.(item.lat,item.lng);onFocusItem?.(item.lat,item.lng,item.name);}}>📍</button>
       )}
       <button className="btn btn-danger btn-icon btn-sm" onClick={onDelete} title="הסר">✕</button>
     </div>
@@ -942,7 +1008,7 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate}){
   </div>;
 }
 
-function TimelineTab({trip,onUpdate,onLocate}){
+function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem}){
   const[showBank,setShowBank]=useState(true);
   const[showTakeout,setShowTakeout]=useState(false);
   const takeoutRef=useRef(null);
@@ -1015,7 +1081,8 @@ function TimelineTab({trip,onUpdate,onLocate}){
             <button className="btn btn-primary" onClick={addDay}>+ הוסף יום</button>
           </div>
         ):trip.days.map((day,i)=>(
-          <DayPanel key={day.id} day={day} idx={i} onUpdate={updDay} onDelete={()=>delDay(day.id)}/>
+          <DayPanel key={day.id} day={day} idx={i} onUpdate={updDay} onDelete={()=>delDay(day.id)}
+            onFocusDay={onFocusDay} onFocusItem={onFocusItem}/>
         ))}
       </div>
     </div>
@@ -1031,7 +1098,7 @@ function TimelineTab({trip,onUpdate,onLocate}){
             או ייבא מקומות מ-Google Takeout.
           </div>
         ):trip.interestBank.map(item=>(
-          <BankItem key={item.id} item={item} days={trip.days} onAddToDay={addItemToDay} onDelete={()=>delBank(item.id)} onLocate={onLocate}/>
+          <BankItem key={item.id} item={item} days={trip.days} onAddToDay={addItemToDay} onDelete={()=>delBank(item.id)} onLocate={onLocate} onFocusItem={onFocusItem}/>
         ))}
       </div>
       <div style={{padding:'10px 12px',borderTop:'1px solid var(--border)',display:'flex',flexDirection:'column',gap:6}}>
@@ -1513,6 +1580,8 @@ function App(){
   const[tab,setTab]=useState('map');
   const[mobileSide,setMobile]=useState('timeline');
   const[ghBusy,setGhBusy]=useState(false);
+  const[hlDay,setHlDay]=useState(null);
+  const[hlItem,setHlItem]=useState(null);
   const ghSha=useRef(null);
 
   useEffect(()=>saveState({settings,trips,activeId}),[settings,trips,activeId]);
@@ -1593,10 +1662,15 @@ function App(){
       case 'map': return (
         <div className="split-view" style={{height:'100%'}}>
           <div className={`split-left${mobileSide==='timeline'?' mobile-hidden':''}`}>
-            <MapView mapsKey={settings.googleMapsKey} trip={trip} onAddToBank={addToBank} onAddToDay={addToDay}/>
+            <MapView mapsKey={settings.googleMapsKey} trip={trip} onAddToBank={addToBank} onAddToDay={addToDay}
+              highlightDay={hlDay} highlightItem={hlItem}/>
           </div>
           <div className={`split-right${mobileSide==='map'?' mobile-hidden':''}`} style={{overflow:'hidden'}}>
-            {trip?<TimelineTab trip={trip} onUpdate={updTrip} onLocate={(lat,lng)=>window.__gmFocus?.(lat,lng)}/>:noTrip}
+            {trip?<TimelineTab trip={trip} onUpdate={updTrip}
+              onLocate={(lat,lng)=>window.__gmFocus?.(lat,lng)}
+              onFocusDay={(dayId,dayIndex,blocks)=>setHlDay({dayId,dayIndex,blocks})}
+              onFocusItem={(lat,lng,name)=>{setHlItem({lat,lng,name});setHlDay(null);}}
+            />:noTrip}
           </div>
         </div>
       );
