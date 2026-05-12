@@ -529,32 +529,48 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
         }catch{return false;}
       };
 
-      // ניסיון 4 — Nominatim reverse geocoding
+      // ניסיון 4 — Nominatim reverse geocoding (עם namedetails)
       const showNominatim=async()=>{
         try{
-          const d=await nominatimReverse(lat0,lng0);
-          const name=d.name||d.address?.tourism||d.address?.amenity||d.address?.leisure||d.address?.natural||d.address?.road||d.display_name?.split(',')[0]||'מקום על המפה';
-          const addr=d.display_name||'';
+          const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat0}&lon=${lng0}&format=json&zoom=18&namedetails=1&extratags=1&accept-language=he`,{headers:{'Accept-Language':'he'}});
+          const d=await r.json();
+          // מנסה לחלץ שם POI אמיתי; לא נופל לשם כביש
+          const poiName=d.namedetails?.name||d.name||d.address?.tourism||d.address?.amenity||d.address?.leisure||d.address?.natural||d.address?.historic||d.address?.shop||d.address?.restaurant||d.address?.cafe||d.address?.hotel||d.extratags?.name||'';
+          const name=poiName||'מקום';
+          const addrParts=[d.address?.road,d.address?.city||d.address?.town||d.address?.village].filter(Boolean);
+          const addr=addrParts.join(', ')||d.display_name||'';
           iwPlace.data={name,address:addr,lat:lat0,lng:lng0,placeId};
           iw.setContent(buildIwContent({name,address:addr,lat:lat0,lng:lng0,placeId}));
         }catch{
-          iwPlace.data={name:'מקום על המפה',address:'',lat:lat0,lng:lng0,placeId};
-          iw.setContent(buildIwContent({name:'מקום על המפה',address:'',lat:lat0,lng:lng0,placeId}));
+          iwPlace.data={name:'מקום',address:'',lat:lat0,lng:lng0,placeId};
+          iw.setContent(buildIwContent({name:'מקום',address:'',lat:lat0,lng:lng0,placeId}));
         }
       };
 
-      // ניסיון 1 — Places API (Legacy) פרטים מלאים
+      const OK_ST=window.google.maps.places.PlacesServiceStatus.OK;
+
+      // ניסיון 1 — Places API (Legacy) שדות בסיסיים בחינם (name, address, geometry, photos)
       svc.getDetails({
         placeId,
-        fields:['name','formatted_address','geometry','rating','photos','opening_hours','reviews','website','formatted_phone_number','user_ratings_total','price_level']
+        fields:['name','formatted_address','geometry','photos','place_id']
       },(place,st)=>{
-        if (st===window.google.maps.places.PlacesServiceStatus.OK&&place){ applyPlace(place); return; }
-        // ניסיון 2 — Places API (Legacy) שדות בסיסיים
-        svc.getDetails({placeId,fields:['name','formatted_address','geometry','rating','photos']},(p2,st2)=>{
-          if (st2===window.google.maps.places.PlacesServiceStatus.OK&&p2){ applyPlace(p2); return; }
-          // ניסיון 3 → 4 אסינכרוניים
+        if (st===OK_ST&&place){
+          applyPlace(place); // מציג מיד עם שם ותמונה
+          // ניסיון 2 — מנסה להוסיף שדות billable (דירוג, שעות, טלפון, אתר)
+          svc.getDetails({
+            placeId,
+            fields:['rating','opening_hours','reviews','website','formatted_phone_number','user_ratings_total','price_level']
+          },(extra,est)=>{
+            if (est===OK_ST&&extra){
+              // מיזוג: שומר geometry מה-place המקורי
+              const merged={...place,...extra,geometry:place.geometry};
+              applyPlace(merged);
+            }
+          });
+        } else {
+          // Places API נכשל לחלוטין — ניסיון v1 REST ואז Nominatim
           tryPlacesV1().then(ok=>{ if (!ok) showNominatim(); });
-        });
+        }
       });
     });
   },[ready]);
@@ -952,6 +968,7 @@ function TimelineTab({trip,onUpdate,onLocate}){
     const newBlock=defaultBlock('activity',start);
     newBlock.title=item.name;
     newBlock.location=item.address||'';
+    if(item.lat){newBlock.lat=item.lat; newBlock.lng=item.lng;}
     updDay({...day,blocks:[...day.blocks,newBlock]});
     toast(`"${item.name}" נוסף ליום`,'success');
   };
@@ -1536,6 +1553,7 @@ function App(){
     const newBlock=defaultBlock('activity',start);
     newBlock.title=item.name;
     newBlock.location=item.address||'';
+    if(item.lat){newBlock.lat=item.lat; newBlock.lng=item.lng;}
     const updatedDay={...day,blocks:[...day.blocks,newBlock]};
     updTrip({...trip,days:trip.days.map(d=>d.id===dayId?updatedDay:d)});
   },[trip,updTrip]);
