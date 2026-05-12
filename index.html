@@ -308,38 +308,71 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
     });
     mapInst.current=map;
 
-    // חיפוש מקום — Geocoder (ללא תלות ב-Places API)
+    // חיפוש — PlacesService.textSearch (מוצא עסקים/אטרקציות לפי שם), fallback ל-Geocoder לכתובות
     const input=document.getElementById('map-search-input');
+    const searchSvc=new window.google.maps.places.PlacesService(map);
     if (input){
       const geocoder=new window.google.maps.Geocoder();
       const doSearch=()=>{
         const q=input.value.trim(); if (!q) return;
-        geocoder.geocode({address:q,language:'he'},(results,status)=>{
-          if (status==='OK'&&results[0]){
-            const loc=results[0].geometry;
-            if (loc.viewport) map.fitBounds(loc.viewport);
-            else { map.setCenter(loc.location); map.setZoom(15); }
-          } else { toast('מקום לא נמצא — נסה שוב','error'); }
+        searchSvc.textSearch({query:q,language:'he'},(results,status)=>{
+          if (status===window.google.maps.places.PlacesServiceStatus.OK&&results?.length){
+            const bounds=new window.google.maps.LatLngBounds();
+            results.slice(0,6).forEach(p=>{
+              if (p.geometry?.viewport) bounds.union(p.geometry.viewport);
+              else if (p.geometry?.location) bounds.extend(p.geometry.location);
+            });
+            map.fitBounds(bounds);
+            if (results.length===1) map.setZoom(17);
+          } else {
+            // fallback לכתובת/עיר
+            geocoder.geocode({address:q,language:'he'},(gr,gs)=>{
+              if (gs==='OK'&&gr[0]){
+                const loc=gr[0].geometry;
+                if (loc.viewport) map.fitBounds(loc.viewport);
+                else { map.setCenter(loc.location); map.setZoom(15); }
+              } else { toast('מקום לא נמצא — נסה שוב','error'); }
+            });
+          }
         });
       };
       input.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();doSearch();} });
       window.__gmSearch=doSearch;
     }
 
-    // פונקציות גלובליות לכפתורי InfoWindow
+    // InfoWindow גלובלי
     const iwPlace={};
-    const iw=new window.google.maps.InfoWindow({maxWidth:300});
+    const iw=new window.google.maps.InfoWindow({maxWidth:320});
 
-    const buildIwContent=(name,address,rating,photoUrl)=>{
+    const buildIwContent=(p)=>{
       const days=tripRef.current?.days||[];
       const daysHtml=days.length>0
         ? days.map((d,i)=>`<option value="${d.id}">יום ${i+1}${d.location?' — '+d.location:''}${d.date?' ('+d.date+')':''}</option>`).join('')
         : '<option disabled>אין ימים בלוח הזמנים</option>';
-      return `<div style="font-family:Heebo,Arial,sans-serif;direction:rtl;text-align:right;padding:6px;min-width:220px">
-        ${photoUrl?`<img src="${photoUrl}" style="width:100%;height:100px;object-fit:cover;border-radius:8px;margin-bottom:10px;display:block"/>`:''}
-        <div style="font-weight:700;font-size:15px;margin-bottom:3px;color:#111">${name}</div>
-        <div style="font-size:11px;color:#777;margin-bottom:6px;line-height:1.5">${address}</div>
-        ${rating?`<div style="font-size:12px;margin-bottom:8px">⭐ ${rating}</div>`:''}
+      const price=p.priceLevel?'₪'.repeat(p.priceLevel):'';
+      const starsHtml=p.rating?`${'★'.repeat(Math.round(p.rating))}${'☆'.repeat(5-Math.round(p.rating))}`:'';
+      const reviewsHtml=(p.reviews||[]).slice(0,2).map(r=>`
+        <div style="background:#f9f9f9;border-radius:6px;padding:6px 8px;margin-top:6px;font-size:11px;color:#444;line-height:1.4;direction:rtl">
+          <span style="color:#f59e0b;font-size:11px">${'★'.repeat(r.rating||0)}</span>
+          <span style="color:#999;margin-right:4px">${r.author_name||''}</span><br/>
+          ${(r.text||'').slice(0,120)}${(r.text||'').length>120?'…':''}
+        </div>`).join('');
+      return `<div style="font-family:Heebo,Arial,sans-serif;direction:rtl;text-align:right;padding:6px;min-width:240px;max-width:310px">
+        ${p.photoUrl?`<img src="${p.photoUrl}" style="width:100%;height:110px;object-fit:cover;border-radius:8px;margin-bottom:10px;display:block"/>`:''}
+        <div style="font-weight:700;font-size:15px;margin-bottom:2px;color:#111">${p.name}</div>
+        <div style="font-size:11px;color:#888;margin-bottom:6px;line-height:1.4">${p.address}</div>
+        ${p.rating?`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+          <span style="color:#f59e0b;font-size:14px">${starsHtml}</span>
+          <span style="font-size:12px;font-weight:600;color:#333">${p.rating}</span>
+          ${p.userRatingsTotal?`<span style="font-size:11px;color:#888">(${p.userRatingsTotal.toLocaleString()} ביקורות)</span>`:''}
+          ${price?`<span style="font-size:11px;color:#22c55e;font-weight:700">${price}</span>`:''}
+        </div>`:''}
+        ${p.openStatus?`<div style="font-size:12px;font-weight:600;margin-bottom:4px;${p.openStatus==='פתוח עכשיו'?'color:#22c55e':'color:#ef4444'}">${p.openStatus==='פתוח עכשיו'?'✅':'🔴'} ${p.openStatus}</div>`:''}
+        ${p.todayHours?`<div style="font-size:11px;color:#555;margin-bottom:6px">🕐 ${p.todayHours}</div>`:''}
+        ${p.phone?`<div style="font-size:11px;color:#4f8ef7;margin-bottom:4px">📞 ${p.phone}</div>`:''}
+        ${p.website?`<a href="${p.website}" target="_blank" rel="noreferrer" style="font-size:11px;color:#4f8ef7;display:block;margin-bottom:8px;word-break:break-all">🌐 ${p.website.replace(/^https?:\/\//,'').split('/')[0]}</a>`:''}
+        ${reviewsHtml?`<div style="margin-bottom:8px">${reviewsHtml}</div>`:''}
+        <hr style="border:none;border-top:1px solid #eee;margin:8px 0"/>
         <button onclick="window.__gmBank()"
           style="background:#f59e0b;color:#fff;border:none;border-radius:7px;padding:8px 0;font-size:13px;cursor:pointer;width:100%;margin-bottom:8px;font-family:Heebo,Arial,sans-serif;font-weight:600">
           🌟 שמור לבנק האטרקציות
@@ -376,28 +409,45 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
     map.addListener('click',e=>{
       if (!e.placeId) return;
       e.stop();
-      // הצג InfoWindow מיידי — כדי לאשר ללחצן שהלחיצה עבדה
       iwPlace.data={name:'טוען...',address:'',lat:e.latLng.lat(),lng:e.latLng.lng()};
-      iw.setContent('<div style="padding:14px;font-family:Heebo,sans-serif;direction:rtl;font-size:13px;color:#333">⏳ טוען פרטי מקום...</div>');
+      iw.setContent('<div style="padding:16px;font-family:Heebo,sans-serif;direction:rtl;font-size:13px;color:#555">⏳ טוען פרטי מקום...</div>');
       iw.setPosition(e.latLng);
       iw.open(map);
 
       const svc=new window.google.maps.places.PlacesService(map);
-      svc.getDetails({placeId:e.placeId,fields:['name','formatted_address','geometry','rating','photos']},(place,st)=>{
+      svc.getDetails({
+        placeId:e.placeId,
+        fields:['name','formatted_address','geometry','rating','photos','opening_hours','reviews','website','formatted_phone_number','user_ratings_total','price_level']
+      },(place,st)=>{
         if (st!==window.google.maps.places.PlacesServiceStatus.OK||!place){
-          // Places API נכשל — הצג ממשק עם כפתורי שמירה בסיסיים
           iwPlace.data={name:'מקום על המפה',address:'',lat:e.latLng.lat(),lng:e.latLng.lng()};
-          iw.setContent(buildIwContent('מקום על המפה','',null,''));
+          iw.setContent(buildIwContent({name:'מקום על המפה',address:'',lat:e.latLng.lat(),lng:e.latLng.lng()}));
           return;
         }
-        iwPlace.data={
+        const lat=place.geometry.location.lat(), lng=place.geometry.location.lng();
+        iwPlace.data={name:place.name,address:place.formatted_address||'',lat,lng};
+
+        // חישוב שעות היום
+        const dow=new Date().getDay(); // 0=ראשון
+        const wdIdx=dow===0?6:dow-1; // Google מחזיר שני=0
+        const todayHours=place.opening_hours?.weekday_text?.[wdIdx]?.replace(/^[^:]+:\s*/,'');
+        let openStatus='';
+        try { openStatus=place.opening_hours?.isOpen()?'פתוח עכשיו':'סגור עכשיו'; } catch{}
+
+        iw.setContent(buildIwContent({
           name:place.name,
           address:place.formatted_address||'',
-          lat:place.geometry.location.lat(),
-          lng:place.geometry.location.lng(),
-        };
-        const photo=place.photos?.[0]?.getUrl({maxWidth:260,maxHeight:100})||'';
-        iw.setContent(buildIwContent(place.name,place.formatted_address||'',place.rating||null,photo));
+          lat,lng,
+          rating:place.rating,
+          userRatingsTotal:place.user_ratings_total,
+          photoUrl:place.photos?.[0]?.getUrl({maxWidth:300,maxHeight:110})||'',
+          priceLevel:place.price_level,
+          openStatus,
+          todayHours:todayHours||'',
+          phone:place.formatted_phone_number||'',
+          website:place.website||'',
+          reviews:place.reviews||[],
+        }));
       });
     });
   },[ready]);
