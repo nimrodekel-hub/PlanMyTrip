@@ -307,6 +307,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
       ],
     });
     mapInst.current=map;
+    window.__gmFocus=(lat,lng,zoom=17)=>{ map.panTo({lat,lng}); map.setZoom(zoom); };
 
     // חיפוש — PlacesService.textSearch (מוצא עסקים/אטרקציות לפי שם), fallback ל-Geocoder לכתובות
     const input=document.getElementById('map-search-input');
@@ -415,39 +416,43 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
       iw.open(map);
 
       const svc=new window.google.maps.places.PlacesService(map);
+
+      const applyPlace=(place)=>{
+        const lat=place.geometry.location.lat(), lng=place.geometry.location.lng();
+        iwPlace.data={name:place.name,address:place.formatted_address||'',lat,lng};
+        const dow=new Date().getDay();
+        const wdIdx=dow===0?6:dow-1;
+        const todayHours=place.opening_hours?.weekday_text?.[wdIdx]?.replace(/^[^:]+:\s*/,'')||'';
+        let openStatus='';
+        try{openStatus=place.opening_hours?.isOpen()?'פתוח עכשיו':'סגור עכשיו';}catch{}
+        iw.setContent(buildIwContent({
+          name:place.name, address:place.formatted_address||'', lat, lng,
+          rating:place.rating, userRatingsTotal:place.user_ratings_total,
+          photoUrl:place.photos?.[0]?.getUrl({maxWidth:300,maxHeight:110})||'',
+          priceLevel:place.price_level, openStatus, todayHours,
+          phone:place.formatted_phone_number||'', website:place.website||'',
+          reviews:place.reviews||[],
+        }));
+      };
+
+      // ניסיון ראשון — כל השדות (כולל ביקורות, שעות, טלפון)
       svc.getDetails({
         placeId:e.placeId,
         fields:['name','formatted_address','geometry','rating','photos','opening_hours','reviews','website','formatted_phone_number','user_ratings_total','price_level']
       },(place,st)=>{
-        if (st!==window.google.maps.places.PlacesServiceStatus.OK||!place){
-          iwPlace.data={name:'מקום על המפה',address:'',lat:e.latLng.lat(),lng:e.latLng.lng()};
-          iw.setContent(buildIwContent({name:'מקום על המפה',address:'',lat:e.latLng.lat(),lng:e.latLng.lng()}));
-          return;
-        }
-        const lat=place.geometry.location.lat(), lng=place.geometry.location.lng();
-        iwPlace.data={name:place.name,address:place.formatted_address||'',lat,lng};
-
-        // חישוב שעות היום
-        const dow=new Date().getDay(); // 0=ראשון
-        const wdIdx=dow===0?6:dow-1; // Google מחזיר שני=0
-        const todayHours=place.opening_hours?.weekday_text?.[wdIdx]?.replace(/^[^:]+:\s*/,'');
-        let openStatus='';
-        try { openStatus=place.opening_hours?.isOpen()?'פתוח עכשיו':'סגור עכשיו'; } catch{}
-
-        iw.setContent(buildIwContent({
-          name:place.name,
-          address:place.formatted_address||'',
-          lat,lng,
-          rating:place.rating,
-          userRatingsTotal:place.user_ratings_total,
-          photoUrl:place.photos?.[0]?.getUrl({maxWidth:300,maxHeight:110})||'',
-          priceLevel:place.price_level,
-          openStatus,
-          todayHours:todayHours||'',
-          phone:place.formatted_phone_number||'',
-          website:place.website||'',
-          reviews:place.reviews||[],
-        }));
+        if (st===window.google.maps.places.PlacesServiceStatus.OK&&place){ applyPlace(place); return; }
+        // fallback — שדות בסיסיים בלבד (חינמיים, עובדים תמיד)
+        svc.getDetails({placeId:e.placeId,fields:['name','formatted_address','geometry','rating','photos']},(p2,st2)=>{
+          if (st2===window.google.maps.places.PlacesServiceStatus.OK&&p2){ applyPlace(p2); return; }
+          // fallback אחרון — geocode הפוך לכתובת
+          const geocoder=new window.google.maps.Geocoder();
+          geocoder.geocode({location:e.latLng,language:'he'},(gr,gs)=>{
+            const addr=gs==='OK'&&gr[0]?gr[0].formatted_address:'';
+            const name=gs==='OK'&&gr[0]?gr[0].address_components?.[0]?.long_name||addr:'מקום על המפה';
+            iwPlace.data={name,address:addr,lat:e.latLng.lat(),lng:e.latLng.lng()};
+            iw.setContent(buildIwContent({name,address:addr,lat:e.latLng.lat(),lng:e.latLng.lng()}));
+          });
+        });
       });
     });
   },[ready]);
@@ -681,7 +686,7 @@ function DayPanel({day,idx,onUpdate,onDelete}){
 /* ══════════════════════════════════
    פריט בנק אטרקציות
 ══════════════════════════════════ */
-function BankItem({item,days,onAddToDay,onDelete}){
+function BankItem({item,days,onAddToDay,onDelete,onLocate}){
   const[selDay,setSelDay]=useState('');
   return <div className="interest-item" style={{marginBottom:8,flexDirection:'column',alignItems:'stretch',gap:8}}>
     <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -689,6 +694,10 @@ function BankItem({item,days,onAddToDay,onDelete}){
         <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
         {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.address}</div>}
       </div>
+      {item.lat&&onLocate&&(
+        <button className="btn btn-secondary btn-icon btn-sm" title="הצג במפה"
+          onClick={()=>onLocate(item.lat,item.lng)}>📍</button>
+      )}
       <button className="btn btn-danger btn-icon btn-sm" onClick={onDelete} title="הסר">✕</button>
     </div>
     <div style={{display:'flex',gap:5}}>
@@ -710,7 +719,7 @@ function BankItem({item,days,onAddToDay,onDelete}){
   </div>;
 }
 
-function TimelineTab({trip,onUpdate}){
+function TimelineTab({trip,onUpdate,onLocate}){
   const[showBank,setShowBank]=useState(true);
   const[showTakeout,setShowTakeout]=useState(false);
   const takeoutRef=useRef(null);
@@ -798,7 +807,7 @@ function TimelineTab({trip,onUpdate}){
             או ייבא מקומות מ-Google Takeout.
           </div>
         ):trip.interestBank.map(item=>(
-          <BankItem key={item.id} item={item} days={trip.days} onAddToDay={addItemToDay} onDelete={()=>delBank(item.id)}/>
+          <BankItem key={item.id} item={item} days={trip.days} onAddToDay={addItemToDay} onDelete={()=>delBank(item.id)} onLocate={onLocate}/>
         ))}
       </div>
       <div style={{padding:'10px 12px',borderTop:'1px solid var(--border)',display:'flex',flexDirection:'column',gap:6}}>
@@ -1342,7 +1351,7 @@ function App(){
             <MapView mapsKey={settings.googleMapsKey} trip={trip} onAddToBank={addToBank} onAddToDay={addToDay}/>
           </div>
           <div className={`split-right${mobileSide==='map'?' mobile-hidden':''}`} style={{overflow:'hidden'}}>
-            {trip?<TimelineTab trip={trip} onUpdate={updTrip}/>:noTrip}
+            {trip?<TimelineTab trip={trip} onUpdate={updTrip} onLocate={(lat,lng)=>window.__gmFocus?.(lat,lng)}/>:noTrip}
           </div>
         </div>
       );
