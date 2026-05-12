@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CaravanControl — Trip Manager</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --bg2: #1a1d27;
+      --bg3: #232736;
+      --surface: #2a2e3f;
+      --surface2: #333849;
+      --border: #3d4358;
+      --text: #e8eaf0;
+      --text2: #9aa0b8;
+      --text3: #6b7295;
+      --accent: #4f8ef7;
+      --accent2: #6366f1;
+      --green: #22c55e;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --teal: #14b8a6;
+      --purple: #a855f7;
+      --orange: #f97316;
+      --radius: 12px;
+      --shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+
+    .light {
+      --bg: #f0f4f8;
+      --bg2: #e8edf3;
+      --bg3: #dde3ec;
+      --surface: #ffffff;
+      --surface2: #f5f7fa;
+      --border: #d1d9e6;
+      --text: #1a2035;
+      --text2: #4a5568;
+      --text3: #8896aa;
+      --shadow: 0 4px 24px rgba(0,0,0,0.1);
+    }
+
+    html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+    #root { height: 100%; display: flex; flex-direction: column; }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg2); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+
+    .app-header {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 0 20px;
+      flex-shrink: 0;
+      z-index: 100;
+    }
+
+    .vehicle-banner {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 10px 0 6px;
+      flex-wrap: wrap;
+    }
+
+    .tab-bar {
+      display: flex;
+      gap: 2px;
+      padding: 6px 0 0;
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      padding: 8px 16px;
+      border: none;
+      background: none;
+      color: var(--text2);
+      font-size: 13px;
+      font-weight: 500;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      border-radius: 8px 8px 0 0;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .tab-btn:hover { color: var(--text); background: var(--surface); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--surface); }
+
+    .main-content { flex: 1; overflow: hidden; display: flex; }
+
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border: none; border-radius: var(--radius); font-size: 13px; font-weight: 500; font-family: 'Inter', sans-serif; cursor: pointer; transition: all 0.15s; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: #3a7de8; }
+    .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--surface2); }
+    .btn-danger { background: var(--red); color: #fff; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-success { background: var(--green); color: #fff; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn-icon { padding: 7px; border-radius: 8px; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .input {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-family: 'Inter', sans-serif;
+      width: 100%;
+      transition: border-color 0.15s;
+    }
+    .input:focus { outline: none; border-color: var(--accent); }
+    .input::placeholder { color: var(--text3); }
+    textarea.input { resize: vertical; min-height: 80px; }
+    select.input { cursor: pointer; }
+
+    .label { display: block; font-size: 12px; font-weight: 500; color: var(--text2); margin-bottom: 4px; }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+    .card-header { padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .card-body { padding: 16px; }
+
+    .chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .chip-green { background: rgba(34,197,94,0.15); color: var(--green); }
+    .chip-amber { background: rgba(245,158,11,0.15); color: var(--amber); }
+    .chip-red { background: rgba(239,68,68,0.15); color: var(--red); }
+    .chip-blue { background: rgba(79,142,247,0.15); color: var(--accent); }
+    .chip-purple { background: rgba(168,85,247,0.15); color: var(--purple); }
+
+    .progress { height: 8px; background: var(--bg3); border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; border-radius: 4px; transition: width 0.4s; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+    .modal { background: var(--bg2); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow); animation: modalIn 0.2s ease; }
+    .modal-header { padding: 18px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .modal-body { padding: 20px; }
+    .modal-footer { padding: 16px 20px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end; }
+
+    @keyframes modalIn { from { opacity: 0; transform: translateY(20px) scale(0.97); } to { opacity: 1; transform: none; } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideRight { from { transform: translateX(-20px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+    .timeline { display: flex; flex-direction: column; gap: 0; position: relative; }
+    .timeline::before { content: ''; position: absolute; left: 44px; top: 0; bottom: 0; width: 2px; background: var(--border); z-index: 0; }
+
+    .timeline-block { display: flex; gap: 12px; position: relative; animation: fadeIn 0.3s ease; }
+    .timeline-dot { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; margin-left: 8px; margin-top: 12px; z-index: 1; display: flex; align-items: center; justify-content: center; font-size: 12px; border: 2px solid var(--bg2); }
+    .block-travel { background: rgba(79,142,247,0.1); border: 1px solid rgba(79,142,247,0.3); }
+    .block-activity { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); }
+    .block-stop { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); }
+
+    .stars { display: flex; gap: 3px; }
+    .star { font-size: 20px; cursor: pointer; transition: transform 0.1s; user-select: none; }
+    .star:hover { transform: scale(1.2); }
+
+    #map-container { width: 100%; height: 100%; }
+
+    .split-view { display: grid; grid-template-columns: 1fr 1fr; height: 100%; overflow: hidden; }
+    .split-left { border-right: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; }
+    .split-right { overflow-y: auto; display: flex; flex-direction: column; overflow: hidden; }
+
+    @media (max-width: 768px) {
+      .split-view { grid-template-columns: 1fr; }
+      .split-left.mobile-hidden { display: none; }
+      .split-right.mobile-hidden { display: none; }
+    }
+
+    .interest-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--border); cursor: pointer; transition: all 0.15s; animation: slideRight 0.2s ease; }
+    .interest-item:hover { border-color: var(--accent); transform: translateX(3px); }
+
+    .expense-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+    .expense-row:last-child { border-bottom: none; }
+
+    .list-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; transition: background 0.15s; }
+    .list-item:hover { background: var(--surface2); }
+    .list-item.done { opacity: 0.5; }
+    .list-item.done span { text-decoration: line-through; }
+
+    .weather-card { background: linear-gradient(135deg, #1e3a5f, #1a2d4e); border-radius: 12px; padding: 14px; color: #fff; }
+
+    .sidebar-panel { width: 280px; flex-shrink: 0; border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+
+    .toast-container { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 9999; }
+    .toast { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 18px; font-size: 13px; box-shadow: var(--shadow); animation: modalIn 0.25s ease; display: flex; align-items: center; gap: 10px; min-width: 240px; cursor: pointer; }
+    .toast.success { border-left: 3px solid var(--green); }
+    .toast.error { border-left: 3px solid var(--red); }
+    .toast.info { border-left: 3px solid var(--accent); }
+
+    .scroll-y { overflow-y: auto; }
+    .flex-1 { flex: 1; }
+
+    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text3); margin-bottom: 10px; }
+
+    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 48px 20px; color: var(--text3); text-align: center; }
+    .empty-state .emoji { font-size: 48px; }
+    .empty-state p { font-size: 14px; line-height: 1.6; max-width: 320px; }
+
+    .gauge { display: flex; flex-direction: column; gap: 3px; min-width: 80px; }
+    .gauge-label { font-size: 10px; color: var(--text3); font-weight: 600; }
+    .gauge-bar { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; width: 100%; }
+    .gauge-fill { height: 100%; border-radius: 3px; transition: width 0.4s; }
+
+    .day-header { padding: 12px 16px; background: var(--bg2); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; cursor: pointer; user-select: none; }
+    .day-header:hover { background: var(--surface); }
+
+    .time-indicator { display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: rgba(79,142,247,0.12); border-radius: 8px; font-size: 12px; }
+
+    .doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+    .doc-item { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: center; cursor: pointer; transition: all 0.15s; position: relative; }
+    .doc-item:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .doc-icon { font-size: 36px; margin-bottom: 8px; }
+    .doc-name { font-size: 11px; color: var(--text2); word-break: break-all; }
+
+    .mobile-toggle { display: none; }
+    @media (max-width: 768px) {
+      .mobile-toggle { display: flex; }
+      .sidebar-panel { display: none; }
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+/* ── helpers ── */
+const uid = () => Math.random().toString(36).slice(2, 10);
+const fmt2 = n => n?.toString().padStart(2,'0');
+const dateStr = d => { if (!d) return ''; const dt = new Date(d); return dt.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short',year:'numeric'}); };
+const nowTime = () => { const n = new Date(); return `${fmt2(n.getHours())}:${fmt2(n.getMinutes())}`; };
+const addMinutes = (time, mins) => { const [h,m] = time.split(':').map(Number); const t = h*60+m+mins; return `${fmt2(Math.floor(t/60)%24)}:${fmt2(t%60)}`; };
+
+const EXPENSE_CATS = ['Fuel','Food','Camping','Tolls','Activities','Shopping','Maintenance','Other'];
+const CAT_COLORS   = {Fuel:'#ef4444',Food:'#f59e0b',Camping:'#22c55e',Tolls:'#8b5cf6',Activities:'#4f8ef7',Shopping:'#ec4899',Maintenance:'#f97316',Other:'#6b7280'};
+const BLOCK_TYPES  = ['travel','activity','stop'];
+const BLOCK_EMOJI  = {travel:'🚗',activity:'🎯',stop:'⏸️'};
+const BLOCK_COLOR  = {travel:'var(--accent)',activity:'var(--green)',stop:'var(--amber)'};
+const WMO = {0:['☀️','Clear'],1:['🌤️','Mainly clear'],2:['⛅','Partly cloudy'],3:['☁️','Overcast'],45:['🌫️','Fog'],51:['🌦️','Light drizzle'],61:['🌧️','Light rain'],63:['🌧️','Rain'],65:['🌧️','Heavy rain'],71:['🌨️','Light snow'],80:['🌦️','Showers'],95:['⛈️','Thunderstorm']};
+
+/* ── default shapes ── */
+const defaultTrip = (name='New Trip') => ({
+  id:uid(), name, startDate:'', endDate:'',
+  vehicle:{name:'My Caravan',height:'',width:'',weight:'',plate:'',waterLevel:80,wasteLevel:10,gasLevel:75},
+  days:[], expenses:[], interestBank:[], packingList:[], shoppingList:[], documents:[],
+});
+const defaultDay  = (date='') => ({id:uid(),date,location:'',coordinates:null,blocks:[],notes:'',summary:'',currentTime:'08:00'});
+const defaultBlock= (type='activity',startTime='09:00') => ({id:uid(),type,title:'',startTime,durationMins:60,location:'',notes:'',rating:0,isCompleted:false,cost:0});
+
+/* ── persistence ── */
+const loadState = () => { try { return JSON.parse(localStorage.getItem('caravanCtrl_v2')||'null'); } catch { return null; } };
+const saveState = s => { try { localStorage.setItem('caravanCtrl_v2',JSON.stringify(s)); } catch {} };
+
+/* ── GitHub helpers ── */
+const ghFetch = async (token,user,repo,path,method='GET',body=null) => {
+  const res = await fetch(`https://api.github.com/repos/${user}/${repo}/contents/${path}`,{
+    method,
+    headers:{Authorization:`token ${token}`,Accept:'application/vnd.github.v3+json','Content-Type':'application/json'},
+    ...(body ? {body:JSON.stringify(body)} : {})
+  });
+  if (!res.ok) { const e=await res.json().catch(()=>({})); throw new Error(e.message||`HTTP ${res.status}`); }
+  return res.json();
+};
+const ghSaveJson = (token,user,repo,path,data,sha=null) => {
+  const content = btoa(unescape(encodeURIComponent(JSON.stringify(data,null,2))));
+  return ghFetch(token,user,repo,path,'PUT',{message:`Update ${path}`,content,...(sha?{sha}:{})});
+};
+const ghLoadJson = async (token,user,repo,path) => {
+  const d = await ghFetch(token,user,repo,path);
+  return {content:JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\n/g,''))))),sha:d.sha};
+};
+const ghUploadFile = (token,user,repo,path,b64,sha=null) =>
+  ghFetch(token,user,repo,path,'PUT',{message:`Upload ${path}`,content:b64,...(sha?{sha}:{})});
+const fileToB64 = f => new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(f);});
+
+/* ── weather ── */
+const fetchWeather = (lat,lon) =>
+  fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,weathercode&current_weather=true&timezone=auto&forecast_days=3`).then(r=>r.json());
+
+/* ══════════════════════════════════
+   TOAST
+══════════════════════════════════ */
+let _setToasts = null;
+let _toastId   = 0;
+const toast = (msg,type='info',ms=3500) => {
+  if (!_setToasts) return;
+  const id = ++_toastId;
+  _setToasts(t=>[...t,{id,msg,type}]);
+  setTimeout(()=>_setToasts(t=>t.filter(x=>x.id!==id)),ms);
+};
+function Toasts() {
+  const [ts,set] = useState([]);
+  _setToasts = set;
+  return (
+    <div className="toast-container">
+      {ts.map(t=>(
+        <div key={t.id} className={`toast ${t.type}`} onClick={()=>set(x=>x.filter(i=>i.id!==t.id))}>
+          <span>{t.type==='success'?'✅':t.type==='error'?'❌':'ℹ️'}</span>
+          <span>{t.msg}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════
+   STAR RATING
+══════════════════════════════════ */
+function Stars({value,onChange,size=18}) {
+  const [hover,setHover] = useState(0);
+  return (
+    <div className="stars">
+      {[1,2,3,4,5].map(i=>(
+        <span key={i} className="star"
+          style={{fontSize:size,opacity:i<=(hover||value)?1:0.25,filter:i<=(hover||value)?'none':'grayscale(1)',cursor:onChange?'pointer':'default'}}
+          onMouseEnter={()=>onChange&&setHover(i)} onMouseLeave={()=>onChange&&setHover(0)}
+          onClick={()=>onChange&&onChange(i===value?0:i)}>⭐</span>
+      ))}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════
+   VEHICLE HEADER (sticky)
+══════════════════════════════════ */
+function VehicleHeader({trip,theme,onThemeToggle}) {
+  const v = trip?.vehicle||{};
+  return (
+    <div className="vehicle-banner">
+      <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <span style={{fontSize:24}}>🚐</span>
+        <div>
+          <div style={{fontSize:13,fontWeight:700}}>{v.name||'My Caravan'}</div>
+          <div style={{fontSize:11,color:'var(--text3)'}}>
+            {[v.height&&`H:${v.height}m`,v.width&&`W:${v.width}m`,v.weight&&`${v.weight}kg`,v.plate].filter(Boolean).join(' · ')||'No dimensions set'}
+          </div>
+        </div>
+      </div>
+      <div style={{display:'flex',gap:14,flex:1,justifyContent:'center',flexWrap:'wrap'}}>
+        {[['💧 Water','waterLevel','#4f8ef7'],['⛽ Gas','gasLevel','#22c55e'],['🪣 Waste','wasteLevel','#f59e0b']].map(([lbl,key,col])=>(
+          <div key={key} className="gauge">
+            <span className="gauge-label">{lbl} {v[key]??0}%</span>
+            <div className="gauge-bar"><div className="gauge-fill" style={{width:`${v[key]??0}%`,background:col}}/></div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:10,marginLeft:'auto'}}>
+        {trip&&<div style={{fontSize:12,color:'var(--text2)',textAlign:'right'}}>
+          <div style={{fontWeight:600}}>{trip.name}</div>
+          <div style={{color:'var(--text3)'}}>{trip.startDate||'—'} → {trip.endDate||'—'}</div>
+        </div>}
+        <button className="btn btn-secondary btn-icon btn-sm" onClick={onThemeToggle}>{theme==='dark'?'☀️':'🌙'}</button>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════
+   GOOGLE MAP
+══════════════════════════════════ */
+function MapView({mapsKey,trip,onAddToBank}) {
+  const mapRef   = useRef(null);
+  const mapInst  = useRef(null);
+  const markers  = useRef([]);
+  const [ready,setReady] = useState(false);
+
+  useEffect(()=>{
+    if (!mapsKey) return;
+    if (window.google?.maps){setReady(true);return;}
+    if (document.getElementById('gmaps-script')) return;
+    window.__gmapsReady = ()=>setReady(true);
+    const s=document.createElement('script');
+    s.id='gmaps-script';
+    s.src=`https://maps.googleapis.com/maps/api/js?key=${mapsKey}&libraries=places&callback=__gmapsReady`;
+    s.async=true;
+    s.onerror=()=>toast('Failed to load Google Maps. Check your API key.','error');
+    document.head.appendChild(s);
+  },[mapsKey]);
+
+  useEffect(()=>{
+    if (!ready||!mapRef.current||mapInst.current) return;
+    const map = new window.google.maps.Map(mapRef.current,{
+      center:{lat:48.8566,lng:2.3522},zoom:6,
+      mapTypeControl:true,streetViewControl:false,fullscreenControl:false,
+    });
+    mapInst.current = map;
+    const iw = new window.google.maps.InfoWindow();
+    map.addListener('click',e=>{
+      if (!e.placeId) return;
+      e.stop();
+      const svc = new window.google.maps.places.PlacesService(map);
+      svc.getDetails({placeId:e.placeId,fields:['name','formatted_address','geometry','rating']},(place,st)=>{
+        if (st!==window.google.maps.places.PlacesServiceStatus.OK||!place) return;
+        iw.setContent(`
+          <div style="font-family:Inter,sans-serif;max-width:240px;padding:4px">
+            <div style="font-weight:700;font-size:14px;margin-bottom:4px">${place.name}</div>
+            <div style="font-size:12px;color:#555;margin-bottom:8px">${place.formatted_address||''}</div>
+            ${place.rating?`<div style="font-size:12px;margin-bottom:8px">⭐ ${place.rating}</div>`:''}
+            <button id="gm-add" style="background:#4f8ef7;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:Inter,sans-serif">
+              + Add to Interest Bank
+            </button>
+          </div>`);
+        iw.setPosition(e.latLng);
+        iw.open(map);
+        setTimeout(()=>{
+          const btn=document.getElementById('gm-add');
+          if(btn) btn.onclick=()=>{
+            onAddToBank({name:place.name,address:place.formatted_address,lat:place.geometry.location.lat(),lng:place.geometry.location.lng()});
+            iw.close();
+            toast(`Added "${place.name}" to Interest Bank`,'success');
+          };
+        },80);
+      });
+    });
+  },[ready,onAddToBank]);
+
+  /* update trip markers */
+  useEffect(()=>{
+    if (!mapInst.current) return;
+    markers.current.forEach(m=>m.setMap(null));
+    markers.current=[];
+    if (!trip) return;
+    trip.days.forEach((day,i)=>{
+      if (!day.coordinates) return;
+      const m = new window.google.maps.Marker({
+        position:{lat:day.coordinates.lat,lng:day.coordinates.lng},
+        map:mapInst.current,
+        label:{text:String(i+1),color:'#fff',fontSize:'12px',fontWeight:'bold'},
+        title:day.location||`Day ${i+1}`,
+        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:14,fillColor:'#4f8ef7',fillOpacity:1,strokeColor:'#fff',strokeWeight:2},
+      });
+      markers.current.push(m);
+    });
+    trip.interestBank.forEach(item=>{
+      if (!item.lat) return;
+      const m = new window.google.maps.Marker({
+        position:{lat:item.lat,lng:item.lng},
+        map:mapInst.current,title:item.name,
+        icon:{path:window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,scale:8,fillColor:'#f59e0b',fillOpacity:.9,strokeColor:'#fff',strokeWeight:1.5},
+      });
+      markers.current.push(m);
+    });
+  },[trip,ready]);
+
+  if (!mapsKey) return (
+    <div className="empty-state" style={{height:'100%',background:'var(--bg)'}}>
+      <div className="emoji">🗺️</div>
+      <div style={{fontWeight:600,color:'var(--text)'}}>Google Maps not configured</div>
+      <p>Go to ⚙️ Settings and enter your Google Maps API key to enable the interactive map.</p>
+    </div>
+  );
+  return <div id="map-container" ref={mapRef} style={{height:'100%',width:'100%'}}/>;
+}
+
+/* ══════════════════════════════════
+   WEATHER
+══════════════════════════════════ */
+function Weather({coordinates,location}) {
+  const [w,setW] = useState(null);
+  const [loading,setLoading] = useState(false);
+  useEffect(()=>{
+    if (!coordinates?.lat) return;
+    setLoading(true);
+    fetchWeather(coordinates.lat,coordinates.lng).then(setW).catch(()=>{}).finally(()=>setLoading(false));
+  },[coordinates?.lat,coordinates?.lng]);
+  if (!coordinates?.lat) return null;
+  if (loading) return <div style={{padding:'6px 0',fontSize:12,color:'var(--text3)'}}>Loading weather…</div>;
+  if (!w) return null;
+  const [icon,desc] = WMO[w.current_weather?.weathercode]||['🌡️','Unknown'];
+  return (
+    <div className="weather-card" style={{marginBottom:12}}>
+      <div style={{fontSize:11,fontWeight:600,opacity:.7,marginBottom:8,textTransform:'uppercase',letterSpacing:'.05em'}}>{location||'Weather'} — Next 3 Days</div>
+      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}>
+        <span style={{fontSize:32}}>{icon}</span>
+        <div>
+          <div style={{fontSize:22,fontWeight:700}}>{Math.round(w.current_weather?.temperature)}°C</div>
+          <div style={{fontSize:12,opacity:.8}}>{desc}</div>
+        </div>
+      </div>
+      <div style={{display:'flex',gap:8}}>
+        {(w.daily?.time||[]).slice(0,3).map((date,i)=>{
+          const [di]=WMO[w.daily.weathercode[i]]||['🌡️'];
+          return (
+            <div key={date} style={{flex:1,background:'rgba(255,255,255,.1)',borderRadius:8,padding:'6px 8px',textAlign:'center'}}>
+              <div style={{fontSize:10,opacity:.7,marginBottom:2}}>{new Date(date).toLocaleDateString('en',{weekday:'short'})}</div>
+              <div style={{fontSize:16}}>{di}</div>
+              <div style={{fontSize:11,fontWeight:600}}>{Math.round(w.daily.temperature_2m_max[i])}°</div>
+              <div style={{fontSize:10,opacity:.6}}>{Math.round(w.daily.temperature_2m_min[i])}°</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════
+   BLOCK MODAL
+══════════════════════════════════ */
+function BlockModal({block,onSave,onClose,onDelete}) {
+  const [b,setB] = useState({...block});
+  const upd = (k,v)=>setB(p=>({...p,[k]:v}));
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <span style={{fontWeight:700,fontSize:15}}>{BLOCK_EMOJI[b.type]} Edit Block</span>
+          <button className="btn btn-secondary btn-icon btn-sm" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div>
+            <label className="label">Type</label>
+            <select className="input" value={b.type} onChange={e=>upd('type',e.target.value)}>
+              {BLOCK_TYPES.map(t=><option key={t} value={t}>{BLOCK_EMOJI[t]} {t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Title</label>
+            <input className="input" value={b.title} onChange={e=>upd('title',e.target.value)} placeholder="e.g. Drive to Florence" autoFocus />
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <div>
+              <label className="label">Start Time</label>
+              <input className="input" type="time" value={b.startTime} onChange={e=>upd('startTime',e.target.value)}/>
+            </div>
+            <div>
+              <label className="label">Duration (min)</label>
+              <input className="input" type="number" min="5" step="5" value={b.durationMins} onChange={e=>upd('durationMins',parseInt(e.target.value)||0)}/>
+            </div>
+          </div>
+          <div>
+            <label className="label">Location</label>
+            <input className="input" value={b.location} onChange={e=>upd('location',e.target.value)} placeholder="Optional"/>
+          </div>
+          <div>
+            <label className="label">Cost (€)</label>
+            <input className="input" type="number" min="0" step="0.01" value={b.cost} onChange={e=>upd('cost',parseFloat(e.target.value)||0)}/>
+          </div>
+          <div>
+            <label className="label">Notes</label>
+            <textarea className="input" value={b.notes} onChange={e=>upd('notes',e.target.value)} placeholder="Private notes…"/>
+          </div>
+          <div>
+            <label className="label">Enjoyment Rating</label>
+            <Stars value={b.rating} onChange={v=>upd('rating',v)}/>
+          </div>
+          <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13}}>
+            <input type="checkbox" checked={b.isCompleted} onChange={e=>upd('isCompleted',e.target.checked)} style={{accentColor:'var(--green)'}}/>
+            Mark as completed
+          </label>
+        </div>
+        <div className="modal-footer">
+          {onDelete&&<button className="btn btn-danger btn-sm" onClick={onDelete}>🗑 Delete</button>}
+          <div style={{flex:1}}/>
+          <button className="btn btn-secondary btn-sm" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary btn-sm" onClick={()=>{onSave(b);onClose();}}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════
+   TIMELINE BLOCK
+══════════════════════════════════ */
+function BlockItem({block,onEdit}) {
+  const end = addMinutes(block.startTime,block.durationMins);
+  const col = BLOCK_COLOR[block.type]||'var(--text3)';
+  return (
+    <div className="timeline-block" style={{paddingBottom:6}}>
+      <div className="timeline-dot" style={{background:col}}>{BLOCK_EMOJI[block.type]}</div>
+      <div className={`card block-${block.type}`} style={{flex:1,marginLeft:4,cursor:'pointer',opacity:block.isCompleted?.6:1,transition:'all .15s'}} onClick={()=>onEdit(block)}>
+        <div style={{padding:'10px 14px'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+            <span style={{fontSize:11,fontWeight:700,color:col,fontVariantNumeric:'tabular-nums'}}>{block.startTime}–{end}</span>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              {block.isCompleted&&<span className="chip chip-green" style={{fontSize:10,padding:'2px 7px'}}>✓ Done</span>}
+              {block.rating>0&&<Stars value={block.rating} size={13}/>}
+            </div>
+          </div>
+          <div style={{fontSize:13,fontWeight:600,color:'var(--text)',marginTop:2}}>{block.title||`(Untitled ${block.type})`}</div>
+          {block.location&&<div style={{fontSize:11,color:'var(--text3)',marginTop:1}}>📍 {block.location}</div>}
+          {block.notes&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,fontStyle:'italic',lineHeight:1.5}}>{block.notes}</div>}
+          <div style={{display:'flex',gap:10,marginTop:6,flexWrap:'wrap'}}>
+            {block.durationMins>0&&<span style={{fontSize:11,color:'var(--text3)'}}>⏱ {block.durationMins} min</span>}
+            {block.cost>0&&<span style={{fontSize:11,color:'var(--amber)'}}>💰 €{block.cost.toFixed(2)}</span>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════
+   DAY PANEL
+══════════════════════════════════ */
+function DayPanel({day,idx,onUpdate,onDelete}) {
+  const [open,setOpen]   = useState(true);
+  const [editing,setEd]  = useState(null);
+
+  const updBlock = upd => onUpdate({...day,blocks:day.blocks.map(b=>b.id===upd.id?upd:b)});
+  const delBlock = id  => onUpdate({...day,blocks:day.blocks.filter(b=>b.id!==id)});
+  const addBlock = type => {
+    const sorted = [...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+    const last   = sorted[sorted.length-1];
+    const start  = last ? addMinutes(last.startTime,last.durationMins) : (day.currentTime||'09:00');
+    onUpdate({...day,blocks:[...day.blocks,defaultBlock(type,start)]});
+  };
+
+  const totalCost  = day.blocks.reduce((s,b)=>s+(b.cost||0),0);
+  const doneCount  = day.blocks.filter(b=>b.isCompleted).length;
+  const sortedBlks = [...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+
+  return (
+    <div className="card" style={{marginBottom:12,animation:'fadeIn .3s ease'}}>
+      <div className="day-header" onClick={()=>setOpen(o=>!o)}>
+        <span style={{fontSize:20}}>📅</span>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:700,fontSize:14}}>Day {idx+1}{day.date?` — ${dateStr(day.date)}`:''}</div>
+          {day.location&&<div style={{fontSize:11,color:'var(--text3)'}}>📍 {day.location}</div>}
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          {day.blocks.length>0&&<span className="chip chip-blue" style={{fontSize:10}}>{doneCount}/{day.blocks.length}</span>}
+          {totalCost>0&&<span style={{fontSize:11,color:'var(--amber)'}}>€{totalCost.toFixed(2)}</span>}
+          <span style={{color:'var(--text3)',fontSize:13}}>{open?'▼':'▶'}</span>
+        </div>
+      </div>
+
+      {open&&(
+        <div style={{padding:'14px 16px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
+            <div><label className="label">Date</label>
+              <input className="input" type="date" value={day.date} onChange={e=>onUpdate({...day,date:e.target.value})}/></div>
+            <div><label className="label">Location</label>
+              <input className="input" value={day.location} onChange={e=>onUpdate({...day,location:e.target.value})} placeholder="City / Campsite"/></div>
+          </div>
+
+          <Weather coordinates={day.coordinates} location={day.location}/>
+
+          <div className="time-indicator" style={{marginBottom:14}}>
+            <span style={{fontSize:12,color:'var(--text2)'}}>⏰ Current time:</span>
+            <input type="time" value={day.currentTime||nowTime()} onChange={e=>onUpdate({...day,currentTime:e.target.value})}
+              style={{background:'transparent',border:'none',color:'var(--accent)',fontWeight:700,fontSize:13,fontFamily:'Inter,sans-serif',cursor:'pointer'}}/>
+          </div>
+
+          <div className="timeline">
+            {sortedBlks.length===0&&(
+              <div style={{padding:'12px 0',color:'var(--text3)',fontSize:13,textAlign:'center'}}>No blocks yet — add some below</div>
+            )}
+            {sortedBlks.map(bl=><BlockItem key={bl.id} block={bl} onEdit={setEd}/>)}
+          </div>
+
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:12}}>
+            {BLOCK_TYPES.map(t=>(
+              <button key={t} className="btn btn-secondary btn-sm" onClick={()=>addBlock(t)}>
+                {BLOCK_EMOJI[t]} Add {t}
+              </button>
+            ))}
+          </div>
+
+          <div style={{marginTop:14,display:'flex',flexDirection:'column',gap:10}}>
+            <div><label className="label">Day Notes</label>
+              <textarea className="input" rows={2} value={day.notes} onChange={e=>onUpdate({...day,notes:e.target.value})} placeholder="Notes for today…"/></div>
+            <div><label className="label">Journal / Daily Summary</label>
+              <textarea className="input" rows={3} value={day.summary} onChange={e=>onUpdate({...day,summary:e.target.value})} placeholder="How was today? Write your journal entry…"/></div>
+          </div>
+
+          <div style={{marginTop:12,display:'flex',justifyContent:'flex-end'}}>
+            <button className="btn btn-danger btn-sm" onClick={onDelete}>🗑 Delete Day</button>
+          </div>
+        </div>
+      )}
+
+      {editing&&(
+        <BlockModal block={editing} onSave={updBlock} onClose={()=>setEd(null)} onDelete={()=>{delBlock(editing.id);setEd(null);}}/>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════
+   TIMELINE TAB
+══════════════════════════════════ */
+function TimelineTab({trip,onUpdate}) {
+  const [showBank,setShowBank] = useState(true);
+
+  const updDay = upd => onUpdate({...trip,days:trip.days.map(d=>d.id===upd.id?upd:d)});
+  const addDay = () => {
+    const last = trip.days[trip.days.length-1];
+    let nd='';
+    if (last?.date){const d=new Date(last.date);d.setDate(d.getDate()+1);nd=d.toISOString().slice(0,10);}
+    onUpdate({...trip,days:[...trip.days,defaultDay(nd)]});
+  };
+  const delDay = id => onUpdate({...trip,days:trip.days.filter(d=>d.id!==id)});
+
+  const addToBank = item => onUpdate({...trip,interestBank:[...trip.interestBank,{...item,id:uid()}]});
+  const delBank   = id  => onUpdate({...trip,interestBank:trip.interestBank.filter(i=>i.id!==id)});
+
+  return (
+    <div style={{display:'flex',height:'100%',overflow:'hidden'}}>
+      {/* main */}
+      <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
+        <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+          <span style={{fontWeight:700,fontSize:15}}>🗓 Itinerary</span>
+          <button className="btn btn-primary btn-sm" onClick={addDay}>+ Add Day</button>
+          <div style={{flex:1}}/>
+          <button className="btn btn-secondary btn-sm" onClick={()=>setShowBank(b=>!b)}>
+            🌟 {showBank?'Hide':'Show'} Interest Bank
+          </button>
+        </div>
+        <div className="scroll-y flex-1" style={{padding:'16px'}}>
+          {trip.days.length===0?(
+            <div className="empty-state">
+              <div className="emoji">🗓️</div>
+              <div style={{fontWeight:600,color:'var(--text)'}}>No days yet</div>
+              <p>Click "+ Add Day" to start building your itinerary.</p>
+              <button className="btn btn-primary" onClick={addDay}>+ Add Day</button>
+            </div>
+          ):trip.days.map((day,i)=>(
+            <DayPanel key={day.id} day={day} idx={i} onUpdate={updDay} onDelete={()=>delDay(day.id)}/>
+          ))}
+        </div>
+      </div>
+
+      {/* interest bank */}
+      {showBank&&(
+        <div className="sidebar-panel">
+          <div style={{padding:'12px 14px',borderBottom:'1px solid var(--border)',fontWeight:700,fontSize:13,display:'flex',alignItems:'center',gap:8}}>
+            🌟 Interest Bank <span className="chip chip-blue" style={{fontSize:10}}>{trip.interestBank.length}</span>
+          </div>
+          <div className="scroll-y flex-1" style={{padding:'10px'}}>
+            {trip.interestBank.length===0?(
+              <div style={{color:'var(--text3)',fontSize:12,textAlign:'center',padding:'20px 0',lineHeight:1.7}}>
+                Click any Google Maps POI and press "Add to Interest Bank", or add manually below.
+              </div>
+            ):trip.interestBank.map(item=>(
+              <div key={item.id} className="interest-item" style={{marginBottom:8}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
+                  {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.address}</div>}
+                </div>
+                <button className="btn btn-danger btn-icon btn-sm" onClick={()=>delBank(item.id)} title="Remove">✕</button>
+              </div>
+            ))}
+          </div>
+          <div style={{padding:'10px 12px',borderTop:'1px solid var(--border)'}}>
+            <button className="btn btn-secondary btn-sm" style={{width:'100%'}} onClick={()=>{
+              const name=prompt('Place name:'); if(name) addToBank({name,address:'',id:uid()});
+            }}>+ Add Manually</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════
+   EXPENSES TAB
+══════════════════════════════════ */
+function ExpensesTab({trip,onUpdate}) {
+  const [form,setForm] = useState({category:'Fuel',amount:'',description:'',date:new Date().toISOString().slice(0,10)});
+
+  const add = () => {
+    if (!form.amount||isNaN(parseFloat(form.amount))){toast('Enter a valid amount','error');return;}
+    onUpdate({...trip,expenses:[...trip.expenses,{id:uid(),...form,amount:parseFloat(form.amount)}]});
+    setForm(f=>({...f,amount:'',description:''}));
+    toast('Expense added','success');
+  };
+  const del = id => onUpdate({...trip,expenses:trip.expenses.filter(e=>e.id!==id)});
+
+  const byCat  = EXPENSE_CATS.reduce((a,c)=>{a[c]=trip.expenses.filter(e=>e.category===c).reduce((s,e)=>s+e.amount,0);return a;},{});
+  const total  = trip.expenses.reduce((s,e)=>s+e.amount,0);
+
+  return (
+    <div style={{height:'100%',overflow:'hidden',display:'flex',flexDirection:'column'}}>
+      <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)'}}>
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}>
+          <span style={{fontWeight:700,fontSize:15}}>💰 Expense Tracker</span>
+          <span style={{fontFamily:'Outfit,sans-serif',fontSize:22,fontWeight:800,color:'var(--accent)',marginLeft:'auto'}}>
+            Total: €{total.toFixed(2)}
+          </span>
+        </div>
+        {total>0&&(
+          <>
+            <div style={{display:'flex',borderRadius:6,overflow:'hidden',height:10,marginBottom:8}}>
+              {EXPENSE_CATS.filter(c=>byCat[c]>0).map(c=>(
+                <div key={c} style={{flex:byCat[c]/total,background:CAT_COLORS[c],transition:'flex .4s'}} title={`${c}: €${byCat[c].toFixed(2)}`}/>
+              ))}
+            </div>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              {EXPENSE_CATS.filter(c=>byCat[c]>0).map(c=>(
+                <span key={c} style={{fontSize:11,color:CAT_COLORS[c]}}>● {c}: €{byCat[c].toFixed(2)}</span>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',background:'var(--bg2)'}}>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 130px',gap:8,marginBottom:8}}>
+          <div><label className="label">Category</label>
+            <select className="input" value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>
+              {EXPENSE_CATS.map(c=><option key={c}>{c}</option>)}</select></div>
+          <div><label className="label">Description</label>
+            <input className="input" value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} placeholder="Optional…" onKeyDown={e=>e.key==='Enter'&&add()}/></div>
+          <div><label className="label">Date</label>
+            <input className="input" type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></div>
+        </div>
+        <div style={{display:'flex',gap:8,alignItems:'flex-end'}}>
+          <div style={{flex:1}}><label className="label">Amount (€)</label>
+            <input className="input" type="number" min="0" step="0.01" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} placeholder="0.00" onKeyDown={e=>e.key==='Enter'&&add()}/></div>
+          <button className="btn btn-primary" onClick={add}>+ Add</button>
+        </div>
+      </div>
+
+      <div className="scroll-y flex-1">
+        {trip.expenses.length===0?(
+          <div className="empty-state"><div className="emoji">💸</div><p>No expenses yet. Log costs above.</p></div>
+        ):[...trip.expenses].reverse().map(ex=>(
+          <div key={ex.id} className="expense-row">
+            <div style={{width:10,height:10,borderRadius:'50%',background:CAT_COLORS[ex.category],flexShrink:0}}/>
+            <span className="chip" style={{background:CAT_COLORS[ex.category]+'22',color:CAT_COLORS[ex.category],fontSize:11}}>{ex.category}</span>
+            <div style={{flex:1,fontSize:13}}>{ex.description||ex.category}<span style={{color:'var(--text3)',fontSize:11,marginLeft:8}}>{ex.date}</span></div>
+            <span style={{fontWeight:700,fontSize:14}}>€{ex.amount.toFixed(2)}</span>
+            <button className="btn btn-secondary btn-icon btn-sm" onClick={()=>del(ex.id)}>✕</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════
+   CHECKLIST (Packing / Shopping)
+══════════════════════════════════ */
+function Checklist({title,emoji,items,onUpdate}) {
+  const [text,setText]   = useState('');
+  const [cat,setCat]     = useState('General');
+  const add  = () => { const t=text.trim(); if(!t) return; onUpdate([...items,{id:uid(),text:t,done:false,category:cat||'General'}]); setText(''); };
+  const tog  = id => onUpdate(items.map(i=>i.id===id?{...i,done:!i.done}:i));
+  const del  = id => onUpdate(items.filter(i=>i.id!==id));
+  const done = items.filter(i=>i.done).length;
+  const cats = [...new Set(items.map(i=>i.category||'General'))];
+  const grouped = items.reduce((a,i)=>{const c=i.category||'General';if(!a[c])a[c]=[];a[c].push(i);return a;},{});
+
+  return (
+    <div style={{height:'100%',overflow:'hidden',display:'flex',flexDirection:'column'}}>
+      <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+        <span style={{fontWeight:700,fontSize:15}}>{emoji} {title}</span>
+        <span className="chip chip-green" style={{fontSize:11}}>{done}/{items.length} done</span>
+        {items.length>0&&<div className="progress" style={{flex:1}}><div className="progress-fill" style={{width:`${items.length?(done/items.length)*100:0}%`,background:'var(--green)'}}/></div>}
+        <button className="btn btn-danger btn-sm" onClick={()=>onUpdate(items.filter(i=>!i.done))}>Clear done</button>
+      </div>
+      <div style={{padding:'10px 14px',borderBottom:'1px solid var(--border)',display:'flex',gap:8}}>
+        <input className="input" value={text} onChange={e=>setText(e.target.value)} placeholder={`Add ${title.toLowerCase()} item…`} onKeyDown={e=>e.key==='Enter'&&add()} style={{flex:2}}/>
+        <input className="input" value={cat} onChange={e=>setCat(e.target.value)} placeholder="Category" list={`cats-${title}`} style={{flex:1}}/>
+        <datalist id={`cats-${title}`}>{cats.map(c=><option key={c} value={c}/>)}</datalist>
+        <button className="btn btn-primary" onClick={add}>+</button>
+      </div>
+      <div className="scroll-y flex-1" style={{padding:'12px 16px'}}>
+        {items.length===0?(
+          <div className="empty-state"><div className="emoji">{emoji}</div><p>Your {title.toLowerCase()} is empty. Add items above.</p></div>
+        ):Object.entries(grouped).map(([c,citems])=>(
+          <div key={c} style={{marginBottom:16}}>
+            <div className="section-title">{c}</div>
+            {citems.map(item=>(
+              <div key={item.id} className={`list-item${item.done?' done':''}`}>
+                <input type="checkbox" checked={item.done} onChange={()=>tog(item.id)} style={{cursor:'pointer',accentColor:'var(--accent)',flexShrink:0}}/>
+                <span style={{flex:1,fontSize:13}}>{item.text}</span>
+                <button className="btn btn-secondary btn-icon btn-sm" style={{opacity:.35,transition:'opacity .15s'}} onMouseEnter={e=>e.target.style.opacity=1} onMouseLeave={e=>e.target.style.opacity=.35} onClick={()=>del(item.id)}>✕</button>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════
+   DOCUMENTS TAB
+══════════════════════════════════ */
+function DocsTab({trip,onUpdate,settings}) {
+  const [busy,setBusy] = useState(false);
+  const fileRef        = useRef(null);
+
+  const upload = async file => {
+    const hasGH = settings.githubToken && settings.githubUsername && settings.githubRepo;
+    if (!hasGH) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const doc={id:uid(),name:file.name,type:file.type,size:file.size,url:reader.result,uploadedAt:new Date().toISOString(),source:'local'};
+        onUpdate({...trip,documents:[...trip.documents,doc]});
+        toast(`"${file.name}" stored locally`,'info');
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+    setBusy(true);
+    try {
+      const b64  = await fileToB64(file);
+      const path = `docs/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+      const res  = await ghUploadFile(settings.githubToken,settings.githubUsername,settings.githubRepo,path,b64);
+      const doc  = {id:uid(),name:file.name,type:file.type,size:file.size,url:res.content.download_url||res.content.html_url,ghPath:path,uploadedAt:new Date().toISOString(),source:'github'};
+      onUpdate({...trip,documents:[...trip.documents,doc]});
+      toast(`"${file.name}" uploaded to GitHub ✓`,'success');
+    } catch(err){toast(`Upload failed: ${err.message}`,'error');}
+    finally{setBusy(false);}
+  };
+
+  const icon = t=>t?.includes('pdf')?'📄':t?.startsWith('image')?'🖼️':t?.includes('word')?'📝':'📎';
+
+  return (
+    <div style={{height:'100%',overflow:'hidden',display:'flex',flexDirection:'column'}}>
+      <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:12}}>
+        <span style={{fontWeight:700,fontSize:15}}>📁 Documents</span>
+        <span className="chip chip-blue" style={{fontSize:11}}>{trip.documents.length} files</span>
+        <div style={{flex:1}}/>
+        <button className="btn btn-primary" onClick={()=>fileRef.current?.click()} disabled={busy}>
+          {busy?'⏳ Uploading…':'+ Upload File'}
+        </button>
+        <input ref={fileRef} type="file" style={{display:'none'}} multiple onChange={e=>Array.from(e.target.files).forEach(upload)}/>
+      </div>
+      <div className="scroll-y flex-1" style={{padding:16}} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();Array.from(e.dataTransfer.files).forEach(upload);}}>
+        {trip.documents.length===0?(
+          <div className="empty-state">
+            <div className="emoji">📁</div>
+            <div style={{fontWeight:600,color:'var(--text)'}}>No documents yet</div>
+            <p>Upload passports, insurance, tickets, campsite maps and more.<br/>{settings.githubRepo?'Files go to /docs in your GitHub repo.':'Configure GitHub in Settings for cloud storage.'}</p>
+            <button className="btn btn-primary" onClick={()=>fileRef.current?.click()}>+ Upload File</button>
+          </div>
+        ):(
+          <div className="doc-grid">
+            {trip.documents.map(doc=>(
+              <div key={doc.id} className="doc-item">
+                <button onClick={()=>onUpdate({...trip,documents:trip.documents.filter(d=>d.id!==doc.id)})}
+                  style={{position:'absolute',top:6,right:6,background:'var(--red)',color:'#fff',border:'none',borderRadius:6,width:20,height:20,fontSize:10,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>✕</button>
+                {doc.type?.startsWith('image/')&&doc.url?(
+                  <img src={doc.url} alt={doc.name} style={{width:'100%',height:80,objectFit:'cover',borderRadius:6,marginBottom:6}}/>
+                ):<div className="doc-icon">{icon(doc.type)}</div>}
+                <div className="doc-name">{doc.name}</div>
+                <div style={{fontSize:10,color:'var(--text3)',marginTop:2}}>{doc.source==='github'?'☁️ GitHub':'💾 Local'}</div>
+                {doc.url&&doc.source==='github'&&(
+                  <a href={doc.url} target="_blank" rel="noreferrer" style={{fontSize:10,color:'var(--accent)',textDecoration:'none'}}>View ↗</a>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════
+   SETTINGS TAB
+══════════════════════════════════ */
+function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,onDeleteTrip,onPush,onPull,ghBusy}) {
+  const [s,setS] = useState({...settings});
+  const upd = (k,v) => setS(p=>({...p,[k]:v}));
+
+  return (
+    <div className="scroll-y" style={{height:'100%',padding:20}}>
+      <div style={{maxWidth:640,margin:'0 auto',display:'flex',flexDirection:'column',gap:20}}>
+
+        {/* Trip management */}
+        <div className="card">
+          <div className="card-header"><span style={{fontWeight:700}}>✈️ Trip Management</span></div>
+          <div className="card-body" style={{display:'flex',flexDirection:'column',gap:12}}>
+            <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+              <button className="btn btn-primary" onClick={()=>onNewTrip()}>+ New Trip</button>
+              {activeTrip&&<button className="btn btn-secondary" onClick={()=>{const n=prompt('Name:',activeTrip.name+' Copy');if(n)onNewTrip(n,activeTrip);}}>📋 Save As Copy</button>}
+            </div>
+            {trips.map(t=>(
+              <div key={t.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:8,background:t.id===activeTrip?.id?'rgba(79,142,247,.12)':'var(--surface2)'}}>
+                <div style={{flex:1,fontSize:13}}>
+                  <div style={{fontWeight:600}}>{t.name}</div>
+                  <div style={{fontSize:11,color:'var(--text3)'}}>{t.startDate||'—'} → {t.endDate||'—'} · {t.days.length} days · {t.expenses.length} expenses</div>
+                </div>
+                {t.id!==activeTrip?.id&&<button className="btn btn-secondary btn-sm" onClick={()=>onLoadTrip(t.id)}>Load</button>}
+                {t.id===activeTrip?.id&&<span className="chip chip-green" style={{fontSize:10}}>Active</span>}
+                <button className="btn btn-danger btn-sm" onClick={()=>{if(confirm(`Delete "${t.name}"?`))onDeleteTrip(t.id);}}>🗑</button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Vehicle */}
+        {activeTrip&&(
+          <div className="card">
+            <div className="card-header"><span style={{fontWeight:700}}>🚐 Vehicle & Trip Details</span></div>
+            <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                {[['name','Vehicle Name'],['plate','Plate / Reg'],['height','Height (m)'],['width','Width (m)'],['weight','Weight (kg)']].map(([k,lbl])=>(
+                  <div key={k}><label className="label">{lbl}</label>
+                    <input className="input" value={activeTrip.vehicle[k]||''} onChange={e=>onLoadTrip(null,{...activeTrip,vehicle:{...activeTrip.vehicle,[k]:e.target.value}})} placeholder={lbl}/></div>
+                ))}
+              </div>
+              <div className="section-title" style={{marginTop:8}}>Status Levels</div>
+              {[['waterLevel','💧 Water','var(--accent)'],['gasLevel','⛽ Gas','var(--green)'],['wasteLevel','🪣 Waste','var(--amber)']].map(([k,lbl,col])=>(
+                <div key={k} style={{display:'flex',alignItems:'center',gap:10}}>
+                  <span style={{fontSize:12,color:'var(--text2)',width:80}}>{lbl}</span>
+                  <input type="range" min="0" max="100" value={activeTrip.vehicle[k]??0} onChange={e=>onLoadTrip(null,{...activeTrip,vehicle:{...activeTrip.vehicle,[k]:parseInt(e.target.value)}})} style={{flex:1,accentColor:col}}/>
+                  <span style={{fontSize:12,fontWeight:700,color:col,width:36,textAlign:'right'}}>{activeTrip.vehicle[k]??0}%</span>
+                </div>
+              ))}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginTop:8}}>
+                {[['startDate','Trip Start'],['endDate','Trip End']].map(([k,lbl])=>(
+                  <div key={k}><label className="label">{lbl}</label>
+                    <input className="input" type="date" value={activeTrip[k]||''} onChange={e=>onLoadTrip(null,{...activeTrip,[k]:e.target.value})}/></div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* GitHub */}
+        <div className="card">
+          <div className="card-header">
+            <span style={{fontWeight:700}}>☁️ GitHub Cloud Sync</span>
+            {s.githubToken&&s.githubUsername&&s.githubRepo&&<span className="chip chip-green" style={{fontSize:10}}>Configured</span>}
+          </div>
+          <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10}}>
+            <div style={{fontSize:12,color:'var(--text3)',lineHeight:1.7}}>
+              Trip data is saved as <code>trip_data.json</code> and documents go to <code>/docs/</code> in your private repo. Generate a Personal Access Token with <code>repo</code> scope at <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" style={{color:'var(--accent)'}}>github.com/settings/tokens</a>.
+            </div>
+            {[['githubToken','GitHub Personal Access Token','password'],['githubUsername','GitHub Username','text'],['githubRepo','Repository Name (private)','text'],['googleMapsKey','Google Maps API Key','password']].map(([k,lbl,type])=>(
+              <div key={k}><label className="label">{lbl}</label>
+                <input className="input" type={type} value={s[k]||''} onChange={e=>upd(k,e.target.value)} placeholder={lbl} autoComplete="off"/></div>
+            ))}
+            <div style={{display:'flex',gap:10,flexWrap:'wrap',marginTop:4}}>
+              <button className="btn btn-primary" onClick={()=>{onSettings(s);toast('Settings saved','success');}}>💾 Save Settings</button>
+              {activeTrip&&s.githubToken&&(
+                <>
+                  <button className="btn btn-success" onClick={onPush} disabled={ghBusy}>{ghBusy?'⏳…':'⬆ Push to GitHub'}</button>
+                  <button className="btn btn-secondary" onClick={onPull} disabled={ghBusy}>{ghBusy?'⏳…':'⬇ Pull from GitHub'}</button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════
+   APP ROOT
+══════════════════════════════════ */
+function App() {
+  const saved = useMemo(()=>loadState(),[]);
+
+  const [settings,  setSettings]  = useState(saved?.settings||{githubToken:'',githubUsername:'',githubRepo:'',googleMapsKey:'',theme:'dark'});
+  const [trips,     setTrips]     = useState(saved?.trips||[defaultTrip('My First Trip')]);
+  const [activeId,  setActiveId]  = useState(saved?.activeId||(saved?.trips?.[0]?.id??null));
+  const [tab,       setTab]       = useState('map');
+  const [mobileSide,setMobile]    = useState('timeline');
+  const [ghBusy,    setGhBusy]    = useState(false);
+  const ghShaRef = useRef(null);
+
+  useEffect(()=>saveState({settings,trips,activeId}),[settings,trips,activeId]);
+  useEffect(()=>{ document.body.className = settings.theme==='light'?'light':''; },[settings.theme]);
+
+  const trip = useMemo(()=>trips.find(t=>t.id===activeId)||trips[0]||null,[trips,activeId]);
+
+  const updTrip = useCallback(upd=>{
+    if (typeof upd==='function') setTrips(ts=>ts.map(t=>t.id===activeId?upd(t):t));
+    else setTrips(ts=>ts.map(t=>t.id===upd.id?upd:t));
+  },[activeId]);
+
+  const newTrip = (name,template=null) => {
+    const t = template?{...template,id:uid(),name:name||template.name+' Copy'}:defaultTrip(name||'New Trip');
+    setTrips(ts=>[...ts,t]); setActiveId(t.id); setTab('timeline');
+    toast(`Trip "${t.name}" created`,'success');
+  };
+
+  const loadTrip = (id,directUpdate=null) => {
+    if (directUpdate) { setTrips(ts=>ts.map(t=>t.id===directUpdate.id?directUpdate:t)); return; }
+    setActiveId(id); setTab('timeline');
+  };
+
+  const delTrip = id => {
+    const rest = trips.filter(t=>t.id!==id);
+    setTrips(rest);
+    if (activeId===id) setActiveId(rest[0]?.id||null);
+  };
+
+  const addToBank = useCallback(item=>{
+    if (!trip) return;
+    updTrip({...trip,interestBank:[...trip.interestBank,{...item,id:uid()}]});
+  },[trip,updTrip]);
+
+  /* GitHub sync */
+  const push = async () => {
+    if (!trip) return;
+    setGhBusy(true);
+    try {
+      const res = await ghSaveJson(settings.githubToken,settings.githubUsername,settings.githubRepo,'trip_data.json',{trips,activeId,savedAt:new Date().toISOString()},ghShaRef.current);
+      ghShaRef.current = res.content.sha;
+      toast('Pushed to GitHub ✓','success');
+    } catch(e){toast(`Push failed: ${e.message}`,'error');}
+    finally{setGhBusy(false);}
+  };
+  const pull = async () => {
+    setGhBusy(true);
+    try {
+      const {content,sha} = await ghLoadJson(settings.githubToken,settings.githubUsername,settings.githubRepo,'trip_data.json');
+      ghShaRef.current = sha;
+      if (content.trips){setTrips(content.trips);setActiveId(content.activeId);}
+      toast('Pulled from GitHub ✓','success');
+    } catch(e){toast(`Pull failed: ${e.message}`,'error');}
+    finally{setGhBusy(false);}
+  };
+
+  const TABS = [
+    {id:'map',    label:'🗺️ Map'},
+    {id:'timeline',label:'🗓 Timeline'},
+    {id:'expenses',label:'💰 Expenses'},
+    {id:'documents',label:'📁 Docs'},
+    {id:'packing', label:'🎒 Packing'},
+    {id:'shopping',label:'🛒 Shopping'},
+    {id:'settings',label:'⚙️ Settings'},
+  ];
+
+  const noTrip = (
+    <div className="empty-state" style={{height:'100%'}}>
+      <div className="emoji">🚐</div>
+      <div style={{fontWeight:600,color:'var(--text)'}}>No trip loaded</div>
+      <p>Go to ⚙️ Settings to create a new trip.</p>
+      <button className="btn btn-primary" onClick={()=>setTab('settings')}>⚙️ Settings</button>
+    </div>
+  );
+
+  const renderMain = () => {
+    if (!trip && tab!=='settings') return noTrip;
+    switch(tab) {
+      case 'map': return (
+        <div className="split-view" style={{height:'100%'}}>
+          <div className={`split-left${mobileSide==='timeline'?' mobile-hidden':''}`}>
+            <MapView mapsKey={settings.googleMapsKey} trip={trip} onAddToBank={addToBank}/>
+          </div>
+          <div className={`split-right${mobileSide==='map'?' mobile-hidden':''}`} style={{overflow:'hidden'}}>
+            {trip ? <TimelineTab trip={trip} onUpdate={updTrip}/> : noTrip}
+          </div>
+        </div>
+      );
+      case 'timeline': return <TimelineTab trip={trip} onUpdate={updTrip}/>;
+      case 'expenses': return <ExpensesTab trip={trip} onUpdate={updTrip}/>;
+      case 'documents': return <DocsTab trip={trip} onUpdate={updTrip} settings={settings}/>;
+      case 'packing':  return <Checklist title="Packing List" emoji="🎒" items={trip.packingList} onUpdate={items=>updTrip({...trip,packingList:items})}/>;
+      case 'shopping': return <Checklist title="Shopping List" emoji="🛒" items={trip.shoppingList} onUpdate={items=>updTrip({...trip,shoppingList:items})}/>;
+      case 'settings': return <SettingsTab settings={settings} onSettings={setSettings} trips={trips} activeTrip={trip} onNewTrip={newTrip} onLoadTrip={loadTrip} onDeleteTrip={delTrip} onPush={push} onPull={pull} ghBusy={ghBusy}/>;
+      default: return null;
+    }
+  };
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+      <div className="app-header">
+        <VehicleHeader trip={trip} theme={settings.theme} onThemeToggle={()=>setSettings(s=>({...s,theme:s.theme==='dark'?'light':'dark'}))}/>
+        <div className="tab-bar">
+          {TABS.map(t=>(
+            <button key={t.id} className={`tab-btn${tab===t.id?' active':''}`} onClick={()=>setTab(t.id)}>{t.label}</button>
+          ))}
+          {tab==='map'&&(
+            <button className="tab-btn mobile-toggle" style={{marginLeft:'auto',color:'var(--amber)'}} onClick={()=>setMobile(s=>s==='map'?'timeline':'map')}>
+              {mobileSide==='map'?'📋 Timeline':'🗺️ Map'}
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="main-content">{renderMain()}</div>
+      <Toasts/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
