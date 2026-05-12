@@ -1024,84 +1024,96 @@ function DocsTab({trip,onUpdate,settings}){
 ══════════════════════════════════ */
 function NotesTab({trip,onUpdate}){
   const[newNote,setNewNote]=useState('');
-  const[geoW,setGeoW]=useState(null),[geoLoading,setGeoLoading]=useState(false),[geoLabel,setGeoLabel]=useState('');
+  const[weatherData,setWeatherData]=useState(null),[wLoading,setWLoading]=useState(false),[wLabel,setWLabel]=useState('');
+  const[cityInput,setCityInput]=useState('');
 
-  const fetchCurrentWeather=()=>{
-    if (!navigator.geolocation){toast('הדפדפן לא תומך במיקום','error');return;}
-    setGeoLoading(true);
+  const loadWeather=(lat,lng,label)=>{
+    setWLoading(true);
+    fetchWeather(lat,lng)
+      .then(w=>{setWeatherData(w);setWLabel(label);})
+      .catch(()=>toast('שגיאה בטעינת מזג האוויר','error'))
+      .finally(()=>setWLoading(false));
+  };
+
+  const fetchByCity=async()=>{
+    const q=cityInput.trim(); if(!q) return;
+    setWLoading(true);
+    try{
+      const r=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=he&format=json`);
+      const d=await r.json();
+      if(!d.results?.length){toast('עיר לא נמצאה — נסה שוב','error');setWLoading(false);return;}
+      const{latitude:lat,longitude:lng,name,country}=d.results[0];
+      loadWeather(lat,lng,`${name}, ${country}`);
+    }catch{toast('שגיאה בחיפוש המיקום','error');setWLoading(false);}
+  };
+
+  const fetchByGPS=()=>{
+    if(!navigator.geolocation){toast('הדפדפן לא תומך במיקום','error');return;}
+    setWLoading(true);
     navigator.geolocation.getCurrentPosition(
-      pos=>{
-        const{latitude:lat,longitude:lng}=pos.coords;
-        fetchWeather(lat,lng)
-          .then(w=>{ setGeoW(w); setGeoLabel(`${lat.toFixed(2)}°N, ${lng.toFixed(2)}°E`); })
-          .catch(()=>toast('שגיאה בטעינת מזג האוויר','error'))
-          .finally(()=>setGeoLoading(false));
-      },
-      ()=>{toast('לא ניתן לגשת למיקום — אשר הרשאה בדפדפן','error');setGeoLoading(false);}
+      pos=>loadWeather(pos.coords.latitude,pos.coords.longitude,'המיקום הנוכחי שלי'),
+      ()=>{toast('לא ניתן לגשת למיקום — אשר הרשאה בדפדפן','error');setWLoading(false);}
     );
   };
 
   const addNote=()=>{
-    const t=newNote.trim(); if (!t) return;
+    const t=newNote.trim(); if(!t) return;
     onUpdate({...trip,quickNotes:[...(trip.quickNotes||[]),{id:uid(),text:t,createdAt:new Date().toISOString()}]});
     setNewNote('');
   };
   const delNote=id=>onUpdate({...trip,quickNotes:(trip.quickNotes||[]).filter(n=>n.id!==id)});
 
-  const[icon,desc]=geoW?WMO[geoW.current_weather?.weathercode]||['🌡️','לא ידוע']:[];
+  const[wIcon,wDesc]=weatherData?WMO[weatherData.current_weather?.weathercode]||['🌡️','לא ידוע']:[];
 
   return <div className="scroll-y" style={{height:'100%',padding:20}}>
     <div style={{maxWidth:700,margin:'0 auto',display:'flex',flexDirection:'column',gap:20}}>
 
-      {/* מזג אוויר נוכחי */}
+      {/* מזג אוויר לפי איזור */}
       <div className="card">
-        <div className="card-header">
-          <span style={{fontWeight:700}}>🌤️ מזג אוויר נוכחי</span>
-          <button className="btn btn-primary btn-sm" onClick={fetchCurrentWeather} disabled={geoLoading}>
-            {geoLoading?'⏳ טוען...':'📍 קבל מיקום נוכחי'}
-          </button>
-        </div>
-        <div className="card-body">
-          {!geoW&&!geoLoading&&(
-            <div style={{color:'var(--text3)',fontSize:13,textAlign:'center',padding:'12px 0'}}>
-              לחץ "קבל מיקום נוכחי" לטעינת מזג האוויר במקומך עכשיו.
-            </div>
-          )}
-          {geoLoading&&<div style={{color:'var(--text3)',fontSize:13,textAlign:'center',padding:'12px 0'}}>⏳ מאתר מיקום...</div>}
-          {geoW&&!geoLoading&&(
+        <div className="card-header"><span style={{fontWeight:700}}>🌤️ מזג אוויר לפי איזור</span></div>
+        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10}}>
+          <div style={{display:'flex',gap:6}}>
+            <input className="input" style={{flex:1}} value={cityInput} onChange={e=>setCityInput(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&fetchByCity()}
+              placeholder="הקלד עיר או אזור — למשל: אילת, פריז, כנרת…"/>
+            <button className="btn btn-primary btn-sm" onClick={fetchByCity} disabled={wLoading||!cityInput.trim()}>חפש</button>
+            <button className="btn btn-secondary btn-sm" onClick={fetchByGPS} disabled={wLoading} title="מיקום נוכחי">📍</button>
+          </div>
+          {wLoading&&<div style={{color:'var(--text3)',fontSize:13,textAlign:'center',padding:'8px 0'}}>⏳ טוען מזג אוויר...</div>}
+          {weatherData&&!wLoading&&(
             <div>
-              <div style={{fontSize:11,color:'var(--text3)',marginBottom:10}}>📍 {geoLabel}</div>
-              <div className="weather-card" style={{marginBottom:12}}>
+              <div style={{fontSize:12,color:'var(--text3)',marginBottom:8}}>📍 {wLabel}</div>
+              <div className="weather-card" style={{marginBottom:10}}>
                 <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
-                  <span style={{fontSize:36}}>{icon}</span>
+                  <span style={{fontSize:40}}>{wIcon}</span>
                   <div>
-                    <div style={{fontSize:24,fontWeight:700}}>{Math.round(geoW.current_weather?.temperature)}°C</div>
-                    <div style={{fontSize:13,opacity:.85}}>{desc}</div>
+                    <div style={{fontSize:26,fontWeight:700}}>{Math.round(weatherData.current_weather?.temperature)}°C</div>
+                    <div style={{fontSize:13,opacity:.85}}>{wDesc}</div>
                   </div>
-                  <div style={{marginRight:'auto',textAlign:'left'}}>
-                    <a href={`https://www.windy.com/?${geoW.current_weather?.temperature},${geoLabel.split(',')[0]?.trim()}`}
-                       target="_blank" rel="noreferrer"
-                       style={{fontSize:12,color:'#90cdf4',textDecoration:'none'}}>
-                      🌐 Windy ↗
-                    </a>
+                  <div style={{marginRight:'auto'}}>
+                    <a href="https://ims.gov.il/he/forecast_regional" target="_blank" rel="noreferrer"
+                       style={{fontSize:11,color:'#90cdf4',display:'block',marginBottom:4}}>🇮🇱 שירות מטאורולוגי ↗</a>
+                    <a href="https://www.windy.com/" target="_blank" rel="noreferrer"
+                       style={{fontSize:11,color:'#90cdf4',display:'block'}}>🌐 Windy ↗</a>
                   </div>
                 </div>
                 <div style={{display:'flex',gap:8}}>
-                  {(geoW.daily?.time||[]).slice(0,4).map((date,i)=>{
-                    const[di]=WMO[geoW.daily.weathercode[i]]||['🌡️'];
-                    return <div key={date} style={{flex:1,background:'rgba(255,255,255,.1)',borderRadius:8,padding:'6px 8px',textAlign:'center'}}>
+                  {(weatherData.daily?.time||[]).slice(0,5).map((date,i)=>{
+                    const[di]=WMO[weatherData.daily.weathercode[i]]||['🌡️'];
+                    return <div key={date} style={{flex:1,background:'rgba(255,255,255,.1)',borderRadius:8,padding:'6px 6px',textAlign:'center'}}>
                       <div style={{fontSize:10,opacity:.7,marginBottom:2}}>{new Date(date).toLocaleDateString('he-IL',{weekday:'short'})}</div>
                       <div style={{fontSize:18}}>{di}</div>
-                      <div style={{fontSize:12,fontWeight:600}}>{Math.round(geoW.daily.temperature_2m_max[i])}°</div>
-                      <div style={{fontSize:10,opacity:.6}}>{Math.round(geoW.daily.temperature_2m_min[i])}°</div>
+                      <div style={{fontSize:11,fontWeight:600}}>{Math.round(weatherData.daily.temperature_2m_max[i])}°</div>
+                      <div style={{fontSize:10,opacity:.6}}>{Math.round(weatherData.daily.temperature_2m_min[i])}°</div>
                     </div>;
                   })}
                 </div>
               </div>
-              <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                <a href="https://ims.gov.il/he/forecast_regional" target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">🇮🇱 שירות מטאורולוגי ↗</a>
-                <a href="https://www.yr.no/" target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">🌍 yr.no ↗</a>
-              </div>
+            </div>
+          )}
+          {!weatherData&&!wLoading&&(
+            <div style={{color:'var(--text3)',fontSize:12,textAlign:'center',padding:'4px 0'}}>
+              הקלד עיר/אזור לתחזית, או לחץ 📍 למיקום הנוכחי
             </div>
           )}
         </div>
@@ -1164,7 +1176,7 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
         <div className="card-header"><span style={{fontWeight:700}}>✈️ ניהול טיולים</span></div>
         <div className="card-body" style={{display:'flex',flexDirection:'column',gap:12}}>
           <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
-            <button className="btn btn-primary" onClick={()=>onNewTrip()}>+ טיול חדש</button>
+            <button className="btn btn-primary" onClick={()=>{const n=prompt('שם הטיול החדש:','טיול חדש');if(n!==null)onNewTrip(n||'טיול חדש');}}>+ טיול חדש</button>
             {activeTrip&&<button className="btn btn-secondary" onClick={()=>{const n=prompt('שם:',activeTrip.name+' עותק');if(n)onNewTrip(n,activeTrip);}}>📋 שמור כעותק</button>}
           </div>
           {trips.map(t=>(
@@ -1184,6 +1196,8 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
       {activeTrip&&<div className="card">
         <div className="card-header"><span style={{fontWeight:700}}>🚐 פרופיל רכב ופרטי טיול</span></div>
         <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10}}>
+          <div><label className="label">שם הטיול</label>
+            <input className="input" value={activeTrip.name||''} onChange={e=>onLoadTrip(null,{...activeTrip,name:e.target.value})} placeholder="למשל: חופשת קיץ 2025"/></div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             {[['name','שם הרכב'],['plate','לוחית רישוי'],['height','גובה (מ׳)'],['width','רוחב (מ׳)'],['weight','משקל (ק"ג)']].map(([k,lbl])=>(
               <div key={k}><label className="label">{lbl}</label>
