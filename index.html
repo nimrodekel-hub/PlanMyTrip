@@ -1060,7 +1060,7 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
 function App() {
   const saved = useMemo(()=>loadState(),[]);
 
-  const [settings,  setSettings]  = useState(saved?.settings||{githubToken:'',githubUsername:'',githubRepo:'',googleMapsKey:'',theme:'dark'});
+  const [settings,  setSettings]  = useState(saved?.settings||{githubToken:'',githubUsername:'',githubRepo:'',googleMapsKey:'AIzaSyCeXDguc5mzWLKQ2XQVvMJIJ1zWfNoG0zM',theme:'dark'});
   const [trips,     setTrips]     = useState(saved?.trips||[defaultTrip('My First Trip')]);
   const [activeId,  setActiveId]  = useState(saved?.activeId||(saved?.trips?.[0]?.id??null));
   const [tab,       setTab]       = useState('map');
