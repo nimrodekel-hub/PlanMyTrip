@@ -269,11 +269,17 @@ function VehicleHeader({trip,theme,onThemeToggle}){
 /* ══════════════════════════════════
    מפת גוגל
 ══════════════════════════════════ */
-function MapView({mapsKey,trip,onAddToBank}){
+function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
   const mapRef=useRef(null), mapInst=useRef(null), markers=useRef([]);
   const [ready,setReady]=useState(false);
-  const [searchVal,setSearchVal]=useState('');
   const searchBoxRef=useRef(null);
+  // refs כדי שהפונקציות הגלובליות תמיד יקבלו את הנתונים העדכניים
+  const tripRef=useRef(trip);
+  const onAddToBankRef=useRef(onAddToBank);
+  const onAddToDayRef=useRef(onAddToDay);
+  useEffect(()=>{tripRef.current=trip;},[trip]);
+  useEffect(()=>{onAddToBankRef.current=onAddToBank;},[onAddToBank]);
+  useEffect(()=>{onAddToDayRef.current=onAddToDay;},[onAddToDay]);
 
   useEffect(()=>{
     if (!mapsKey) return;
@@ -322,37 +328,73 @@ function MapView({mapsKey,trip,onAddToBank}){
       });
     }
 
-    // לחיצה על POI
-    const iw=new window.google.maps.InfoWindow();
+    // פונקציות גלובליות — מבטיחות שהכפתורים ב-Info Window עובדים תמיד
+    const iwPlace={}; // מאחסן את המקום הנוכחי
+    window.__gmBank=()=>{
+      if (!iwPlace.data) return;
+      const p=iwPlace.data;
+      onAddToBankRef.current({name:p.name,address:p.address,lat:p.lat,lng:p.lng});
+      iw.close();
+      toast(`"${p.name}" נוסף לבנק האטרקציות`,'success');
+    };
+    window.__gmDay=()=>{
+      const sel=document.getElementById('gm-day-sel');
+      if (!sel||!sel.value||!iwPlace.data) return;
+      const p=iwPlace.data;
+      onAddToDayRef.current(sel.value,{name:p.name,address:p.address,lat:p.lat,lng:p.lng});
+      iw.close();
+      toast(`"${p.name}" נוסף ליום`,'success');
+    };
+
+    const iw=new window.google.maps.InfoWindow({maxWidth:280});
+
     map.addListener('click',e=>{
       if (!e.placeId) return;
       e.stop();
       const svc=new window.google.maps.places.PlacesService(map);
-      svc.getDetails({placeId:e.placeId,fields:['name','formatted_address','geometry','rating','photos','types']},(place,st)=>{
+      svc.getDetails({placeId:e.placeId,fields:['name','formatted_address','geometry','rating','photos','types','opening_hours']},(place,st)=>{
         if (st!==window.google.maps.places.PlacesServiceStatus.OK||!place) return;
-        const photo=place.photos?.[0]?.getUrl({maxWidth:200,maxHeight:100})||'';
+
+        // שמור נתוני מקום נוכחי
+        iwPlace.data={
+          name:place.name,
+          address:place.formatted_address||'',
+          lat:place.geometry.location.lat(),
+          lng:place.geometry.location.lng(),
+        };
+
+        const photo=place.photos?.[0]?.getUrl({maxWidth:260,maxHeight:120})||'';
+        const days=tripRef.current?.days||[];
+        const daysHtml=days.length>0
+          ? days.map((d,i)=>`<option value="${d.id}">יום ${i+1}${d.location?' — '+d.location:''}${d.date?' ('+d.date+')':''}</option>`).join('')
+          : '<option disabled>אין ימים בלוח הזמנים</option>';
+
         iw.setContent(`
-          <div style="font-family:Arial,sans-serif;max-width:240px;direction:rtl;text-align:right">
-            ${photo?`<img src="${photo}" style="width:100%;height:80px;object-fit:cover;border-radius:6px;margin-bottom:8px"/>` : ''}
-            <div style="font-weight:700;font-size:14px;margin-bottom:4px">${place.name}</div>
-            <div style="font-size:11px;color:#666;margin-bottom:6px">${place.formatted_address||''}</div>
-            ${place.rating?`<div style="font-size:12px;margin-bottom:8px">⭐ ${place.rating}</div>`:''}
-            <button id="gm-add" style="background:#4f8ef7;color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer;width:100%">
-              + הוסף לבנק האטרקציות
+          <div style="font-family:Heebo,Arial,sans-serif;direction:rtl;text-align:right;padding:4px">
+            ${photo?`<img src="${photo}" style="width:100%;height:110px;object-fit:cover;border-radius:8px;margin-bottom:10px;display:block"/>` : ''}
+            <div style="font-weight:700;font-size:15px;margin-bottom:3px">${place.name}</div>
+            <div style="font-size:11px;color:#888;margin-bottom:6px;line-height:1.4">${place.formatted_address||''}</div>
+            ${place.rating?`<div style="font-size:13px;margin-bottom:10px">⭐ ${place.rating}</div>`:''}
+            <button onclick="window.__gmBank()"
+              style="background:#f59e0b;color:#fff;border:none;border-radius:7px;padding:8px 0;font-size:13px;cursor:pointer;width:100%;margin-bottom:8px;font-family:Heebo,Arial,sans-serif;font-weight:600">
+              🌟 שמור לבנק האטרקציות
             </button>
+            <div style="display:flex;gap:6px;align-items:center">
+              <select id="gm-day-sel" style="flex:1;border:1px solid #ccc;border-radius:7px;padding:7px 8px;font-size:12px;font-family:Heebo,Arial,sans-serif;direction:rtl">
+                <option value="">➕ הוסף ליום...</option>
+                ${daysHtml}
+              </select>
+              <button onclick="window.__gmDay()"
+                style="background:#4f8ef7;color:#fff;border:none;border-radius:7px;padding:8px 12px;font-size:13px;cursor:pointer;font-family:Heebo,Arial,sans-serif;font-weight:600;white-space:nowrap">
+                הוסף
+              </button>
+            </div>
           </div>`);
-        iw.setPosition(e.latLng); iw.open(map);
-        setTimeout(()=>{
-          const btn=document.getElementById('gm-add');
-          if(btn) btn.onclick=()=>{
-            onAddToBank({name:place.name,address:place.formatted_address,lat:place.geometry.location.lat(),lng:place.geometry.location.lng(),types:place.types});
-            iw.close();
-            toast(`"${place.name}" נוסף לבנק האטרקציות`,'success');
-          };
-        },80);
+        iw.setPosition(e.latLng);
+        iw.open(map);
       });
     });
-  },[ready,onAddToBank]);
+  },[ready]);
 
   // סמנים על המפה
   useEffect(()=>{
@@ -579,6 +621,38 @@ function DayPanel({day,idx,onUpdate,onDelete}){
 /* ══════════════════════════════════
    לשונית לוח זמנים
 ══════════════════════════════════ */
+/* ══════════════════════════════════
+   פריט בנק אטרקציות
+══════════════════════════════════ */
+function BankItem({item,days,onAddToDay,onDelete}){
+  const[selDay,setSelDay]=useState('');
+  return <div className="interest-item" style={{marginBottom:8,flexDirection:'column',alignItems:'stretch',gap:8}}>
+    <div style={{display:'flex',alignItems:'center',gap:8}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
+        {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.address}</div>}
+      </div>
+      <button className="btn btn-danger btn-icon btn-sm" onClick={onDelete} title="הסר">✕</button>
+    </div>
+    <div style={{display:'flex',gap:5}}>
+      <select
+        value={selDay}
+        onChange={e=>setSelDay(e.target.value)}
+        style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border)',color:'var(--text)',borderRadius:7,padding:'5px 8px',fontSize:11,fontFamily:'Heebo,sans-serif',direction:'rtl'}}
+      >
+        <option value="">➕ בחר יום להוסיף...</option>
+        {days.map((d,i)=><option key={d.id} value={d.id}>יום {i+1}{d.location?' — '+d.location:''}</option>)}
+      </select>
+      <button
+        className="btn btn-primary btn-sm"
+        disabled={!selDay}
+        onClick={()=>{if(selDay){onAddToDay(selDay,item);setSelDay('');}}}
+        style={{opacity:selDay?1:0.4,flexShrink:0}}
+      >הוסף</button>
+    </div>
+  </div>;
+}
+
 function TimelineTab({trip,onUpdate}){
   const[showBank,setShowBank]=useState(true);
   const[showTakeout,setShowTakeout]=useState(false);
@@ -594,6 +668,20 @@ function TimelineTab({trip,onUpdate}){
   const delDay=id=>onUpdate({...trip,days:trip.days.filter(d=>d.id!==id)});
   const addToBank=item=>onUpdate({...trip,interestBank:[...trip.interestBank,{...item,id:uid()}]});
   const delBank=id=>onUpdate({...trip,interestBank:trip.interestBank.filter(i=>i.id!==id)});
+
+  // הוספת פריט מהבנק ישירות ליום ספציפי
+  const addItemToDay=(dayId,item)=>{
+    const day=trip.days.find(d=>d.id===dayId);
+    if (!day) return;
+    const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+    const last=sorted[sorted.length-1];
+    const start=last?addMins(last.startTime,last.durationMins):(day.currentTime||'09:00');
+    const newBlock=defaultBlock('activity',start);
+    newBlock.title=item.name;
+    newBlock.location=item.address||'';
+    updDay({...day,blocks:[...day.blocks,newBlock]});
+    toast(`"${item.name}" נוסף ליום`,'success');
+  };
 
   // ייבוא Google Takeout
   const importTakeout=file=>{
@@ -653,13 +741,7 @@ function TimelineTab({trip,onUpdate}){
             או ייבא מקומות מ-Google Takeout.
           </div>
         ):trip.interestBank.map(item=>(
-          <div key={item.id} className="interest-item" style={{marginBottom:8}}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
-              {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.address}</div>}
-            </div>
-            <button className="btn btn-danger btn-icon btn-sm" onClick={()=>delBank(item.id)}>✕</button>
-          </div>
+          <BankItem key={item.id} item={item} days={trip.days} onAddToDay={addItemToDay} onDelete={()=>delBank(item.id)}/>
         ))}
       </div>
       <div style={{padding:'10px 12px',borderTop:'1px solid var(--border)',display:'flex',flexDirection:'column',gap:6}}>
@@ -1006,6 +1088,20 @@ function App(){
     updTrip({...trip,interestBank:[...trip.interestBank,{...item,id:uid()}]});
   },[trip,updTrip]);
 
+  const addToDay=useCallback((dayId,item)=>{
+    if (!trip) return;
+    const day=trip.days.find(d=>d.id===dayId);
+    if (!day) return;
+    const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+    const last=sorted[sorted.length-1];
+    const start=last?addMins(last.startTime,last.durationMins):(day.currentTime||'09:00');
+    const newBlock=defaultBlock('activity',start);
+    newBlock.title=item.name;
+    newBlock.location=item.address||'';
+    const updatedDay={...day,blocks:[...day.blocks,newBlock]};
+    updTrip({...trip,days:trip.days.map(d=>d.id===dayId?updatedDay:d)});
+  },[trip,updTrip]);
+
   const push=async()=>{
     if (!trip) return; setGhBusy(true);
     try{const res=await ghSave(settings.githubToken,settings.githubUsername,settings.githubRepo,'trip_data.json',{trips,activeId,savedAt:new Date().toISOString()},ghSha.current);ghSha.current=res.content.sha;toast('נדחף לגיטהאב ✓','success');}
@@ -1040,7 +1136,7 @@ function App(){
       case 'map': return (
         <div className="split-view" style={{height:'100%'}}>
           <div className={`split-left${mobileSide==='timeline'?' mobile-hidden':''}`}>
-            <MapView mapsKey={settings.googleMapsKey} trip={trip} onAddToBank={addToBank}/>
+            <MapView mapsKey={settings.googleMapsKey} trip={trip} onAddToBank={addToBank} onAddToDay={addToDay}/>
           </div>
           <div className={`split-right${mobileSide==='map'?' mobile-hidden':''}`} style={{overflow:'hidden'}}>
             {trip?<TimelineTab trip={trip} onUpdate={updTrip}/>:noTrip}
