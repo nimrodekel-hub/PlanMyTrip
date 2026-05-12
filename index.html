@@ -150,8 +150,7 @@
       .sidebar-panel { display: none; }
     }
 
-    /* Map info window override - LTR */
-    .gm-style .gm-style-iw { direction: ltr; }
+    .gm-style .gm-style-iw-c { padding: 0 !important; }
   </style>
 </head>
 <body>
@@ -178,7 +177,7 @@ const WMO = {0:['☀️','בהיר'],1:['🌤️','בהיר ברובו'],2:['⛅
 const defaultTrip = (name='טיול חדש') => ({
   id:uid(),name,startDate:'',endDate:'',
   vehicle:{name:'הקרוון שלי',height:'',width:'',weight:'',plate:'',waterLevel:80,wasteLevel:10,gasLevel:75},
-  days:[],expenses:[],interestBank:[],packingList:[],shoppingList:[],documents:[],
+  days:[],expenses:[],interestBank:[],packingList:[],shoppingList:[],documents:[],generalNotes:'',quickNotes:[],
 });
 const defaultDay  = (date='') => ({id:uid(),date,location:'',coordinates:null,blocks:[],notes:'',summary:'',currentTime:'08:00'});
 const defaultBlock= (type='activity',start='09:00') => ({id:uid(),type,title:'',startTime:start,durationMins:60,location:'',notes:'',rating:0,isCompleted:false,cost:0});
@@ -309,27 +308,55 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
     });
     mapInst.current=map;
 
-    // SearchBox
+    // חיפוש מקום — Geocoder (ללא תלות ב-Places API)
     const input=document.getElementById('map-search-input');
     if (input){
-      const sb=new window.google.maps.places.SearchBox(input);
-      searchBoxRef.current=sb;
-      map.addListener('bounds_changed',()=>sb.setBounds(map.getBounds()));
-      sb.addListener('places_changed',()=>{
-        const places=sb.getPlaces();
-        if (!places?.length) return;
-        const bounds=new window.google.maps.LatLngBounds();
-        places.forEach(p=>{
-          if (!p.geometry) return;
-          if (p.geometry.viewport) bounds.union(p.geometry.viewport);
-          else bounds.extend(p.geometry.location);
+      const geocoder=new window.google.maps.Geocoder();
+      const doSearch=()=>{
+        const q=input.value.trim(); if (!q) return;
+        geocoder.geocode({address:q,language:'he'},(results,status)=>{
+          if (status==='OK'&&results[0]){
+            const loc=results[0].geometry;
+            if (loc.viewport) map.fitBounds(loc.viewport);
+            else { map.setCenter(loc.location); map.setZoom(15); }
+          } else { toast('מקום לא נמצא — נסה שוב','error'); }
         });
-        map.fitBounds(bounds);
-      });
+      };
+      input.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();doSearch();} });
+      window.__gmSearch=doSearch;
     }
 
-    // פונקציות גלובליות — מבטיחות שהכפתורים ב-Info Window עובדים תמיד
-    const iwPlace={}; // מאחסן את המקום הנוכחי
+    // פונקציות גלובליות לכפתורי InfoWindow
+    const iwPlace={};
+    const iw=new window.google.maps.InfoWindow({maxWidth:300});
+
+    const buildIwContent=(name,address,rating,photoUrl)=>{
+      const days=tripRef.current?.days||[];
+      const daysHtml=days.length>0
+        ? days.map((d,i)=>`<option value="${d.id}">יום ${i+1}${d.location?' — '+d.location:''}${d.date?' ('+d.date+')':''}</option>`).join('')
+        : '<option disabled>אין ימים בלוח הזמנים</option>';
+      return `<div style="font-family:Heebo,Arial,sans-serif;direction:rtl;text-align:right;padding:6px;min-width:220px">
+        ${photoUrl?`<img src="${photoUrl}" style="width:100%;height:100px;object-fit:cover;border-radius:8px;margin-bottom:10px;display:block"/>`:''}
+        <div style="font-weight:700;font-size:15px;margin-bottom:3px;color:#111">${name}</div>
+        <div style="font-size:11px;color:#777;margin-bottom:6px;line-height:1.5">${address}</div>
+        ${rating?`<div style="font-size:12px;margin-bottom:8px">⭐ ${rating}</div>`:''}
+        <button onclick="window.__gmBank()"
+          style="background:#f59e0b;color:#fff;border:none;border-radius:7px;padding:8px 0;font-size:13px;cursor:pointer;width:100%;margin-bottom:8px;font-family:Heebo,Arial,sans-serif;font-weight:600">
+          🌟 שמור לבנק האטרקציות
+        </button>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select id="gm-day-sel" style="flex:1;border:1px solid #ccc;border-radius:7px;padding:7px 8px;font-size:12px;font-family:Heebo,Arial,sans-serif;direction:rtl">
+            <option value="">➕ הוסף ליום...</option>
+            ${daysHtml}
+          </select>
+          <button onclick="window.__gmDay()"
+            style="background:#4f8ef7;color:#fff;border:none;border-radius:7px;padding:8px 12px;font-size:13px;cursor:pointer;font-family:Heebo,Arial,sans-serif;font-weight:600;white-space:nowrap">
+            הוסף
+          </button>
+        </div>
+      </div>`;
+    };
+
     window.__gmBank=()=>{
       if (!iwPlace.data) return;
       const p=iwPlace.data;
@@ -346,52 +373,31 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
       toast(`"${p.name}" נוסף ליום`,'success');
     };
 
-    const iw=new window.google.maps.InfoWindow({maxWidth:280});
-
     map.addListener('click',e=>{
       if (!e.placeId) return;
       e.stop();
-      const svc=new window.google.maps.places.PlacesService(map);
-      svc.getDetails({placeId:e.placeId,fields:['name','formatted_address','geometry','rating','photos','types','opening_hours']},(place,st)=>{
-        if (st!==window.google.maps.places.PlacesServiceStatus.OK||!place) return;
+      // הצג InfoWindow מיידי — כדי לאשר ללחצן שהלחיצה עבדה
+      iwPlace.data={name:'טוען...',address:'',lat:e.latLng.lat(),lng:e.latLng.lng()};
+      iw.setContent('<div style="padding:14px;font-family:Heebo,sans-serif;direction:rtl;font-size:13px;color:#333">⏳ טוען פרטי מקום...</div>');
+      iw.setPosition(e.latLng);
+      iw.open(map);
 
-        // שמור נתוני מקום נוכחי
+      const svc=new window.google.maps.places.PlacesService(map);
+      svc.getDetails({placeId:e.placeId,fields:['name','formatted_address','geometry','rating','photos']},(place,st)=>{
+        if (st!==window.google.maps.places.PlacesServiceStatus.OK||!place){
+          // Places API נכשל — הצג ממשק עם כפתורי שמירה בסיסיים
+          iwPlace.data={name:'מקום על המפה',address:'',lat:e.latLng.lat(),lng:e.latLng.lng()};
+          iw.setContent(buildIwContent('מקום על המפה','',null,''));
+          return;
+        }
         iwPlace.data={
           name:place.name,
           address:place.formatted_address||'',
           lat:place.geometry.location.lat(),
           lng:place.geometry.location.lng(),
         };
-
-        const photo=place.photos?.[0]?.getUrl({maxWidth:260,maxHeight:120})||'';
-        const days=tripRef.current?.days||[];
-        const daysHtml=days.length>0
-          ? days.map((d,i)=>`<option value="${d.id}">יום ${i+1}${d.location?' — '+d.location:''}${d.date?' ('+d.date+')':''}</option>`).join('')
-          : '<option disabled>אין ימים בלוח הזמנים</option>';
-
-        iw.setContent(`
-          <div style="font-family:Heebo,Arial,sans-serif;direction:rtl;text-align:right;padding:4px">
-            ${photo?`<img src="${photo}" style="width:100%;height:110px;object-fit:cover;border-radius:8px;margin-bottom:10px;display:block"/>` : ''}
-            <div style="font-weight:700;font-size:15px;margin-bottom:3px">${place.name}</div>
-            <div style="font-size:11px;color:#888;margin-bottom:6px;line-height:1.4">${place.formatted_address||''}</div>
-            ${place.rating?`<div style="font-size:13px;margin-bottom:10px">⭐ ${place.rating}</div>`:''}
-            <button onclick="window.__gmBank()"
-              style="background:#f59e0b;color:#fff;border:none;border-radius:7px;padding:8px 0;font-size:13px;cursor:pointer;width:100%;margin-bottom:8px;font-family:Heebo,Arial,sans-serif;font-weight:600">
-              🌟 שמור לבנק האטרקציות
-            </button>
-            <div style="display:flex;gap:6px;align-items:center">
-              <select id="gm-day-sel" style="flex:1;border:1px solid #ccc;border-radius:7px;padding:7px 8px;font-size:12px;font-family:Heebo,Arial,sans-serif;direction:rtl">
-                <option value="">➕ הוסף ליום...</option>
-                ${daysHtml}
-              </select>
-              <button onclick="window.__gmDay()"
-                style="background:#4f8ef7;color:#fff;border:none;border-radius:7px;padding:8px 12px;font-size:13px;cursor:pointer;font-family:Heebo,Arial,sans-serif;font-weight:600;white-space:nowrap">
-                הוסף
-              </button>
-            </div>
-          </div>`);
-        iw.setPosition(e.latLng);
-        iw.open(map);
+        const photo=place.photos?.[0]?.getUrl({maxWidth:260,maxHeight:100})||'';
+        iw.setContent(buildIwContent(place.name,place.formatted_address||'',place.rating||null,photo));
       });
     });
   },[ready]);
@@ -431,8 +437,9 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
   );
 
   return <div style={{height:'100%',width:'100%',position:'relative',display:'flex',flexDirection:'column'}}>
-    <div style={{padding:'8px',background:'var(--bg2)',borderBottom:'1px solid var(--border)'}}>
-      <input id="map-search-input" className="input" placeholder="🔍 חפש מקום, עיר, אטרקציה…" style={{fontSize:13}}/>
+    <div style={{padding:'8px',background:'var(--bg2)',borderBottom:'1px solid var(--border)',display:'flex',gap:6}}>
+      <input id="map-search-input" className="input" placeholder="🔍 חפש מקום, עיר, אטרקציה… (Enter)" style={{fontSize:13,flex:1}}/>
+      <button className="btn btn-secondary btn-sm" onClick={()=>window.__gmSearch?.()}>חפש</button>
     </div>
     <div ref={mapRef} style={{flex:1,width:'100%'}}/>
   </div>;
@@ -963,6 +970,137 @@ function DocsTab({trip,onUpdate,settings}){
 }
 
 /* ══════════════════════════════════
+   לשונית הערות ומזג אוויר
+══════════════════════════════════ */
+function NotesTab({trip,onUpdate}){
+  const[newNote,setNewNote]=useState('');
+  const[geoW,setGeoW]=useState(null),[geoLoading,setGeoLoading]=useState(false),[geoLabel,setGeoLabel]=useState('');
+
+  const fetchCurrentWeather=()=>{
+    if (!navigator.geolocation){toast('הדפדפן לא תומך במיקום','error');return;}
+    setGeoLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      pos=>{
+        const{latitude:lat,longitude:lng}=pos.coords;
+        fetchWeather(lat,lng)
+          .then(w=>{ setGeoW(w); setGeoLabel(`${lat.toFixed(2)}°N, ${lng.toFixed(2)}°E`); })
+          .catch(()=>toast('שגיאה בטעינת מזג האוויר','error'))
+          .finally(()=>setGeoLoading(false));
+      },
+      ()=>{toast('לא ניתן לגשת למיקום — אשר הרשאה בדפדפן','error');setGeoLoading(false);}
+    );
+  };
+
+  const addNote=()=>{
+    const t=newNote.trim(); if (!t) return;
+    onUpdate({...trip,quickNotes:[...(trip.quickNotes||[]),{id:uid(),text:t,createdAt:new Date().toISOString()}]});
+    setNewNote('');
+  };
+  const delNote=id=>onUpdate({...trip,quickNotes:(trip.quickNotes||[]).filter(n=>n.id!==id)});
+
+  const[icon,desc]=geoW?WMO[geoW.current_weather?.weathercode]||['🌡️','לא ידוע']:[];
+
+  return <div className="scroll-y" style={{height:'100%',padding:20}}>
+    <div style={{maxWidth:700,margin:'0 auto',display:'flex',flexDirection:'column',gap:20}}>
+
+      {/* מזג אוויר נוכחי */}
+      <div className="card">
+        <div className="card-header">
+          <span style={{fontWeight:700}}>🌤️ מזג אוויר נוכחי</span>
+          <button className="btn btn-primary btn-sm" onClick={fetchCurrentWeather} disabled={geoLoading}>
+            {geoLoading?'⏳ טוען...':'📍 קבל מיקום נוכחי'}
+          </button>
+        </div>
+        <div className="card-body">
+          {!geoW&&!geoLoading&&(
+            <div style={{color:'var(--text3)',fontSize:13,textAlign:'center',padding:'12px 0'}}>
+              לחץ "קבל מיקום נוכחי" לטעינת מזג האוויר במקומך עכשיו.
+            </div>
+          )}
+          {geoLoading&&<div style={{color:'var(--text3)',fontSize:13,textAlign:'center',padding:'12px 0'}}>⏳ מאתר מיקום...</div>}
+          {geoW&&!geoLoading&&(
+            <div>
+              <div style={{fontSize:11,color:'var(--text3)',marginBottom:10}}>📍 {geoLabel}</div>
+              <div className="weather-card" style={{marginBottom:12}}>
+                <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
+                  <span style={{fontSize:36}}>{icon}</span>
+                  <div>
+                    <div style={{fontSize:24,fontWeight:700}}>{Math.round(geoW.current_weather?.temperature)}°C</div>
+                    <div style={{fontSize:13,opacity:.85}}>{desc}</div>
+                  </div>
+                  <div style={{marginRight:'auto',textAlign:'left'}}>
+                    <a href={`https://www.windy.com/?${geoW.current_weather?.temperature},${geoLabel.split(',')[0]?.trim()}`}
+                       target="_blank" rel="noreferrer"
+                       style={{fontSize:12,color:'#90cdf4',textDecoration:'none'}}>
+                      🌐 Windy ↗
+                    </a>
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:8}}>
+                  {(geoW.daily?.time||[]).slice(0,4).map((date,i)=>{
+                    const[di]=WMO[geoW.daily.weathercode[i]]||['🌡️'];
+                    return <div key={date} style={{flex:1,background:'rgba(255,255,255,.1)',borderRadius:8,padding:'6px 8px',textAlign:'center'}}>
+                      <div style={{fontSize:10,opacity:.7,marginBottom:2}}>{new Date(date).toLocaleDateString('he-IL',{weekday:'short'})}</div>
+                      <div style={{fontSize:18}}>{di}</div>
+                      <div style={{fontSize:12,fontWeight:600}}>{Math.round(geoW.daily.temperature_2m_max[i])}°</div>
+                      <div style={{fontSize:10,opacity:.6}}>{Math.round(geoW.daily.temperature_2m_min[i])}°</div>
+                    </div>;
+                  })}
+                </div>
+              </div>
+              <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                <a href="https://ims.gov.il/he/forecast_regional" target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">🇮🇱 שירות מטאורולוגי ↗</a>
+                <a href="https://www.yr.no/" target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">🌍 yr.no ↗</a>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* הערות כלליות לטיול */}
+      <div className="card">
+        <div className="card-header"><span style={{fontWeight:700}}>📝 הערות כלליות לטיול</span></div>
+        <div className="card-body">
+          <textarea className="input" rows={6}
+            value={trip.generalNotes||''}
+            onChange={e=>onUpdate({...trip,generalNotes:e.target.value})}
+            placeholder="כתוב כאן כל מה שחשוב לזכור — קשר לאתר קמפינג, טלפונים, קודי אזור, הערות מיוחדות..."/>
+        </div>
+      </div>
+
+      {/* פתקיות מהירות */}
+      <div className="card">
+        <div className="card-header">
+          <span style={{fontWeight:700}}>📌 פתקיות מהירות</span>
+          <span className="chip chip-blue" style={{fontSize:11}}>{(trip.quickNotes||[]).length}</span>
+        </div>
+        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10}}>
+          <div style={{display:'flex',gap:8}}>
+            <input className="input" value={newNote} onChange={e=>setNewNote(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&addNote()}
+              placeholder="הוסף פתקית (Enter לשמירה)..." style={{flex:1}}/>
+            <button className="btn btn-primary btn-sm" onClick={addNote} disabled={!newNote.trim()}>+ הוסף</button>
+          </div>
+          {(trip.quickNotes||[]).length===0&&(
+            <div style={{color:'var(--text3)',fontSize:13,textAlign:'center',padding:'8px 0'}}>אין פתקיות עדיין</div>
+          )}
+          {(trip.quickNotes||[]).map(n=>(
+            <div key={n.id} className="interest-item" style={{justifyContent:'space-between'}}>
+              <div style={{flex:1,fontSize:13,lineHeight:1.5,wordBreak:'break-word'}}>{n.text}</div>
+              <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0,marginRight:8}}>
+                <span style={{fontSize:10,color:'var(--text3)'}}>{new Date(n.createdAt).toLocaleDateString('he-IL')}</span>
+                <button className="btn btn-danger btn-icon btn-sm" onClick={()=>delNote(n.id)}>✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+    </div>
+  </div>;
+}
+
+/* ══════════════════════════════════
    לשונית הגדרות
 ══════════════════════════════════ */
 function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,onDeleteTrip,onPush,onPull,ghBusy}){
@@ -1120,6 +1258,7 @@ function App(){
     {id:'documents',label:'📁 מסמכים'},
     {id:'packing',label:'🎒 ציוד'},
     {id:'shopping',label:'🛒 קניות'},
+    {id:'notes',label:'📝 הערות'},
     {id:'settings',label:'⚙️ הגדרות'},
   ];
 
@@ -1148,6 +1287,7 @@ function App(){
       case 'documents': return <DocsTab trip={trip} onUpdate={updTrip} settings={settings}/>;
       case 'packing': return <Checklist title="רשימת ציוד" emoji="🎒" items={trip.packingList} onUpdate={items=>updTrip({...trip,packingList:items})}/>;
       case 'shopping': return <Checklist title="רשימת קניות" emoji="🛒" items={trip.shoppingList} onUpdate={items=>updTrip({...trip,shoppingList:items})}/>;
+      case 'notes': return <NotesTab trip={trip} onUpdate={updTrip}/>;
       case 'settings': return <SettingsTab settings={settings} onSettings={setSettings} trips={trips} activeTrip={trip} onNewTrip={newTrip} onLoadTrip={loadTrip} onDeleteTrip={delTrip} onPush={push} onPull={pull} ghBusy={ghBusy}/>;
       default: return null;
     }
