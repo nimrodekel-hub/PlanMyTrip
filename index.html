@@ -271,6 +271,11 @@ function VehicleHeader({trip,theme,onThemeToggle}){
 function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
   const mapRef=useRef(null), mapInst=useRef(null), markers=useRef([]);
   const [ready,setReady]=useState(false);
+  const [wxOpen,setWxOpen]=useState(false);
+  const [wxCity,setWxCity]=useState('');
+  const [wxData,setWxData]=useState(null);
+  const [wxLabel,setWxLabel]=useState('');
+  const [wxLoading,setWxLoading]=useState(false);
   const searchBoxRef=useRef(null);
   // refs כדי שהפונקציות הגלובליות תמיד יקבלו את הנתונים העדכניים
   const tripRef=useRef(trip);
@@ -396,7 +401,8 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
         </div>`).join('');
       return `<div style="font-family:Heebo,Arial,sans-serif;direction:rtl;text-align:right;padding:6px;min-width:240px;max-width:310px">
         ${p.photoUrl?`<img src="${p.photoUrl}" style="width:100%;height:110px;object-fit:cover;border-radius:8px;margin-bottom:10px;display:block"/>`:''}
-        <div style="font-weight:700;font-size:15px;margin-bottom:2px;color:#111">${p.name}</div>
+        <input id="gm-name-edit" value="${(p.name||'').replace(/"/g,'&quot;')}"
+          style="width:100%;border:1px solid #ddd;border-radius:6px;padding:5px 8px;font-size:14px;font-weight:700;font-family:Heebo,Arial,sans-serif;direction:rtl;color:#111;margin-bottom:3px;box-sizing:border-box"/>
         <div style="font-size:11px;color:#888;margin-bottom:6px;line-height:1.4">${p.address}</div>
         ${p.rating?`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
           <span style="color:#f59e0b;font-size:14px">${starsHtml}</span>
@@ -432,20 +438,29 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
       </div>`;
     };
 
+    // חשיפת globals לשימוש ב-markers effect
+    window.__gmIw=iw;
+    window.__gmIwPlace=iwPlace;
+    window.__gmBuild=buildIwContent;
+
     window.__gmBank=()=>{
       if (!iwPlace.data) return;
       const p=iwPlace.data;
-      onAddToBankRef.current({name:p.name,address:p.address,lat:p.lat,lng:p.lng});
+      const nameEl=document.getElementById('gm-name-edit');
+      const name=nameEl?.value?.trim()||p.name;
+      onAddToBankRef.current({name,address:p.address,lat:p.lat,lng:p.lng});
       iw.close();
-      toast(`"${p.name}" נוסף לבנק האטרקציות`,'success');
+      toast(`"${name}" נוסף לבנק האטרקציות`,'success');
     };
     window.__gmDay=()=>{
       const sel=document.getElementById('gm-day-sel');
       if (!sel||!sel.value||!iwPlace.data) return;
       const p=iwPlace.data;
-      onAddToDayRef.current(sel.value,{name:p.name,address:p.address,lat:p.lat,lng:p.lng});
+      const nameEl=document.getElementById('gm-name-edit');
+      const name=nameEl?.value?.trim()||p.name;
+      onAddToDayRef.current(sel.value,{name,address:p.address,lat:p.lat,lng:p.lng});
       iw.close();
-      toast(`"${p.name}" נוסף ליום`,'success');
+      toast(`"${name}" נוסף ליום`,'success');
     };
 
     map.addListener('click',e=>{
@@ -544,28 +559,70 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
     });
   },[ready]);
 
+  const DAY_COLORS=['#ef4444','#3b82f6','#22c55e','#f97316','#a855f7','#ec4899','#14b8a6','#eab308'];
+
   // סמנים על המפה
   useEffect(()=>{
     if (!mapInst.current) return;
     markers.current.forEach(m=>m.setMap(null)); markers.current=[];
     if (!trip) return;
+    const iw=window.__gmIw, build=window.__gmBuild, iwPlace=window.__gmIwPlace;
+
     trip.days.forEach((day,i)=>{
-      if (!day.coordinates) return;
-      const m=new window.google.maps.Marker({
-        position:{lat:day.coordinates.lat,lng:day.coordinates.lng},
-        map:mapInst.current,
-        label:{text:String(i+1),color:'#fff',fontSize:'12px',fontWeight:'bold'},
-        title:day.location||`יום ${i+1}`,
-        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:14,fillColor:'#4f8ef7',fillOpacity:1,strokeColor:'#fff',strokeWeight:2},
+      const color=DAY_COLORS[i%DAY_COLORS.length];
+      // סמן מיקום יום — עיגול גדול עם מספר
+      if (day.coordinates){
+        const m=new window.google.maps.Marker({
+          position:{lat:day.coordinates.lat,lng:day.coordinates.lng},
+          map:mapInst.current,
+          label:{text:String(i+1),color:'#fff',fontSize:'12px',fontWeight:'bold'},
+          title:day.location||`יום ${i+1}`,
+          icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:14,fillColor:color,fillOpacity:1,strokeColor:'#fff',strokeWeight:2},
+          zIndex:10,
+        });
+        markers.current.push(m);
+      }
+      // סמני פעילויות — עיגול קטן בצבע היום (רק אם יש lat/lng)
+      (day.blocks||[]).forEach(block=>{
+        if (!block.lat||!block.lng) return;
+        const bm=new window.google.maps.Marker({
+          position:{lat:block.lat,lng:block.lng},
+          map:mapInst.current,
+          title:block.title||'',
+          icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:6,fillColor:color,fillOpacity:0.85,strokeColor:'#fff',strokeWeight:1.5},
+          zIndex:5,
+        });
+        if (iw&&build&&iwPlace){
+          bm.addListener('click',()=>{
+            iwPlace.data={name:block.title||'פעילות',address:block.location||'',lat:block.lat,lng:block.lng,placeId:null};
+            iw.setContent(build({name:block.title||'פעילות',address:block.location||'',lat:block.lat,lng:block.lng}));
+            iw.setPosition({lat:block.lat,lng:block.lng});
+            iw.open(mapInst.current);
+          });
+        }
+        markers.current.push(bm);
       });
-      markers.current.push(m);
     });
+
+    // סמני בנק אטרקציות — כוכב קטן זהוב
     trip.interestBank.forEach(item=>{
       if (!item.lat) return;
       const m=new window.google.maps.Marker({
-        position:{lat:item.lat,lng:item.lng},map:mapInst.current,title:item.name,
-        icon:{path:window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,scale:8,fillColor:'#f59e0b',fillOpacity:.9,strokeColor:'#fff',strokeWeight:1.5},
+        position:{lat:item.lat,lng:item.lng},
+        map:mapInst.current,
+        title:item.name,
+        label:{text:'★',color:'#fff',fontSize:'10px'},
+        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:8,fillColor:'#f59e0b',fillOpacity:0.9,strokeColor:'#fff',strokeWeight:1.5},
+        zIndex:3,
       });
+      if (iw&&build&&iwPlace){
+        m.addListener('click',()=>{
+          iwPlace.data={name:item.name,address:item.address||'',lat:item.lat,lng:item.lng,placeId:null};
+          iw.setContent(build({name:item.name,address:item.address||'',lat:item.lat,lng:item.lng}));
+          iw.setPosition({lat:item.lat,lng:item.lng});
+          iw.open(mapInst.current);
+        });
+      }
       markers.current.push(m);
     });
   },[trip,ready]);
@@ -578,11 +635,74 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
     </div>
   );
 
+  const fetchWxByCity=async(cityQ)=>{
+    const q=(cityQ||wxCity).trim(); if (!q) return;
+    setWxLoading(true);
+    try{
+      const r=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=he&format=json`);
+      const d=await r.json();
+      const loc=d.results?.[0]; if (!loc){toast('עיר לא נמצאה','error');return;}
+      const w=await fetchWeather(loc.latitude,loc.longitude);
+      setWxData(w); setWxLabel(loc.name||q);
+    }catch{toast('שגיאה בטעינת מזג אוויר','error');}
+    finally{setWxLoading(false);}
+  };
+
+  const WMO_MAP={0:['☀️','בהיר'],1:['🌤️','בהיר בעיקר'],2:['⛅','מעונן חלקית'],3:['☁️','מעונן'],45:['🌫️','ערפל'],48:['🌫️','ערפל'],51:['🌦️','טפטוף קל'],53:['🌦️','טפטוף'],55:['🌧️','טפטוף כבד'],61:['🌧️','גשם קל'],63:['🌧️','גשם'],65:['🌧️','גשם כבד'],71:['🌨️','שלג קל'],73:['🌨️','שלג'],75:['❄️','שלג כבד'],80:['🌦️','מקלחות'],95:['⛈️','סערה'],96:['⛈️','סערה עם ברד'],99:['⛈️','סערה חזקה']};
+
   return <div style={{height:'100%',width:'100%',position:'relative',display:'flex',flexDirection:'column'}}>
-    <div style={{padding:'8px',background:'var(--bg2)',borderBottom:'1px solid var(--border)',display:'flex',gap:6}}>
+    <div style={{padding:'8px',background:'var(--bg2)',borderBottom:'1px solid var(--border)',display:'flex',gap:6,alignItems:'center'}}>
       <input id="map-search-input" className="input" placeholder="🔍 חפש מקום, עיר, אטרקציה… (Enter)" style={{fontSize:13,flex:1}}/>
       <button className="btn btn-secondary btn-sm" onClick={()=>window.__gmSearch?.()}>חפש</button>
+      <button className="btn btn-secondary btn-sm" title="מזג אוויר" onClick={()=>setWxOpen(o=>!o)}
+        style={{background:wxOpen?'var(--accent)':undefined,color:wxOpen?'#fff':undefined}}>🌤️</button>
     </div>
+    {wxOpen&&<div style={{background:'var(--bg2)',borderBottom:'1px solid var(--border)',padding:'10px 12px',display:'flex',flexDirection:'column',gap:8}}>
+      <div style={{display:'flex',gap:6,alignItems:'center'}}>
+        <input className="input" style={{flex:1,fontSize:12}} value={wxCity} onChange={e=>setWxCity(e.target.value)}
+          onKeyDown={e=>e.key==='Enter'&&fetchWxByCity()}
+          placeholder="הקלד עיר — אילת, תל אביב, פריז…"/>
+        <button className="btn btn-primary btn-sm" onClick={()=>fetchWxByCity()} disabled={wxLoading||!wxCity.trim()}>
+          {wxLoading?'⏳':'חפש'}
+        </button>
+        {trip?.days?.find(d=>d.coordinates)&&<button className="btn btn-secondary btn-sm" title="מיקום יום ראשון"
+          onClick={async()=>{
+            const day=trip.days.find(d=>d.coordinates);
+            if (!day) return;
+            setWxLoading(true);
+            try{const w=await fetchWeather(day.coordinates.lat,day.coordinates.lng);setWxData(w);setWxLabel(day.location||`יום 1`);}
+            catch{}finally{setWxLoading(false);}
+          }}>📍 יום ראשון</button>}
+      </div>
+      {wxData&&(()=>{
+        const code=wxData.current_weather?.weathercode;
+        const [icon,desc]=WMO_MAP[code]||['🌡️','לא ידוע'];
+        const temp=Math.round(wxData.current_weather?.temperature);
+        const days=(wxData.daily?.time||[]).slice(0,5);
+        return <div>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}>
+            <span style={{fontSize:28}}>{icon}</span>
+            <div><div style={{fontSize:18,fontWeight:700,color:'var(--text)'}}>{temp}°C</div>
+              <div style={{fontSize:11,color:'var(--text2)'}}>{desc}{wxLabel?` — ${wxLabel}`:''}</div></div>
+          </div>
+          <div style={{display:'flex',gap:6,overflowX:'auto'}}>
+            {days.map((date,i)=>{
+              const c=wxData.daily?.weathercode?.[i];
+              const [di]=WMO_MAP[c]||['🌡️'];
+              const mn=Math.round(wxData.daily?.temperature_2m_min?.[i]);
+              const mx=Math.round(wxData.daily?.temperature_2m_max?.[i]);
+              const d=new Date(date);
+              const dayName=['א','ב','ג','ד','ה','ו','ש'][d.getDay()];
+              return <div key={date} style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 10px',textAlign:'center',minWidth:52,fontSize:11,color:'var(--text2)'}}>
+                <div style={{fontWeight:600,color:'var(--text)'}}>יום {dayName}</div>
+                <div style={{fontSize:18,margin:'2px 0'}}>{di}</div>
+                <div>{mx}°/{mn}°</div>
+              </div>;
+            })}
+          </div>
+        </div>;
+      })()}
+    </div>}
     <div ref={mapRef} style={{flex:1,width:'100%'}}/>
   </div>;
 }
