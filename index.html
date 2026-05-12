@@ -309,32 +309,66 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
     mapInst.current=map;
     window.__gmFocus=(lat,lng,zoom=17)=>{ map.panTo({lat,lng}); map.setZoom(zoom); };
 
-    // חיפוש — PlacesService.textSearch (מוצא עסקים/אטרקציות לפי שם), fallback ל-Geocoder לכתובות
+    // חיפוש — שלוש שכבות: Places API → Nominatim (OpenStreetMap) → Geocoder
     const input=document.getElementById('map-search-input');
     const searchSvc=new window.google.maps.places.PlacesService(map);
+    const geocoder=new window.google.maps.Geocoder();
+
+    const nominatimSearch=async(q)=>{
+      const r=await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=4&accept-language=he`,{headers:{'Accept-Language':'he'}});
+      return r.json();
+    };
+    const nominatimReverse=async(lat,lng)=>{
+      const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=he`,{headers:{'Accept-Language':'he'}});
+      return r.json();
+    };
+    const panToNominatim=(results)=>{
+      if (!results?.length) return false;
+      const first=results[0];
+      const bb=first.boundingbox;
+      if (bb){
+        map.fitBounds(new window.google.maps.LatLngBounds(
+          {lat:parseFloat(bb[0]),lng:parseFloat(bb[2])},
+          {lat:parseFloat(bb[1]),lng:parseFloat(bb[3])}
+        ));
+      } else {
+        map.setCenter({lat:parseFloat(first.lat),lng:parseFloat(first.lon)});
+        map.setZoom(16);
+      }
+      return true;
+    };
+
     if (input){
-      const geocoder=new window.google.maps.Geocoder();
-      const doSearch=()=>{
+      const doSearch=async()=>{
         const q=input.value.trim(); if (!q) return;
-        searchSvc.textSearch({query:q,language:'he'},(results,status)=>{
-          if (status===window.google.maps.places.PlacesServiceStatus.OK&&results?.length){
-            const bounds=new window.google.maps.LatLngBounds();
-            results.slice(0,6).forEach(p=>{
-              if (p.geometry?.viewport) bounds.union(p.geometry.viewport);
-              else if (p.geometry?.location) bounds.extend(p.geometry.location);
-            });
-            map.fitBounds(bounds);
-            if (results.length===1) map.setZoom(17);
-          } else {
-            // fallback לכתובת/עיר
-            geocoder.geocode({address:q,language:'he'},(gr,gs)=>{
-              if (gs==='OK'&&gr[0]){
-                const loc=gr[0].geometry;
-                if (loc.viewport) map.fitBounds(loc.viewport);
-                else { map.setCenter(loc.location); map.setZoom(15); }
-              } else { toast('מקום לא נמצא — נסה שוב','error'); }
-            });
-          }
+        // 1. Places textSearch
+        const placesOk=await new Promise(res=>{
+          searchSvc.textSearch({query:q,language:'he'},(results,status)=>{
+            if (status===window.google.maps.places.PlacesServiceStatus.OK&&results?.length){
+              const bounds=new window.google.maps.LatLngBounds();
+              results.slice(0,6).forEach(p=>{
+                if (p.geometry?.viewport) bounds.union(p.geometry.viewport);
+                else if (p.geometry?.location) bounds.extend(p.geometry.location);
+              });
+              map.fitBounds(bounds);
+              if (results.length===1) map.setZoom(17);
+              res(true);
+            } else { res(false); }
+          });
+        });
+        if (placesOk) return;
+        // 2. Nominatim — מוצא חופים, פארקים, מסעדות, ערים
+        try{
+          const nRes=await nominatimSearch(q);
+          if (panToNominatim(nRes)) return;
+        }catch{}
+        // 3. Google Geocoder — כתובות
+        geocoder.geocode({address:q,language:'he'},(gr,gs)=>{
+          if (gs==='OK'&&gr[0]){
+            const loc=gr[0].geometry;
+            if (loc.viewport) map.fitBounds(loc.viewport);
+            else { map.setCenter(loc.location); map.setZoom(15); }
+          } else { toast('מקום לא נמצא — נסה שם ספציפי יותר','error'); }
         });
       };
       input.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();doSearch();} });
@@ -435,23 +469,31 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay}){
         }));
       };
 
-      // ניסיון ראשון — כל השדות (כולל ביקורות, שעות, טלפון)
+      const lat0=e.latLng.lat(), lng0=e.latLng.lng();
+      const showNominatim=async()=>{
+        try{
+          const d=await nominatimReverse(lat0,lng0);
+          const name=d.name||d.address?.tourism||d.address?.amenity||d.address?.leisure||d.address?.natural||d.address?.road||d.display_name?.split(',')[0]||'מקום על המפה';
+          const addr=d.display_name||'';
+          iwPlace.data={name,address:addr,lat:lat0,lng:lng0};
+          iw.setContent(buildIwContent({name,address:addr,lat:lat0,lng:lng0}));
+        }catch{
+          iwPlace.data={name:'מקום על המפה',address:'',lat:lat0,lng:lng0};
+          iw.setContent(buildIwContent({name:'מקום על המפה',address:'',lat:lat0,lng:lng0}));
+        }
+      };
+
+      // ניסיון 1 — Places API פרטים מלאים
       svc.getDetails({
         placeId:e.placeId,
         fields:['name','formatted_address','geometry','rating','photos','opening_hours','reviews','website','formatted_phone_number','user_ratings_total','price_level']
       },(place,st)=>{
         if (st===window.google.maps.places.PlacesServiceStatus.OK&&place){ applyPlace(place); return; }
-        // fallback — שדות בסיסיים בלבד (חינמיים, עובדים תמיד)
+        // ניסיון 2 — Places API שדות בסיסיים
         svc.getDetails({placeId:e.placeId,fields:['name','formatted_address','geometry','rating','photos']},(p2,st2)=>{
           if (st2===window.google.maps.places.PlacesServiceStatus.OK&&p2){ applyPlace(p2); return; }
-          // fallback אחרון — geocode הפוך לכתובת
-          const geocoder=new window.google.maps.Geocoder();
-          geocoder.geocode({location:e.latLng,language:'he'},(gr,gs)=>{
-            const addr=gs==='OK'&&gr[0]?gr[0].formatted_address:'';
-            const name=gs==='OK'&&gr[0]?gr[0].address_components?.[0]?.long_name||addr:'מקום על המפה';
-            iwPlace.data={name,address:addr,lat:e.latLng.lat(),lng:e.latLng.lng()};
-            iw.setContent(buildIwContent({name,address:addr,lat:e.latLng.lat(),lng:e.latLng.lng()}));
-          });
+          // ניסיון 3 — Nominatim reverse geocoding (ללא API key)
+          showNominatim();
         });
       });
     });
