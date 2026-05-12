@@ -291,10 +291,15 @@ function MapView({mapsKey,trip,onAddToBank}){
   useEffect(()=>{
     if (!ready||!mapRef.current||mapInst.current) return;
     const map=new window.google.maps.Map(mapRef.current,{
-      center:{lat:31.7683,lng:35.2137}, zoom:8,
+      center:{lat:32.0853,lng:34.7818}, zoom:14,
       mapTypeControl:true, streetViewControl:true, fullscreenControl:true,
       clickableIcons:true,
-      // אין custom styles — כדי שאטרקציות גוגל יופיעו
+      styles:[
+        {featureType:'poi',elementType:'labels',stylers:[{visibility:'on'}]},
+        {featureType:'poi.business',elementType:'labels',stylers:[{visibility:'on'}]},
+        {featureType:'poi.attraction',elementType:'labels',stylers:[{visibility:'on'}]},
+        {featureType:'transit',elementType:'labels',stylers:[{visibility:'on'}]},
+      ],
     });
     mapInst.current=map;
 
