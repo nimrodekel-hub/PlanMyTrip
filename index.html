@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="pragma" content="no-cache" />
-  <title>CaravanControl — מנהל טיולים v5</title>
+  <title>CaravanControl — מנהל טיולים v6</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -494,36 +494,27 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
           (p,st)=>res(st===OK_ST&&p?{...p,geometry:geo}:null));
       });
 
-      /* ── מקור 3: Google Geocoder עם placeId ── */
+      /* ── מקור 3: Google Geocoder עם placeId (חינמי, מזהה מדויק) ── */
       const geocoderLookup=()=>new Promise(res=>{
         geocoder.geocode({placeId,language:'he'},(results,status)=>{
           if(status!=='OK'||!results?.[0]){res(null);return;}
           const comps=results[0].address_components||[];
           const addr=results[0].formatted_address||'';
           const loc=results[0].geometry?.location;
-          // establishment type → שם ישיר
-          const poiComp=comps.find(c=>c.types.some(t=>['establishment','natural_feature',
-            'tourist_attraction','park','airport','premise','colloquial_area'].includes(t)));
-          // אין מספר רחוב בתוצאה → הכתובת מתחילה בשם המקום לא בכתובת רחוב
+          // point_of_interest הוא הסוג הנפוץ ביותר ל-POI בגוגל
+          const poiTypes=['establishment','point_of_interest','natural_feature',
+            'tourist_attraction','park','airport','premise','colloquial_area',
+            'shopping_mall','restaurant','food','store','lodging','transit_station',
+            'zoo','amusement_park','aquarium','stadium','museum','school','university'];
+          const poiComp=comps.find(c=>c.types.some(t=>poiTypes.includes(t)));
+          // אם הרכיב הראשון הוא רחוב/כתובת → formatted_address מתחיל בכתובת, לא בשם
+          const firstIsStreet=comps[0]?.types.some(t=>['route','street_address','intersection'].includes(t));
           const hasStreetNum=comps.some(c=>c.types.includes('street_number'));
-          const fromAddr=!hasStreetNum?addr.split(',')[0]?.trim():'';
+          const fromAddr=(!firstIsStreet&&!hasStreetNum)?addr.split(',')[0]?.trim():'';
           const name=poiComp?.long_name||fromAddr||'';
           res({name,address:addr,lat:loc?.lat()||lat0,lng:loc?.lng()||lng0});
         });
       });
-
-      /* ── מקור 5: Overpass API (OpenStreetMap) — GET request ── */
-      const overpassLookup=async()=>{
-        try{
-          const q=`[out:json][timeout:5];(node["name"](around:60,${lat0},${lng0});way["name"](around:60,${lat0},${lng0}););out tags 10;`;
-          const r=await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(q)}`);
-          if(!r.ok) return null;
-          const d=await r.json();
-          const els=(d.elements||[]).filter(e=>e.tags?.name&&!e.tags?.highway);
-          const best=els.find(e=>e.tags?.['name:he'])||els[0];
-          return best?.tags?.['name:he']||best?.tags?.name||null;
-        }catch{return null;}
-      };
 
       /* ── מקור 4: Places API v1 (New REST) — שם + פרטים מלאים ── */
       const placesV1=async()=>{
@@ -568,14 +559,14 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
       const isStreetAddr=s=>/^\d|.*\s\d+$|^דרך\s|^רחוב\s|^שדרות\s|^הרחוב\s|^St\s|^Rd\s|^Ave\s/i.test(s?.trim()||'');
 
       try{
-        // מריץ את כל המקורות במקביל כולל Overpass
-        const [basic, geo, v1, ovp]=await Promise.all([legacyBasic(), geocoderLookup(), placesV1(), overpassLookup()]);
+        // מריץ מקורות מבוססי placeId במקביל (Overpass הוסר — מחזיר מקומות ליד ולא את המקום המדויק)
+        const [basic, geo, v1]=await Promise.all([legacyBasic(), geocoderLookup(), placesV1()]);
 
         // שדות בתשלום של Legacy (רק אם basic הצליח)
         const rich=basic?await legacyRich(basic.geometry):null;
 
-        // ── בוחר שם: v1 > legacy > geocoder(poi) > overpass > nominatim > fromAddr ──
-        let name=v1?.name||basic?.name||geo?.name||ovp||'';
+        // ── בוחר שם: v1 > legacy > geocoder(poi/fromAddr) ──
+        let name=v1?.name||basic?.name||geo?.name||'';
         let address=v1?.address||basic?.formatted_address||geo?.address||'';
         let lat=basic?.geometry?.location?.lat()||geo?.lat||lat0;
         let lng=basic?.geometry?.location?.lng()||geo?.lng||lng0;
@@ -586,7 +577,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
           if(fromAddr&&!isStreetAddr(fromAddr)){
             name=fromAddr;
           } else {
-            // ניסיון אחרון: Nominatim
+            // ניסיון אחרון: Nominatim (גיאוגרפי, רק אם הכל נכשל)
             const nom=await nominatimLookup();
             const nomName=nom?.name||'';
             name=nomName&&!isStreetAddr(nomName)?nomName:fromAddr&&!isStreetAddr(fromAddr)?fromAddr:'מקום';
