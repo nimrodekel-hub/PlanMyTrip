@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="pragma" content="no-cache" />
-  <title>CaravanControl — מנהל טיולים v10</title>
+  <title>CaravanControl — מנהל טיולים v11</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -178,7 +178,7 @@ const WMO = {0:['☀️','בהיר'],1:['🌤️','בהיר ברובו'],2:['⛅
 /* ── ברירות מחדל ── */
 const defaultTrip = (name='טיול חדש') => ({
   id:uid(),name,startDate:'',endDate:'',
-  vehicle:{name:'הקרוון שלי',height:'',width:'',weight:'',plate:'',waterLevel:80,wasteLevel:10,gasLevel:75},
+  vehicle:{name:'הקרוון שלי',height:'',width:'',weight:'',plate:'',waterFillDate:'',wasteEmptyDate:''},
   days:[],expenses:[],interestBank:[],packingList:[],shoppingList:[],documents:[],generalNotes:'',quickNotes:[],
 });
 const defaultDay  = (date='') => ({id:uid(),date,location:'',coordinates:null,blocks:[],notes:'',summary:'',currentTime:'08:00'});
@@ -204,6 +204,8 @@ const fileToB64 = f => new Promise((res,rej)=>{const r=new FileReader();r.onload
 
 /* ── מזג אוויר ── */
 const fetchWeather = (lat,lon) => fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,weathercode&current_weather=true&timezone=auto&forecast_days=3`).then(r=>r.json());
+const todayISO = () => new Date().toISOString().slice(0,10);
+const daysSince = d => { if(!d) return null; const diff=Date.now()-new Date(d).getTime(); return Math.floor(diff/(864e5)); };
 
 /* ══════════════════════════════════
    TOAST
@@ -239,23 +241,31 @@ function Stars({value,onChange,size=18}){
 /* ══════════════════════════════════
    כותרת רכב
 ══════════════════════════════════ */
-function VehicleHeader({trip,theme,onThemeToggle}){
+function VehicleHeader({trip,theme,onThemeToggle,onUpdate}){
   const v=trip?.vehicle||{};
+  const wDays=daysSince(v.waterFillDate), kDays=daysSince(v.wasteEmptyDate);
+  const markToday=(key)=>{ if(!trip) return; onUpdate({...trip,vehicle:{...trip.vehicle,[key]:todayISO()}}); };
+  const TrackerBtn=({label,dateKey,color,warnDays})=>{
+    const d=v[dateKey]; const days=daysSince(d);
+    const warn=days!==null&&days>=warnDays;
+    return <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',minWidth:90}} onClick={()=>markToday(dateKey)} title={`לחץ לעדכון ל-היום`}>
+      <span style={{fontSize:10,color:'var(--text3)',fontWeight:600}}>{label}</span>
+      <span style={{fontSize:12,fontWeight:700,color:warn?'#ef4444':color}}>{d?dateStr(d):'לא עודכן'}</span>
+      {days!==null&&<span style={{fontSize:10,color:warn?'#ef4444':'var(--text3)'}}>לפני {days} ימים{warn?' ⚠️':''}</span>}
+      {!d&&<span style={{fontSize:9,color:'var(--text3)'}}>לחץ לעדכון</span>}
+    </div>;
+  };
   return <div className="vehicle-banner">
     <div style={{display:'flex',alignItems:'center',gap:8}}>
       <span style={{fontSize:24}}>🚐</span>
       <div>
         <div style={{fontSize:13,fontWeight:700}}>{v.name||'הקרוון שלי'}</div>
-        <div style={{fontSize:11,color:'var(--text3)'}}>{[v.height&&`גובה:${v.height}מ`,v.width&&`רוחב:${v.width}מ`,v.weight&&`${v.weight}ק"ג`,v.plate].filter(Boolean).join(' · ')||'לא הוגדרו מידות'}</div>
+        <div style={{fontSize:11,color:'var(--text3)'}}>{[v.height&&`גובה:${v.height}מ`,v.width&&`רוחב:${v.width}מ`,v.plate].filter(Boolean).join(' · ')||'לא הוגדרו מידות'}</div>
       </div>
     </div>
-    <div style={{display:'flex',gap:14,flex:1,justifyContent:'center',flexWrap:'wrap'}}>
-      {[['💧 מים','waterLevel','#4f8ef7'],['⛽ דלק','gasLevel','#22c55e'],['🪣 פסולת','wasteLevel','#f59e0b']].map(([lbl,key,col])=>(
-        <div key={key} className="gauge">
-          <span className="gauge-label">{lbl} {v[key]??0}%</span>
-          <div className="gauge-bar"><div className="gauge-fill" style={{width:`${v[key]??0}%`,background:col}}/></div>
-        </div>
-      ))}
+    <div style={{display:'flex',gap:18,flex:1,justifyContent:'center',flexWrap:'wrap',alignItems:'center'}}>
+      <TrackerBtn label="💧 מולאו מים" dateKey="waterFillDate" color="#4f8ef7" warnDays={3}/>
+      <TrackerBtn label="🪣 רוקן קקי" dateKey="wasteEmptyDate" color="#f59e0b" warnDays={4}/>
     </div>
     <div style={{display:'flex',alignItems:'center',gap:10,marginRight:'auto'}}>
       {trip&&<div style={{fontSize:12,color:'var(--text2)',textAlign:'right'}}>
@@ -664,14 +674,16 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
         });
         markers.current.push(m);
       }
-      // סמני פעילויות — עיגול קטן בצבע היום (רק אם יש lat/lng)
-      (day.blocks||[]).forEach(block=>{
+      // סמני פעילויות — עיגול ממוספר בצבע היום
+      const sortedBlocks=[...(day.blocks||[])].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+      sortedBlocks.forEach((block,blockIdx)=>{
         if (!block.lat||!block.lng) return;
         const bm=new window.google.maps.Marker({
           position:{lat:block.lat,lng:block.lng},
           map:mapInst.current,
           title:block.title||'',
-          icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:6,fillColor:color,fillOpacity:0.85,strokeColor:'#fff',strokeWeight:1.5},
+          label:{text:String(blockIdx+1),color:'#fff',fontSize:'10px',fontWeight:'bold'},
+          icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:10,fillColor:color,fillOpacity:0.9,strokeColor:'#fff',strokeWeight:1.5},
           zIndex:5,
         });
         if (iw&&build&&iwPlace){
@@ -842,29 +854,63 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
 ══════════════════════════════════ */
 function Weather({coordinates,location}){
   const[w,setW]=useState(null),[loading,setL]=useState(false);
+  const[customCoords,setCustomCoords]=useState(null),[customLabel,setCustomLabel]=useState('');
+  const[searchInput,setSearchInput]=useState('');
+  const effCoords=customCoords||coordinates;
+  const effLabel=customLabel||(customCoords?'':location);
+
+  // ברירת מחדל: מיקום נוכחי אם אין קואורדינטות ליום
   useEffect(()=>{
-    if (!coordinates?.lat) return; setL(true);
-    fetchWeather(coordinates.lat,coordinates.lng).then(setW).catch(()=>{}).finally(()=>setL(false));
-  },[coordinates?.lat,coordinates?.lng]);
-  if (!coordinates?.lat||loading||!w) return null;
-  const[icon,desc]=WMO[w.current_weather?.weathercode]||['🌡️','לא ידוע'];
+    if(coordinates?.lat||customCoords) return;
+    navigator.geolocation?.getCurrentPosition(
+      pos=>{setCustomCoords({lat:pos.coords.latitude,lng:pos.coords.longitude});setCustomLabel('המיקום הנוכחי שלי');},
+      ()=>{}
+    );
+  },[]);
+
+  useEffect(()=>{
+    if(!effCoords?.lat) return; setL(true);
+    fetchWeather(effCoords.lat,effCoords.lng).then(setW).catch(()=>setW(null)).finally(()=>setL(false));
+  },[effCoords?.lat,effCoords?.lng]);
+
+  const searchPlace=async()=>{
+    const q=searchInput.trim(); if(!q) return;
+    try{
+      const r=await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&accept-language=he`,{headers:{'Accept-Language':'he'}});
+      const d=await r.json();
+      if(d[0]){setCustomCoords({lat:parseFloat(d[0].lat),lng:parseFloat(d[0].lon)});setCustomLabel(d[0].display_name.split(',')[0]);setSearchInput('');}
+    }catch{}
+  };
+
+  const[icon,desc]=WMO[w?.current_weather?.weathercode]||['🌡️','לא ידוע'];
   return <div className="weather-card" style={{marginBottom:12}}>
-    <div style={{fontSize:11,fontWeight:600,opacity:.7,marginBottom:8,textTransform:'uppercase',letterSpacing:'.05em'}}>{location||'מזג אוויר'} — 3 ימים קרובים</div>
-    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}>
-      <span style={{fontSize:32}}>{icon}</span>
-      <div><div style={{fontSize:22,fontWeight:700}}>{Math.round(w.current_weather?.temperature)}°C</div><div style={{fontSize:12,opacity:.8}}>{desc}</div></div>
+    <div style={{display:'flex',gap:6,marginBottom:8}}>
+      <input value={searchInput} onChange={e=>setSearchInput(e.target.value)}
+        onKeyDown={e=>e.key==='Enter'&&searchPlace()}
+        placeholder="מיקום אחר (Enter לחיפוש)..."
+        style={{flex:1,background:'rgba(255,255,255,.15)',border:'1px solid rgba(255,255,255,.25)',borderRadius:7,padding:'5px 9px',fontSize:11,color:'inherit',fontFamily:'Heebo,sans-serif',direction:'rtl'}}/>
+      <button onClick={searchPlace} style={{background:'rgba(255,255,255,.2)',border:'none',borderRadius:7,padding:'5px 8px',cursor:'pointer',fontSize:13}}>🔍</button>
     </div>
-    <div style={{display:'flex',gap:8}}>
-      {(w.daily?.time||[]).slice(0,3).map((date,i)=>{
-        const[di]=WMO[w.daily.weathercode[i]]||['🌡️'];
-        return <div key={date} style={{flex:1,background:'rgba(255,255,255,.1)',borderRadius:8,padding:'6px 8px',textAlign:'center'}}>
-          <div style={{fontSize:10,opacity:.7,marginBottom:2}}>{new Date(date).toLocaleDateString('he-IL',{weekday:'short'})}</div>
-          <div style={{fontSize:16}}>{di}</div>
-          <div style={{fontSize:11,fontWeight:600}}>{Math.round(w.daily.temperature_2m_max[i])}°</div>
-          <div style={{fontSize:10,opacity:.6}}>{Math.round(w.daily.temperature_2m_min[i])}°</div>
-        </div>;
-      })}
-    </div>
+    {loading&&<div style={{fontSize:12,opacity:.7,textAlign:'center',padding:'8px 0'}}>⏳ טוען...</div>}
+    {!loading&&!w&&<div style={{fontSize:11,opacity:.6,textAlign:'center',padding:'4px 0'}}>מזג האוויר לא זמין</div>}
+    {w&&<>
+      <div style={{fontSize:11,fontWeight:600,opacity:.7,marginBottom:8,textTransform:'uppercase',letterSpacing:'.05em'}}>{effLabel||'מזג אוויר'} — 3 ימים קרובים</div>
+      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}>
+        <span style={{fontSize:32}}>{icon}</span>
+        <div><div style={{fontSize:22,fontWeight:700}}>{Math.round(w.current_weather?.temperature)}°C</div><div style={{fontSize:12,opacity:.8}}>{desc}</div></div>
+      </div>
+      <div style={{display:'flex',gap:8}}>
+        {(w.daily?.time||[]).slice(0,3).map((date,i)=>{
+          const[di]=WMO[w.daily.weathercode[i]]||['🌡️'];
+          return <div key={date} style={{flex:1,background:'rgba(255,255,255,.1)',borderRadius:8,padding:'6px 8px',textAlign:'center'}}>
+            <div style={{fontSize:10,opacity:.7,marginBottom:2}}>{new Date(date).toLocaleDateString('he-IL',{weekday:'short'})}</div>
+            <div style={{fontSize:16}}>{di}</div>
+            <div style={{fontSize:11,fontWeight:600}}>{Math.round(w.daily.temperature_2m_max[i])}°</div>
+            <div style={{fontSize:10,opacity:.6}}>{Math.round(w.daily.temperature_2m_min[i])}°</div>
+          </div>;
+        })}
+      </div>
+    </>}
   </div>;
 }
 
@@ -918,12 +964,14 @@ function BlockModal({block,onSave,onClose,onDelete}){
 /* ══════════════════════════════════
    בלוק בציר הזמן
 ══════════════════════════════════ */
-function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem}){
+function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem,dragging,dragOver,onDragStart,onDragOver,onDrop,onDragEnd}){
   const end=addMins(block.startTime,block.durationMins);
   const col=BLOCK_COLOR[block.type]||'var(--text3)';
   const btnStyle={background:'none',border:'none',cursor:'pointer',padding:'2px 5px',borderRadius:4,fontSize:15,lineHeight:1,flexShrink:0};
-  return <div className="timeline-block">
-    <div className="timeline-dot" style={{background:col}}>{BLOCK_EMOJI[block.type]}</div>
+  return <div className="timeline-block" draggable
+    onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd}
+    style={{opacity:dragging?0.35:1,transition:'opacity .15s',borderTop:dragOver?'2px solid var(--accent)':'2px solid transparent'}}>
+    <div className="timeline-dot" style={{background:col,cursor:'grab'}}>☰</div>
     <div className={`card block-${block.type}`} style={{flex:1,marginRight:4,opacity:block.isCompleted?0.6:1}}>
       <div style={{padding:'8px 12px'}}>
         {/* שורת כותרת: שעה + כפתורי פעולה */}
@@ -974,8 +1022,20 @@ function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem}){
 ══════════════════════════════════ */
 function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank}){
   const[open,setOpen]=useState(true),[editing,setEd]=useState(null);
+  const[dragIdx,setDragIdx]=useState(null),[dragOver,setDragOver]=useState(null);
   const updBlock=upd=>onUpdate({...day,blocks:day.blocks.map(b=>b.id===upd.id?upd:b)});
   const delBlock=id=>onUpdate({...day,blocks:day.blocks.filter(b=>b.id!==id)});
+  const handleDrop=(toIdx)=>{
+    if(dragIdx===null||dragIdx===toIdx){setDragIdx(null);setDragOver(null);return;}
+    const arr=[...sorted];
+    const[moved]=arr.splice(dragIdx,1);
+    arr.splice(toIdx,0,moved);
+    // עדכון שעות: הראשון שומר על שעתו, השאר קוסקדה
+    let t=arr[0].startTime;
+    const reordered=arr.map(b=>{const nb={...b,startTime:t};t=addMins(t,b.durationMins||60);return nb;});
+    onUpdate({...day,blocks:reordered});
+    setDragIdx(null);setDragOver(null);
+  };
   const addBlock=type=>{
     const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
     const last=sorted[sorted.length-1];
@@ -1028,7 +1088,12 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
 
       <div className="timeline">
         {sorted.length===0&&<div style={{padding:'12px 0',color:'var(--text3)',fontSize:13,textAlign:'center'}}>אין בלוקים עדיין — הוסף בלוק למטה</div>}
-        {sorted.map(bl=><BlockItem key={bl.id} block={bl} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onFocusItem={onFocusItem}/>)}
+        {sorted.map((bl,si)=><BlockItem key={bl.id} block={bl} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onFocusItem={onFocusItem}
+          dragging={dragIdx===si} dragOver={dragOver===si}
+          onDragStart={()=>setDragIdx(si)}
+          onDragOver={e=>{e.preventDefault();setDragOver(si);}}
+          onDrop={()=>handleDrop(si)}
+          onDragEnd={()=>{setDragIdx(null);setDragOver(null);}}/>)}
       </div>
 
       <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:12}}>
@@ -1635,12 +1700,13 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
                 <input className="input" value={activeTrip.vehicle[k]||''} onChange={e=>onLoadTrip(null,{...activeTrip,vehicle:{...activeTrip.vehicle,[k]:e.target.value}})} placeholder={lbl}/></div>
             ))}
           </div>
-          <div className="section-title" style={{marginTop:8}}>רמות מצב</div>
-          {[['waterLevel','💧 מים','var(--accent)'],['gasLevel','⛽ דלק','var(--green)'],['wasteLevel','🪣 פסולת','var(--amber)']].map(([k,lbl,col])=>(
+          <div className="section-title" style={{marginTop:8}}>מים וקקי</div>
+          {[['waterFillDate','💧 תאריך מילוי מים'],['wasteEmptyDate','🪣 תאריך ריקון קקי']].map(([k,lbl])=>(
             <div key={k} style={{display:'flex',alignItems:'center',gap:10}}>
-              <span style={{fontSize:12,color:'var(--text2)',width:90}}>{lbl}</span>
-              <input type="range" min="0" max="100" value={activeTrip.vehicle[k]??0} onChange={e=>onLoadTrip(null,{...activeTrip,vehicle:{...activeTrip.vehicle,[k]:parseInt(e.target.value)}})} style={{flex:1,accentColor:col}}/>
-              <span style={{fontSize:12,fontWeight:700,color:col,width:36,textAlign:'left'}}>{activeTrip.vehicle[k]??0}%</span>
+              <span style={{fontSize:12,color:'var(--text2)',flex:1}}>{lbl}</span>
+              <input type="date" className="input" value={activeTrip.vehicle[k]||''} style={{width:150}}
+                onChange={e=>onLoadTrip(null,{...activeTrip,vehicle:{...activeTrip.vehicle,[k]:e.target.value}})}/>
+              <button className="btn btn-secondary btn-sm" onClick={()=>onLoadTrip(null,{...activeTrip,vehicle:{...activeTrip.vehicle,[k]:todayISO()}})}>היום</button>
             </div>
           ))}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginTop:8}}>
@@ -1806,7 +1872,7 @@ function App(){
 
   return <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
     <div className="app-header">
-      <VehicleHeader trip={trip} theme={settings.theme} onThemeToggle={()=>setSettings(s=>({...s,theme:s.theme==='dark'?'light':'dark'}))}/>
+      <VehicleHeader trip={trip} theme={settings.theme} onThemeToggle={()=>setSettings(s=>({...s,theme:s.theme==='dark'?'light':'dark'}))} onUpdate={updTrip}/>
       <div className="tab-bar">
         {TABS.map(t=>(
           <button key={t.id} className={`tab-btn${tab===t.id?' active':''}`} onClick={()=>setTab(t.id)}>{t.label}</button>
