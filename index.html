@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="pragma" content="no-cache" />
-  <title>CaravanControl — מנהל טיולים v17</title>
+  <title>CaravanControl — מנהל טיולים v18</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -280,7 +280,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v17';
+const APP_VERSION = 'v18';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -466,14 +466,14 @@ function TrackerBtn({label,date,color,warnDays,log,onSave}){
 /* ══════════════════════════════════
    כותרת רכב
 ══════════════════════════════════ */
-function VehicleHeader({trip,theme,syncStatus,hasGh,onThemeToggle,onUpdate}){
+function VehicleHeader({trip,theme,syncStatus,hasGh,onThemeToggle,onUpdate,onGoSettings}){
   const v=trip?.vehicle||{};
   const syncIcon=hasGh
     ?syncStatus==='syncing'?{i:'🔄',c:'var(--amber)',t:'מסנכרן עם גיטהאב...'}
     :syncStatus==='synced' ?{i:'☁️',c:'var(--green)',t:'מסונכרן עם גיטהאב'}
-    :syncStatus==='error'  ?{i:'⚠️',c:'var(--red)',  t:'שגיאת סנכרון — בדוק הגדרות גיטהאב'}
-    :null
-    :null;
+    :syncStatus==='error'  ?{i:'⚠️',c:'var(--red)',  t:'שגיאת סנכרון — בדוק הגדרות'}
+    :{i:'☁️',c:'var(--text3)',t:'לא מסונכרן'}
+    :{i:'🔴',c:'var(--red)',t:'סנכרון לא מוגדר — לחץ להגדרה'};
 
   const saveTracker=(dateKey,logKey,newDate)=>{
     if(!trip) return;
@@ -504,8 +504,9 @@ function VehicleHeader({trip,theme,syncStatus,hasGh,onThemeToggle,onUpdate}){
         <div style={{fontWeight:600}}>{trip.name}</div>
         <div style={{color:'var(--text3)'}}>{trip.startDate||'—'} ← {trip.endDate||'—'}</div>
       </div>}
-      {syncIcon&&<span title={syncIcon.t} style={{fontSize:14,cursor:'default',userSelect:'none',
-        animation:syncStatus==='syncing'?'spin 1s linear infinite':''}}>{syncIcon.i}</span>}
+      <span title={syncIcon.t} onClick={!hasGh?onGoSettings:undefined}
+        style={{fontSize:14,cursor:hasGh?'default':'pointer',userSelect:'none',color:syncIcon.c,
+        animation:syncStatus==='syncing'?'spin 1s linear infinite':''}}>{syncIcon.i}</span>
       <button className="btn btn-secondary btn-icon btn-sm" onClick={onThemeToggle}>{theme==='dark'?'☀️':'🌙'}</button>
       <span style={{fontSize:10,color:'var(--text3)',fontWeight:600,letterSpacing:'0.03em',userSelect:'none',opacity:.7}}>{APP_VERSION}</span>
     </div>
@@ -1985,27 +1986,45 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
         </div>
       </div>}
 
-      <div className="card">
+      <div className="card" style={{border:!s.githubToken?'2px solid var(--amber)':'1px solid var(--border)'}}>
         <div className="card-header">
-          <span style={{fontWeight:700}}>☁️ סנכרון GitHub</span>
-          {s.githubToken&&s.githubUsername&&s.githubRepo&&<span className="chip chip-green" style={{fontSize:10}}>מוגדר</span>}
+          <span style={{fontWeight:700}}>☁️ סנכרון בין מכשירים</span>
+          {s.githubToken?<span className="chip chip-green" style={{fontSize:10}}>✓ מוגדר</span>
+            :<span className="chip chip-amber" style={{fontSize:10}}>⚠️ נדרש הגדרה</span>}
         </div>
-        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10}}>
-          <div style={{fontSize:12,color:'var(--text3)',lineHeight:1.8}}>
-            נתוני הטיול נשמרים כ-<code>trip_data.json</code> ומסמכים עוברים ל-<code>/docs/</code> בריפו הפרטי שלך.
-            צור Personal Access Token עם הרשאת <code>repo</code> ב-<a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" style={{color:'var(--accent)'}}>GitHub Settings</a>.
+        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:12}}>
+          {!s.githubToken&&<div style={{background:'rgba(245,158,11,0.1)',border:'1px solid rgba(245,158,11,0.3)',borderRadius:8,padding:'10px 12px',fontSize:12,lineHeight:1.9}}>
+            <strong style={{color:'var(--amber)'}}>📋 הגדרה חד-פעמית — 3 צעדים:</strong><br/>
+            1. לחץ: <a href="https://github.com/settings/tokens/new?scopes=public_repo&description=PlanMyTrip" target="_blank" rel="noreferrer" style={{color:'var(--accent)',fontWeight:600}}>צור GitHub Token</a> ← לחץ "Generate token" ← העתק<br/>
+            2. הדבק את ה-Token בשדה למטה ← לחץ "שמור ✓"<br/>
+            3. זהו! הנתונים יסונכרנו אוטומטית לכל מכשיר 📱💻
+          </div>}
+          <div>
+            <label className="label">GitHub Personal Access Token {s.githubToken&&'✓'}</label>
+            <input className="input" type="password" value={s.githubToken||''} onChange={e=>upd('githubToken',e.target.value)}
+              placeholder="ghp_xxxxxxxxxxxx" autoComplete="off"/>
           </div>
-          {[['githubToken','GitHub Personal Access Token','password'],['githubUsername','שם משתמש GitHub','text'],['githubRepo','שם הריפו (פרטי)','text'],['googleMapsKey','מפתח API של גוגל מפות','password']].map(([k,lbl,type])=>(
-            <div key={k}><label className="label">{lbl}</label>
-              <input className="input" type={type} value={s[k]||''} onChange={e=>upd(k,e.target.value)} placeholder={lbl} autoComplete="off"/></div>
-          ))}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <div><label className="label">שם משתמש GitHub</label>
+              <input className="input" type="text" value={s.githubUsername||''} onChange={e=>upd('githubUsername',e.target.value)} placeholder="nimrodekel-hub"/></div>
+            <div><label className="label">שם הריפו</label>
+              <input className="input" type="text" value={s.githubRepo||''} onChange={e=>upd('githubRepo',e.target.value)} placeholder="PlanMyTrip"/></div>
+          </div>
+          <div><label className="label">מפתח API של גוגל מפות</label>
+            <input className="input" type="password" value={s.googleMapsKey||''} onChange={e=>upd('googleMapsKey',e.target.value)} autoComplete="off"/></div>
           <div style={{display:'flex',gap:10,flexWrap:'wrap',marginTop:4}}>
-            <button className="btn btn-primary" onClick={()=>{onSettings(s);toast('ההגדרות נשמרו','success');}}>💾 שמור הגדרות</button>
+            <button className="btn btn-primary" onClick={()=>{onSettings(s);toast('ההגדרות נשמרו','success');if(s.githubToken&&activeTrip)setTimeout(onPush,300);}}>
+              💾 שמור{s.githubToken?' ✓ ויסנכרן':''}
+            </button>
             {activeTrip&&s.githubToken&&<>
-              <button className="btn btn-success" onClick={onPush} disabled={ghBusy}>{ghBusy?'⏳…':'⬆ דחוף לגיטהאב'}</button>
-              <button className="btn btn-secondary" onClick={onPull} disabled={ghBusy}>{ghBusy?'⏳…':'⬇ משוך מגיטהאב'}</button>
+              <button className="btn btn-success" onClick={onPush} disabled={ghBusy}>{ghBusy?'⏳ שומר…':'⬆ סנכרן עכשיו'}</button>
+              <button className="btn btn-secondary" onClick={onPull} disabled={ghBusy}>{ghBusy?'⏳…':'⬇ טען מגיטהאב'}</button>
             </>}
           </div>
+          {s.githubToken&&<div style={{fontSize:11,color:'var(--green)',lineHeight:1.7}}>
+            ✓ הנתונים נשמרים אוטומטית ב-GitHub ומסונכרנים לכל מכשיר.<br/>
+            📱 במכשיר אחר: פשוט פתח את האתר — הטיול יטען אוטומטית.
+          </div>}
         </div>
       </div>
 
@@ -2362,7 +2381,7 @@ function ReportTab({trip}){
 ══════════════════════════════════ */
 function App(){
   const saved=useMemo(()=>loadState(),[]);
-  const[settings,setSettings]=useState(saved?.settings||{githubToken:'',githubUsername:'',githubRepo:'',googleMapsKey:'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw',theme:'dark'});
+  const[settings,setSettings]=useState(saved?.settings||{githubToken:'',githubUsername:'nimrodekel-hub',githubRepo:'PlanMyTrip',googleMapsKey:'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw',theme:'dark'});
   const[trips,setTrips]=useState(saved?.trips||[defaultTrip('הטיול הראשון שלי')]);
   const[activeId,setActiveId]=useState(saved?.activeId||(saved?.trips?.[0]?.id??null));
   const[tab,setTab]=useState('map');
@@ -2385,7 +2404,7 @@ function App(){
 
     // גיבוי: טעינה מה-URL הציבורי של GitHub Pages (ללא צורך בפרטי גישה)
     const loadFromPublicUrl=()=>{
-      const base=window.location.href.replace(/\/index\.html.*$/,'').replace(/\?.*$/,'');
+      const base=window.location.href.replace(/\/index\.html.*$/,'').replace(/\?.*$/,'').replace(/\/$/,'');
       const url=`${base}/trip_data.json?_=${Date.now()}`;
       fetch(url)
         .then(r=>r.ok?r.json():Promise.reject('not found'))
@@ -2422,6 +2441,10 @@ function App(){
     } else {
       // אין פרטי גישה (סלולר / מכשיר חדש) → קריאה מ-URL ציבורי
       loadFromPublicUrl();
+      // תזכורת הגדרה חד-פעמית — רק אם לא מכשיר סלולר (כדי לא לבלבל)
+      if(!navigator.maxTouchPoints&&!window.matchMedia('(max-width:768px)').matches){
+        setTimeout(()=>toast('🔴 הסנכרון לא מוגדר — עבור להגדרות ⚙️ להפעלה','info'),4000);
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
@@ -2436,6 +2459,10 @@ function App(){
     clearTimeout(autoSyncTimer.current);
     autoSyncTimer.current=setTimeout(async()=>{
       try{
+        // אם אין SHA (נטען מ-URL ציבורי), שלוף SHA נוכחי קודם
+        if(!ghSha.current){
+          try{ const r=await ghLoad(tok,user,repo,'trip_data.json'); ghSha.current=r.sha; }catch{}
+        }
         const res=await ghSave(tok,user,repo,'trip_data.json',{trips,activeId,savedAt:new Date().toISOString()},ghSha.current);
         ghSha.current=res.content.sha;
         setSyncStatus('synced');
@@ -2568,7 +2595,7 @@ function App(){
 
   return <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
     <div className="app-header">
-      <VehicleHeader trip={trip} theme={settings.theme} syncStatus={syncStatus} hasGh={!!(settings.githubToken&&settings.githubUsername&&settings.githubRepo)} onThemeToggle={()=>setSettings(s=>({...s,theme:s.theme==='dark'?'light':'dark'}))} onUpdate={updTrip}/>
+      <VehicleHeader trip={trip} theme={settings.theme} syncStatus={syncStatus} hasGh={!!settings.githubToken} onThemeToggle={()=>setSettings(s=>({...s,theme:s.theme==='dark'?'light':'dark'}))} onUpdate={updTrip} onGoSettings={()=>setTab('settings')}/>
       <div className="tab-bar">
         {TABS.map(t=>(
           <button key={t.id} className={`tab-btn${tab===t.id?' active':''}`} onClick={()=>setTab(t.id)}>{t.label}</button>
