@@ -397,6 +397,44 @@ const genSyncKey = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,
   const r=Math.random()*16|0;return(c==='x'?r:(r&3|8)).toString(16);
 });
 
+/* ── Google Takeout parser ──
+   פורמט Saved Places.json:
+   feature.properties.Title            ← שם המקום
+   feature.properties.Location.Address ← כתובת
+   feature.properties.Location.Name    ← שם חלופי
+   feature.properties.Location.Geo Coordinates.Latitude/Longitude ← קואורדינטות כ-string
+   feature.geometry.coordinates        ← [lng, lat] (GeoJSON, עדיף)
+   feature.properties.URL              ← קישור
+   feature.properties.Google Maps URL  ← קישור חלופי
+*/
+const parseTakeoutFeatures = (data) => {
+  const features = data?.features || data?.geometry?.geometries || [];
+  return features.map(f => {
+    const p = f?.properties || {};
+    const loc = p.Location || {};
+    const geo = loc['Geo Coordinates'] || {};
+    const name = (p.Title || loc.Name || p.name || '').trim();
+    if (!name) return null;
+    const address = (loc.Address || p.address || '').trim();
+    const website = p.URL || p['Google Maps URL'] || '';
+    // קואורדינטות: מ-geometry (GeoJSON: [lng,lat]) או מ-Geo Coordinates (strings)
+    let lat = null, lng = null;
+    if (f.geometry?.coordinates?.length >= 2) {
+      lng = f.geometry.coordinates[0];
+      lat = f.geometry.coordinates[1];
+    } else if (geo.Latitude) {
+      lat = parseFloat(geo.Latitude);
+      lng = parseFloat(geo.Longitude);
+    }
+    return {
+      id: uid(), name, address,
+      lat: (lat && !isNaN(lat)) ? lat : null,
+      lng: (lng && !isNaN(lng)) ? lng : null,
+      website,
+    };
+  }).filter(Boolean);
+};
+
 /* ── מזג אוויר ── */
 const fetchWeather = (lat,lon) => fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,weathercode&current_weather=true&timezone=auto&forecast_days=3`).then(r=>r.json());
 const todayISO = () => new Date().toISOString().slice(0,10);
@@ -1528,16 +1566,8 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=fals
     const r=new FileReader();
     r.onload=e=>{
       try {
-        const data=JSON.parse(e.target.result);
-        // תמיכה בפורמט Saved Places של גוגל טייקאוט
-        const features=data.features||data.geometry?.geometries||[];
-        const items=features.map(f=>{
-          const name=f.properties?.Title||f.properties?.name||'מקום ללא שם';
-          const addr=f.properties?.['Google Maps URL']||f.properties?.address||'';
-          const coords=f.geometry?.coordinates;
-          return {id:uid(),name,address:addr,lat:coords?coords[1]:null,lng:coords?coords[0]:null};
-        }).filter(i=>i.name);
-        if (!items.length){toast('לא נמצאו מקומות בקובץ','error');return;}
+        const items=parseTakeoutFeatures(JSON.parse(e.target.result));
+        if (!items.length){toast('לא נמצאו מקומות בקובץ — בדוק שזה "Saved Places.json"','error');return;}
         onUpdate({...trip,interestBank:[...trip.interestBank,...items]});
         toast(`יובאו ${items.length} מקומות מגוגל טייקאוט ✓`,'success');
         setShowTakeout(false);
@@ -1663,19 +1693,12 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
     const r=new FileReader();
     r.onload=e=>{
       try{
-        const data=JSON.parse(e.target.result);
-        const features=data.features||data.geometry?.geometries||[];
-        const items=features.map(f=>{
-          const name=f.properties?.Title||f.properties?.name||'מקום ללא שם';
-          const addr=f.properties?.['Google Maps URL']||f.properties?.address||'';
-          const coords=f.geometry?.coordinates;
-          return{id:uid(),name,address:addr,lat:coords?coords[1]:null,lng:coords?coords[0]:null};
-        }).filter(i=>i.name);
-        if(!items.length){toast('לא נמצאו מקומות בקובץ','error');return;}
+        const items=parseTakeoutFeatures(JSON.parse(e.target.result));
+        if(!items.length){toast('לא נמצאו מקומות בקובץ — בדוק שזה "Saved Places.json"','error');return;}
         onUpdate({...trip,interestBank:[...trip.interestBank,...items]});
         toast(`יובאו ${items.length} מקומות ✓`,'success');
         setShowTakeout(false);
-      }catch{toast('שגיאה בקריאת הקובץ','error');}
+      }catch(e){toast('שגיאה בקריאת הקובץ','error');}
     };
     r.readAsText(file);
   };
