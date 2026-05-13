@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="pragma" content="no-cache" />
-  <title>CaravanControl — מנהל טיולים v6</title>
+  <title>CaravanControl — מנהל טיולים v7</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -409,6 +409,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
         <input id="gm-name-edit" value="${(p.name||'').replace(/"/g,'&quot;')}"
           style="width:100%;border:1px solid #ddd;border-radius:6px;padding:5px 8px;font-size:14px;font-weight:700;font-family:Heebo,Arial,sans-serif;direction:rtl;color:#111;margin-bottom:3px;box-sizing:border-box"/>
         <div style="font-size:11px;color:#888;margin-bottom:6px;line-height:1.4">${p.address}</div>
+        ${p._dbg?`<div style="font-size:9px;color:#bbb;margin-bottom:4px;direction:ltr;text-align:left">${p._dbg}</div>`:''}
         ${p.rating?`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
           <span style="color:#f59e0b;font-size:14px">${starsHtml}</span>
           <span style="font-size:12px;font-weight:600;color:#333">${p.rating}</span>
@@ -485,13 +486,13 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
       /* ── מקור 1: Legacy Places API שדות בסיסיים ── */
       const legacyBasic=()=>new Promise(res=>{
         svc.getDetails({placeId,fields:['name','formatted_address','geometry','photos','place_id']},
-          (p,st)=>res(st===OK_ST&&p?p:null));
+          (p,st)=>{console.log('[DEBUG] legacyBasic:',st,p?.name);res(st===OK_ST&&p?p:null);});
       });
 
       /* ── מקור 2: Legacy Places API שדות בתשלום ── */
       const legacyRich=(geo)=>new Promise(res=>{
         svc.getDetails({placeId,fields:['rating','opening_hours','reviews','website','formatted_phone_number','user_ratings_total','price_level']},
-          (p,st)=>res(st===OK_ST&&p?{...p,geometry:geo}:null));
+          (p,st)=>{console.log('[DEBUG] legacyRich:',st,'rating=',p?.rating,'hours=',!!p?.opening_hours);res(st===OK_ST&&p?{...p,geometry:geo}:null);});
       });
 
       /* ── מקור 3: Google Geocoder עם placeId (חינמי, מזהה מדויק) ── */
@@ -524,7 +525,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
             `https://places.googleapis.com/v1/places/${placeId}?languageCode=he&key=${key}`,
             {headers:{'X-Goog-FieldMask':'displayName,formattedAddress,rating,currentOpeningHours,regularOpeningHours,websiteUri,nationalPhoneNumber,userRatingCount,priceLevel,reviews','Accept-Language':'he'}}
           );
-          if(!r.ok) return null;
+          if(!r.ok){const e=await r.json().catch(()=>({}));console.error('[DEBUG] placesV1 failed',r.status,e?.error?.message||e);return null;}
           const d=await r.json();
           const lvl={'PRICE_LEVEL_INEXPENSIVE':1,'PRICE_LEVEL_MODERATE':2,'PRICE_LEVEL_EXPENSIVE':3,'PRICE_LEVEL_VERY_EXPENSIVE':4};
           const ohArr=d.currentOpeningHours?.weekdayDescriptions||d.regularOpeningHours?.weekdayDescriptions||[];
@@ -602,8 +603,10 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
         }
 
         const photoUrl=basic?.photos?.[0]?.getUrl({maxWidth:300,maxHeight:110})||'';
+        const _dbg=`[v1:${v1?'✓':'✗'} basic:${basic?'✓':'✗'} rich:${rich?'✓':'✗'} geo:${geo?'✓':'✗'}]`;
+        console.log('[DEBUG] sources',_dbg,'name=',name,'addr=',address,'details=',details);
         iwPlace.data={name,address,lat,lng,placeId};
-        iw.setContent(buildIwContent({name,address,lat,lng,placeId,photoUrl,...details}));
+        iw.setContent(buildIwContent({name,address,lat,lng,placeId,photoUrl,...details,_dbg}));
       }catch(err){
         iwPlace.data={name:'מקום',address:'',lat:lat0,lng:lng0,placeId};
         iw.setContent(buildIwContent({name:'מקום',address:'',lat:lat0,lng:lng0,placeId}));
