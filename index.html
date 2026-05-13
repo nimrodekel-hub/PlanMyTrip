@@ -398,38 +398,62 @@ const genSyncKey = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,
 });
 
 /* ── Google Takeout parser ──
-   פורמט Saved Places.json:
-   feature.properties.Title            ← שם המקום
-   feature.properties.Location.Address ← כתובת
-   feature.properties.Location.Name    ← שם חלופי
-   feature.properties.Location.Geo Coordinates.Latitude/Longitude ← קואורדינטות כ-string
-   feature.geometry.coordinates        ← [lng, lat] (GeoJSON, עדיף)
-   feature.properties.URL              ← קישור
-   feature.properties.Google Maps URL  ← קישור חלופי
+   תומך במספר פורמטים של Saved Places.json (גרסאות שונות של גוגל)
 */
 const parseTakeoutFeatures = (data) => {
-  const features = data?.features || data?.geometry?.geometries || [];
+  // מצא את מערך הפריטים בכל מבנה אפשרי
+  const features =
+    (Array.isArray(data) ? data : null) ||
+    data?.features ||
+    data?.geometry?.geometries ||
+    [];
+  if (!features.length) return [];
+
   return features.map(f => {
-    const p = f?.properties || {};
-    const loc = p.Location || {};
-    const geo = loc['Geo Coordinates'] || {};
-    const name = (p.Title || loc.Name || p.name || '').trim();
-    if (!name) return null;
-    const address = (loc.Address || p.address || '').trim();
-    const website = p.URL || p['Google Maps URL'] || '';
-    // קואורדינטות: מ-geometry (GeoJSON: [lng,lat]) או מ-Geo Coordinates (strings)
+    if (!f) return null;
+    const p = f.properties || f; // תמיכה גם בפורמט שטוח ללא properties
+    const loc = p.Location || p.location || {};
+    const geo = loc['Geo Coordinates'] || loc.geoCoordinates || {};
+
+    // שם — חיפוש בכל המפתחות האפשריים
+    const name = (
+      p.Title || p.title ||
+      loc.Name || loc.name ||
+      p.name || p.Name ||
+      ''
+    ).toString().trim();
+
+    // כתובת
+    const address = (
+      loc.Address || loc.address ||
+      p.address || p.Address ||
+      ''
+    ).toString().trim();
+
+    // אתר / קישור
+    const website = p.URL || p.url || p['Google Maps URL'] || '';
+
+    // קואורדינטות: geometry.coordinates [lng,lat] (GeoJSON) או Geo Coordinates
     let lat = null, lng = null;
-    if (f.geometry?.coordinates?.length >= 2) {
-      lng = f.geometry.coordinates[0];
-      lat = f.geometry.coordinates[1];
-    } else if (geo.Latitude) {
-      lat = parseFloat(geo.Latitude);
-      lng = parseFloat(geo.Longitude);
+    const coords = f.geometry?.coordinates || f.coordinates;
+    if (Array.isArray(coords) && coords.length >= 2) {
+      const c0 = parseFloat(coords[0]), c1 = parseFloat(coords[1]);
+      if (!isNaN(c0) && !isNaN(c1)) { lng = c0; lat = c1; }
     }
+    if (lat === null && geo.Latitude) {
+      const la = parseFloat(geo.Latitude), lo = parseFloat(geo.Longitude);
+      if (!isNaN(la) && !isNaN(lo)) { lat = la; lng = lo; }
+    }
+
+    // סנן רק פריטים ריקים לגמרי — בלי שם, כתובת וקואורדינטות
+    if (!name && !address && lat === null) return null;
+
     return {
-      id: uid(), name, address,
-      lat: (lat && !isNaN(lat)) ? lat : null,
-      lng: (lng && !isNaN(lng)) ? lng : null,
+      id: uid(),
+      name: name || 'מקום ללא שם',
+      address,
+      lat,
+      lng,
       website,
     };
   }).filter(Boolean);
