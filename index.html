@@ -497,13 +497,19 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
         geocoder.geocode({placeId,language:'he'},(results,status)=>{
           if (status!=='OK'||!results?.[0]){res(null);return;}
           const comps=results[0].address_components||[];
-          // מקומות מסחריים/POI מופיעים כ-establishment בראש הרשימה
-          const poi=comps.find(c=>c.types.some(t=>['establishment','natural_feature','point_of_interest','tourist_attraction','park','airport','premise'].includes(t)));
-          // מחפש שם שאינו מספר רחוב ואינו כביש
-          const nonRoad=comps.find(c=>!c.types.some(t=>['street_number','route','postal_code','country','administrative_area_level_1','administrative_area_level_2','locality'].includes(t)));
-          const name=poi?.long_name||nonRoad?.long_name||'';
           const addr=results[0].formatted_address||'';
           const loc=results[0].geometry?.location;
+          // שם מ-address_components: מחפש establishment/POI
+          const EXCLUDE=['street_number','route','postal_code','country',
+            'administrative_area_level_1','administrative_area_level_2',
+            'administrative_area_level_3','administrative_area_level_4',
+            'locality','sublocality','sublocality_level_1','neighborhood','political'];
+          const poi=comps.find(c=>c.types.some(t=>['establishment','natural_feature',
+            'tourist_attraction','park','airport','premise','colloquial_area'].includes(t)));
+          const nonRoad=comps.find(c=>!c.types.some(t=>EXCLUDE.includes(t)));
+          // גיבוי: הרכיב הראשון של formatted_address הוא תמיד שם המקום עבור POI
+          const fromAddr=addr.split(',')[0]?.trim()||'';
+          const name=poi?.long_name||nonRoad?.long_name||fromAddr||'';
           res({name,address:addr,lat:loc?.lat()||lat0,lng:loc?.lng()||lng0});
         });
       });
@@ -561,9 +567,15 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
         let lng=basic?.geometry?.location?.lng()||geo?.lng||lng0;
 
         if(!name){
-          const nom=await nominatimLookup();
-          name=nom?.name||'מקום';
-          if(!address) address=nom?.address||'';
+          // ניסיון: השם הוא הרכיב הראשון של הכתובת (לפני הפסיק הראשון)
+          const fromAddr=address.split(',')[0]?.trim();
+          if(fromAddr){
+            name=fromAddr;
+          } else {
+            const nom=await nominatimLookup();
+            name=nom?.name||(nom?.address?.split(',')[0]?.trim())||'מקום';
+            if(!address) address=nom?.address||'';
+          }
         }
 
         // ── בוחר פרטים: v1 > rich legacy ──
