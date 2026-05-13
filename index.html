@@ -498,6 +498,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
       /* ── מקור 3: Google Geocoder עם placeId (חינמי, מזהה מדויק) ── */
       const geocoderLookup=()=>new Promise(res=>{
         geocoder.geocode({placeId,language:'he'},(results,status)=>{
+          console.log('[DEBUG] geocoder status:',status,results?.[0]?.formatted_address||'no addr');
           if(status!=='OK'||!results?.[0]){res(null);return;}
           const comps=results[0].address_components||[];
           const addr=results[0].formatted_address||'';
