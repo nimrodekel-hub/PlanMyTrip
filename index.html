@@ -1571,17 +1571,27 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
   </div>;
 }
 
+const DAYS_PER_PAGE=4;
+
 function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=false}){
   const[showBank,setShowBank]=useState(!compact);
+  const[dayOffset,setDayOffset]=useState(0);
 
   const updDay=upd=>onUpdate({...trip,days:trip.days.map(d=>d.id===upd.id?upd:d)});
   const addDay=()=>{
     const last=trip.days[trip.days.length-1];
     let nd='';
     if(last?.date){const d=new Date(last.date);d.setDate(d.getDate()+1);nd=d.toISOString().slice(0,10);}
-    onUpdate({...trip,days:[...trip.days,defaultDay(nd)]});
+    const newTrip={...trip,days:[...trip.days,defaultDay(nd)]};
+    onUpdate(newTrip);
+    // גלול אוטומטית לדף האחרון אחרי הוספה
+    const newLen=newTrip.days.length;
+    setDayOffset(Math.floor((newLen-1)/DAYS_PER_PAGE)*DAYS_PER_PAGE);
   };
-  const delDay=id=>onUpdate({...trip,days:trip.days.filter(d=>d.id!==id)});
+  const delDay=id=>{
+    onUpdate({...trip,days:trip.days.filter(d=>d.id!==id)});
+    setDayOffset(prev=>Math.max(0,Math.min(prev,trip.days.length-2-((trip.days.length-1)%DAYS_PER_PAGE))));
+  };
   const moveBlockToBank=(block,dayId)=>{
     const bankItem={id:uid(),name:block.title||'פעילות',address:block.location||'',
       lat:block.lat,lng:block.lng,placeId:block.placeId,
@@ -1596,36 +1606,88 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=fals
     toast(`"${bankItem.name}" הועבר לבנק האטרקציות`,'success');
   };
 
-  return <div style={{display:'flex',height:'100%',overflow:'hidden'}}>
-    <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
-      <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
-        <span style={{fontWeight:700,fontSize:15}}>🗓 לוח זמנים</span>
-        <button className="btn btn-primary btn-sm" onClick={addDay}>+ הוסף יום</button>
-        <div style={{flex:1}}/>
-        {!compact&&<button className="btn btn-secondary btn-sm" onClick={()=>setShowBank(b=>!b)}>
-          🌟 {showBank?'הסתר':'הצג'} בנק
-        </button>}
+  // במצב compact — תצוגה רגילה אנכית (עמודה צרה בתצוגת 3 עמודות)
+  if(compact){
+    return <div style={{display:'flex',height:'100%',overflow:'hidden',flexDirection:'column'}}>
+      <div style={{padding:'10px 14px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+        <span style={{fontWeight:700,fontSize:14}}>🗓 לוח זמנים</span>
+        <button className="btn btn-primary btn-sm" onClick={addDay}>+ יום</button>
       </div>
-      <div className="scroll-y flex-1" style={{padding:'16px'}}>
-        {trip.days.length===0?(
-          <div className="empty-state">
-            <div className="emoji">🗓️</div>
-            <div style={{fontWeight:600,color:'var(--text)'}}>אין ימים עדיין</div>
-            <p>לחץ "+ הוסף יום" כדי להתחיל לבנות את המסלול.</p>
-            <button className="btn btn-primary" onClick={addDay}>+ הוסף יום</button>
-          </div>
-        ):trip.days.map((day,i)=>(
-          <DayPanel key={day.id} day={day} idx={i} onUpdate={updDay} onDelete={()=>delDay(day.id)}
-            onFocusDay={onFocusDay} onFocusItem={onFocusItem}
-            onMoveToBank={(block)=>moveBlockToBank(block,day.id)}/>
-        ))}
+      <div className="scroll-y flex-1" style={{padding:'10px'}}>
+        {trip.days.length===0
+          ?<div className="empty-state"><div className="emoji">🗓️</div><div style={{fontWeight:600}}>אין ימים</div>
+             <button className="btn btn-primary btn-sm" style={{marginTop:8}} onClick={addDay}>+ הוסף יום</button></div>
+          :trip.days.map((day,i)=>(
+            <DayPanel key={day.id} day={day} idx={i} onUpdate={updDay} onDelete={()=>delDay(day.id)}
+              onFocusDay={onFocusDay} onFocusItem={onFocusItem}
+              onMoveToBank={(block)=>moveBlockToBank(block,day.id)}/>
+          ))
+        }
       </div>
+    </div>;
+  }
+
+  // מצב מלא — 4 ימים בעמודות + עמודת אטרקציות
+  const totalDays=trip.days.length;
+  const clampedOffset=Math.min(dayOffset,Math.max(0,totalDays-1));
+  const visibleDays=trip.days.slice(clampedOffset,clampedOffset+DAYS_PER_PAGE);
+  const pageFrom=clampedOffset+1;
+  const pageTo=Math.min(clampedOffset+DAYS_PER_PAGE,totalDays);
+  const canPrev=clampedOffset>0;
+  const canNext=clampedOffset+DAYS_PER_PAGE<totalDays;
+
+  return <div style={{display:'flex',height:'100%',overflow:'hidden',flexDirection:'column'}}>
+    {/* ── סרגל עליון ── */}
+    <div style={{padding:'8px 14px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:8,flexShrink:0,flexWrap:'wrap'}}>
+      <span style={{fontWeight:700,fontSize:14}}>🗓 לוח זמנים</span>
+      <button className="btn btn-primary btn-sm" onClick={addDay}>+ הוסף יום</button>
+      <div style={{flex:1}}/>
+      {/* ניווט ימים */}
+      {totalDays>DAYS_PER_PAGE&&<div style={{display:'flex',alignItems:'center',gap:6}}>
+        <button className="btn btn-secondary btn-sm" disabled={!canNext}
+          onClick={()=>setDayOffset(o=>Math.min(o+DAYS_PER_PAGE,totalDays-1))}
+          style={{padding:'3px 9px',opacity:canNext?1:0.35}}>הבא ▶</button>
+        <span style={{fontSize:12,color:'var(--text2)',minWidth:90,textAlign:'center'}}>
+          ימים {pageFrom}–{pageTo} / {totalDays}
+        </span>
+        <button className="btn btn-secondary btn-sm" disabled={!canPrev}
+          onClick={()=>setDayOffset(o=>Math.max(0,o-DAYS_PER_PAGE))}
+          style={{padding:'3px 9px',opacity:canPrev?1:0.35}}>◀ קודם</button>
+      </div>}
+      <button className="btn btn-secondary btn-sm" onClick={()=>setShowBank(b=>!b)}>
+        🌟 {showBank?'הסתר':'הצג'} אטרקציות
+      </button>
     </div>
 
-    {!compact&&showBank&&<div className="bank-backdrop" onClick={()=>setShowBank(false)}/>}
-    {!compact&&showBank&&<div className="sidebar-panel" style={{display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      <BankPanel trip={trip} onUpdate={onUpdate} onLocate={onLocate} onFocusItem={onFocusItem} onClose={()=>setShowBank(false)}/>
-    </div>}
+    {/* ── עמודות ימים + בנק ── */}
+    <div style={{flex:1,display:'flex',overflow:'hidden'}}>
+      {totalDays===0
+        ?<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}>
+           <div className="empty-state">
+             <div className="emoji">🗓️</div>
+             <div style={{fontWeight:600,color:'var(--text)'}}>אין ימים עדיין</div>
+             <p>לחץ "+ הוסף יום" כדי להתחיל לבנות את המסלול.</p>
+             <button className="btn btn-primary" onClick={addDay}>+ הוסף יום</button>
+           </div>
+         </div>
+        :visibleDays.map((day,i)=>(
+          <div key={day.id} style={{
+            flex:1,minWidth:0,borderRight:'1px solid var(--border)',
+            display:'flex',flexDirection:'column',overflow:'hidden'
+          }}>
+            <div className="scroll-y flex-1" style={{padding:'8px'}}>
+              <DayPanel day={day} idx={clampedOffset+i} onUpdate={updDay} onDelete={()=>delDay(day.id)}
+                onFocusDay={onFocusDay} onFocusItem={onFocusItem}
+                onMoveToBank={(block)=>moveBlockToBank(block,day.id)}/>
+            </div>
+          </div>
+        ))
+      }
+      {/* עמודת אטרקציות */}
+      {showBank&&<div style={{width:270,flexShrink:0,borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <BankPanel trip={trip} onUpdate={onUpdate} onLocate={onLocate} onFocusItem={onFocusItem} onClose={()=>setShowBank(false)}/>
+      </div>}
+    </div>
   </div>;
 }
 
@@ -1637,7 +1699,8 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
   const[showTakeout,setShowTakeout]=useState(false);
   const[selected,setSelected]=useState(()=>new Set());
   const[enrichingId,setEnrichingId]=useState(null);
-  const[collapsed,setCollapsed]=useState(()=>new Set());
+  // expanded = קבוצות פתוחות; ברירת מחדל: ריק = כולן סגורות
+  const[expanded,setExpanded]=useState(()=>new Set());
   const takeoutRef=useRef(null);
 
   /* חילוץ שם מדינה מהכתובת — חלק אחרון אחרי פסיק, ללא מיקוד */
@@ -1689,7 +1752,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
     onUpdate({...trip,interestBank:trip.interestBank.filter(i=>i.id!==id)});
     setSelected(prev=>{const s=new Set(prev);s.delete(id);return s;});
   };
-  const toggleCollapse=country=>setCollapsed(prev=>{const s=new Set(prev);s.has(country)?s.delete(country):s.add(country);return s;});
+  const toggleCollapse=country=>setExpanded(prev=>{const s=new Set(prev);s.has(country)?s.delete(country):s.add(country);return s;});
 
   /* הוספה ליום */
   const addItemToDay=(dayId,item)=>{
@@ -1824,7 +1887,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
         :grouped.map(([country,items])=>{
           const allSel=items.every(i=>selected.has(i.id));
           const someSel=items.some(i=>selected.has(i.id));
-          const isCollapsed=collapsed.has(country);
+          const isCollapsed=!expanded.has(country);
           const selCount=items.filter(i=>selected.has(i.id)).length;
           return <div key={country} style={{marginBottom:10}}>
             {/* כותרת מדינה */}
@@ -2762,7 +2825,8 @@ function ReportTab({trip}){
           lines.push(`  ${b.isCompleted?'✅':'⬜'} ${b.startTime}–${end}  ${BLOCK_EMOJI[b.type]} ${b.title||BLOCK_HE[b.type]}${b.placeType?' ['+b.placeType+']':''}`);
           if(b.location) lines.push(`       📍 ${b.location}`);
           if(b.notes) lines.push(`       📝 ${b.notes}`);
-          if(b.placeRating) lines.push(`       ⭐ ${b.placeRating}/5`);
+          if(b.rating>0) lines.push(`       ${'★'.repeat(b.rating)}${'☆'.repeat(5-b.rating)} דירוג אישי`);
+          if(b.placeRating) lines.push(`       ⭐ ${b.placeRating}/5 (גוגל)`);
           if(b.cost>0) lines.push(`       💰 ₪${b.cost}`);
         });
         if(day.notes) lines.push(`  📝 הערות: ${day.notes}`);
@@ -2907,9 +2971,10 @@ function ReportTab({trip}){
                         {b.placeType&&<span style={{fontSize:10,color:'var(--text3)',fontWeight:400,background:'var(--bg3)',padding:'1px 6px',borderRadius:4}}>{b.placeType}</span>}
                       </div>
                       {b.location&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>📍 {b.location}</div>}
-                      {b.notes&&<div style={{fontSize:11,color:'var(--text2)',marginTop:3,fontStyle:'italic',lineHeight:1.5}}>📝 {b.notes}</div>}
-                      <div style={{display:'flex',gap:10,marginTop:4,flexWrap:'wrap'}}>
-                        {b.placeRating>0&&<span style={{fontSize:11,color:'var(--amber)'}}>⭐ {b.placeRating}/5</span>}
+                      {b.notes&&<div style={{fontSize:12,color:'var(--text)',marginTop:4,lineHeight:1.6,background:'rgba(79,142,247,0.07)',borderRadius:6,padding:'4px 8px'}}>📝 {b.notes}</div>}
+                      <div style={{display:'flex',gap:10,marginTop:4,flexWrap:'wrap',alignItems:'center'}}>
+                        {b.rating>0&&<span style={{fontSize:12,color:'var(--amber)',fontWeight:700}}>{'★'.repeat(b.rating)}{'☆'.repeat(5-b.rating)} <span style={{fontSize:10,fontWeight:400,color:'var(--text3)'}}>הדירוג שלי</span></span>}
+                        {b.placeRating>0&&<span style={{fontSize:11,color:'var(--text3)'}}>גוגל: ⭐{b.placeRating}</span>}
                         {b.cost>0&&<span style={{fontSize:11,color:'var(--amber)'}}>💰 ₪{b.cost}</span>}
                         {b.durationMins>0&&<span style={{fontSize:11,color:'var(--text3)'}}>⏱ {b.durationMins} דק'</span>}
                         {b.placePhone&&<span style={{fontSize:11,color:'var(--accent)'}}>📞 {b.placePhone}</span>}
