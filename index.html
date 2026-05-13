@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="pragma" content="no-cache" />
-  <title>CaravanControl — מנהל טיולים v20</title>
+  <title>CaravanControl — מנהל טיולים v21</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v20';
+const APP_VERSION = 'v21';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -2197,6 +2197,196 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
 /* ══════════════════════════════════
    דו"ח טיול
 ══════════════════════════════════ */
+/* ══════════════════════════════════
+   לשונית חיבוריות
+══════════════════════════════════ */
+const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
+const FB_RULES_URL='https://console.firebase.google.com/u/1/project/planmytrip-de33c/database/planmytrip-de33c-default-rtdb/rules';
+
+function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus}){
+  const[s,setS]=useState({...settings});
+  const[copied,setCopied]=useState(false);
+  const[testing,setTesting]=useState(false);
+  const[testResult,setTestResult]=useState(null);
+  const upd=(k,v)=>setS(p=>({...p,[k]:v}));
+
+  // אם אין syncKey — צור אחד אוטומטית
+  const effectiveKey = s.syncKey||settings.syncKey;
+
+  const copyKey=()=>{
+    navigator.clipboard?.writeText(effectiveKey||'').then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});
+  };
+
+  const testConnection=async()=>{
+    if(!s.firebaseUrl||!effectiveKey){setTestResult({ok:false,msg:'חסרים כתובת Firebase או מפתח סנכרון'});return;}
+    setTesting(true); setTestResult(null);
+    try{
+      const r=await fetch(`${s.firebaseUrl.replace(/\/$/,'')}/planmytrip/${effectiveKey}.json?_=${Date.now()}`);
+      if(r.ok){ setTestResult({ok:true,msg:'✅ החיבור תקין! Firebase נגיש ומוכן.'}); }
+      else { setTestResult({ok:false,msg:`❌ שגיאה ${r.status} — בדוק את כתובת ה-URL`}); }
+    }catch(e){ setTestResult({ok:false,msg:`❌ חיבור נכשל — ${e.message}`}); }
+    finally{setTesting(false);}
+  };
+
+  const saveAndSync=()=>{
+    const newS={...s,firebaseUrl:s.firebaseUrl||FB_URL};
+    onSettings(newS);
+    setTimeout(()=>onPush(newS),300);
+  };
+
+  const statusColor=syncStatus==='synced'?'var(--green)':syncStatus==='syncing'?'var(--amber)':syncStatus==='error'?'var(--red)':'var(--text3)';
+  const statusText=syncStatus==='synced'?'מסונכרן ✓':syncStatus==='syncing'?'מסנכרן...':syncStatus==='error'?'שגיאת סנכרון':'לא מסונכרן';
+
+  return <div className="scroll-y" style={{height:'100%',padding:20}}>
+    <div style={{maxWidth:660,margin:'0 auto',display:'flex',flexDirection:'column',gap:20}}>
+
+      {/* ── כותרת ── */}
+      <div style={{display:'flex',alignItems:'center',gap:14}}>
+        <span style={{fontSize:36}}>🔗</span>
+        <div>
+          <div style={{fontSize:20,fontWeight:800}}>חיבוריות וסנכרון</div>
+          <div style={{fontSize:13,color:'var(--text2)',marginTop:2}}>הגדרת סנכרון הטיול בין מחשב, סלולר וטאבלט</div>
+        </div>
+        <div style={{marginRight:'auto',textAlign:'left'}}>
+          <div style={{fontSize:11,color:'var(--text3)'}}>סטטוס</div>
+          <div style={{fontSize:13,fontWeight:700,color:statusColor}}>{statusText}</div>
+        </div>
+      </div>
+
+      {/* ── מצב נוכחי ── */}
+      <div className="card" style={{border:`2px solid ${settings.firebaseUrl&&settings.syncKey?'var(--green)':'var(--amber)'}`}}>
+        <div className="card-header">
+          <span style={{fontWeight:700}}>📊 מצב נוכחי</span>
+          {settings.firebaseUrl&&settings.syncKey
+            ?<span className="chip chip-green">✓ Firebase מחובר</span>
+            :<span className="chip chip-amber">⚠️ לא מחובר</span>}
+        </div>
+        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10}}>
+          <div style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:'6px 14px',fontSize:13,alignItems:'center'}}>
+            <span style={{color:'var(--text3)'}}>כתובת Firebase:</span>
+            <code style={{fontSize:11,color:'var(--accent)',wordBreak:'break-all'}}>{settings.firebaseUrl||'לא הוגדר'}</code>
+            <span style={{color:'var(--text3)'}}>מפתח סנכרון:</span>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <code style={{fontSize:10,color:'var(--text2)',wordBreak:'break-all',flex:1}}>{settings.syncKey||'לא נוצר'}</code>
+              {settings.syncKey&&<button className="btn btn-secondary btn-sm" onClick={()=>{navigator.clipboard?.writeText(settings.syncKey);setCopied(true);setTimeout(()=>setCopied(false),2000);}}>
+                {copied?'✓ הועתק':'📋 העתק'}
+              </button>}
+            </div>
+          </div>
+          {settings.syncKey&&<div style={{background:'rgba(34,197,94,0.08)',border:'1px solid rgba(34,197,94,0.2)',borderRadius:8,padding:'10px 12px',fontSize:12,lineHeight:1.8}}>
+            📱 <strong>לחיבור סלולר:</strong> פתח את האפליקציה בסלולר ← עמוד חיבוריות ← הזן מפתח סנכרון:<br/>
+            <code style={{color:'var(--accent)',fontSize:11,wordBreak:'break-all'}}>{settings.syncKey}</code>
+          </div>}
+        </div>
+      </div>
+
+      {/* ── הגדרות ── */}
+      <div className="card">
+        <div className="card-header"><span style={{fontWeight:700}}>⚙️ הגדרות חיבור</span></div>
+        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:12}}>
+          <div>
+            <label className="label">כתובת Firebase Database URL</label>
+            <input className="input" type="text" value={s.firebaseUrl||FB_URL}
+              onChange={e=>upd('firebaseUrl',e.target.value.trim())}
+              placeholder="https://xxx-default-rtdb.firebaseio.com"/>
+            <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>כבר הוגדרה עבורך: <code style={{color:'var(--accent)'}}>{FB_URL}</code></div>
+          </div>
+          <div>
+            <label className="label">מפתח סנכרון — זהה בכל המכשירים</label>
+            <div style={{display:'flex',gap:8}}>
+              <input className="input" type="text" value={s.syncKey||effectiveKey||''}
+                onChange={e=>upd('syncKey',e.target.value.trim())}
+                placeholder="יוצר אוטומטית בשמירה ראשונה"
+                style={{fontFamily:'monospace',fontSize:11,flex:1}}/>
+              <button className="btn btn-secondary btn-sm" style={{flexShrink:0}}
+                onClick={()=>upd('syncKey',genSyncKey())}>🔑 צור חדש</button>
+              {(s.syncKey||effectiveKey)&&<button className="btn btn-secondary btn-sm" style={{flexShrink:0}} onClick={copyKey}>
+                {copied?'✓':'📋'}
+              </button>}
+            </div>
+          </div>
+          <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+            <button className="btn btn-primary" onClick={saveAndSync} disabled={ghBusy}>
+              {ghBusy?'⏳ שומר...':'💾 שמור וסנכרן עכשיו'}
+            </button>
+            <button className="btn btn-secondary" onClick={testConnection} disabled={testing}>
+              {testing?'⏳ בודק...':'🔌 בדוק חיבור'}
+            </button>
+            <button className="btn btn-secondary" onClick={()=>onPull()} disabled={ghBusy}>
+              ⬇️ טען נתונים מהענן
+            </button>
+          </div>
+          {testResult&&<div style={{padding:'10px 14px',borderRadius:8,fontSize:13,
+            background:testResult.ok?'rgba(34,197,94,0.1)':'rgba(239,68,68,0.1)',
+            border:`1px solid ${testResult.ok?'rgba(34,197,94,0.3)':'rgba(239,68,68,0.3)'}`}}>
+            {testResult.msg}
+          </div>}
+        </div>
+      </div>
+
+      {/* ── הוראות חיבור סלולר ── */}
+      <div className="card">
+        <div className="card-header"><span style={{fontWeight:700}}>📱 איך מחברים סלולר / מכשיר נוסף?</span></div>
+        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+          {[
+            {n:1,t:'פתח את האפליקציה במכשיר החדש',d:'כנס לכתובת nimrodekel-hub.github.io/PlanMyTrip בדפדפן'},
+            {n:2,t:'עבור לעמוד חיבוריות',d:'לחץ על לשונית "🔗 חיבוריות" בסרגל הניווט'},
+            {n:3,t:'הזן את מפתח הסנכרון',d:'העתק את המפתח מהמחשב והדבק בשדה "מפתח סנכרון" — הכתובת כבר ממולאת אוטומטית'},
+            {n:4,t:'לחץ "שמור וסנכרן"',d:'הטיול שלך יטען תוך שניות מהענן 🎉'},
+          ].map(({n,t,d})=><div key={n} style={{display:'flex',gap:14,alignItems:'flex-start'}}>
+            <div style={{width:28,height:28,borderRadius:'50%',background:'var(--accent)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:13,flexShrink:0}}>{n}</div>
+            <div><div style={{fontWeight:600,fontSize:13}}>{t}</div><div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>{d}</div></div>
+          </div>)}
+        </div>
+      </div>
+
+      {/* ── חידוש כל 30 יום ── */}
+      <div className="card" style={{border:'1px solid rgba(245,158,11,0.4)'}}>
+        <div className="card-header" style={{background:'rgba(245,158,11,0.06)'}}>
+          <span style={{fontWeight:700}}>🔄 חידוש הגישה כל 30 יום</span>
+          <span className="chip chip-amber" style={{fontSize:10}}>חשוב!</span>
+        </div>
+        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div style={{fontSize:13,color:'var(--text2)',lineHeight:1.8,background:'rgba(245,158,11,0.06)',borderRadius:8,padding:'10px 14px'}}>
+            Firebase "Test Mode" מאפשר גישה חופשית לנתונים למשך <strong>30 יום בלבד</strong>.<br/>
+            לאחר 30 ימים הגישה תחסם אוטומטית ויש לחדש אותה (פעולה של דקה אחת).
+          </div>
+          {[
+            {n:1,t:'פתח את קונסול Firebase',d:<>לחץ על הקישור: <a href={FB_RULES_URL} target="_blank" rel="noreferrer" style={{color:'var(--accent)',fontWeight:600}}>Realtime Database → Rules</a></>},
+            {n:2,t:'עדכן את חוקי הגישה',d:'החלף את התוכן הקיים בחוקים הבאים:'},
+            {n:3,t:'שנה את תאריך הפקיעה',d:'בשורת "now < ..." שנה לתאריך 30 יום קדימה (timestamp בשניות)'},
+            {n:4,t:'לחץ "Publish"',d:'הסנכרון ימשיך לעבוד עוד 30 יום 🎉'},
+          ].map(({n,t,d})=><div key={n} style={{display:'flex',gap:14,alignItems:'flex-start'}}>
+            <div style={{width:28,height:28,borderRadius:'50%',background:'var(--amber)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:13,flexShrink:0}}>{n}</div>
+            <div><div style={{fontWeight:600,fontSize:13}}>{t}</div><div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>{d}</div></div>
+          </div>)}
+          <div style={{background:'var(--bg3)',borderRadius:10,padding:14,fontFamily:'monospace',fontSize:12,lineHeight:1.9,direction:'ltr',textAlign:'left'}}>
+            <span style={{color:'var(--text3)'}}>{'{'}</span><br/>
+            &nbsp;&nbsp;<span style={{color:'var(--accent)'}}>"rules"</span>: <span style={{color:'var(--text3)'}}>{'{'}</span><br/>
+            &nbsp;&nbsp;&nbsp;&nbsp;<span style={{color:'var(--accent)'}}>"planmytrip"</span>: <span style={{color:'var(--text3)'}}>{'{'}</span><br/>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style={{color:'var(--accent)'}}>"$key"</span>: <span style={{color:'var(--text3)'}}>{'{'}</span><br/>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style={{color:'var(--green)'}}>"</span><span style={{color:'var(--green)'}}>.</span><span style={{color:'var(--green)'}}>read"</span>: <span style={{color:'var(--amber)'}}>"auth == null || auth != null"</span>,<br/>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style={{color:'var(--green)'}}>"</span><span style={{color:'var(--green)'}}>.</span><span style={{color:'var(--green)'}}>write"</span>: <span style={{color:'var(--amber)'}}>"now &lt; <strong style={{color:'var(--red)'}}>הכנס_כאן_timestamp</strong>"</span><br/>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style={{color:'var(--text3)'}}>{'}'}</span><br/>
+            &nbsp;&nbsp;&nbsp;&nbsp;<span style={{color:'var(--text3)'}}>{'}'}</span><br/>
+            &nbsp;&nbsp;<span style={{color:'var(--text3)'}}>{'}'}</span><br/>
+            <span style={{color:'var(--text3)'}}>{'}'}</span>
+          </div>
+          <div style={{fontSize:12,color:'var(--text3)',lineHeight:1.8}}>
+            💡 <strong>טיפ:</strong> ה-timestamp הוא מספר השניות מ-1/1/1970.<br/>
+            לדוגמה: 30 יום מהיום = <code style={{color:'var(--accent)'}}>{Math.floor(Date.now()/1000)+30*86400}</code><br/>
+            אפשר גם להשתמש בחוק <code style={{color:'var(--amber)'}}>"true"</code> לגישה תמידית (פחות מאובטח).
+          </div>
+          <a href={FB_RULES_URL} target="_blank" rel="noreferrer" className="btn btn-amber" style={{textDecoration:'none',textAlign:'center'}}>
+            🔗 פתח Firebase Rules לחידוש
+          </a>
+        </div>
+      </div>
+
+    </div>
+  </div>;
+}
+
 function ReportSection({title,children}){
   return <div style={{marginBottom:28}}>
     <div style={{fontWeight:700,fontSize:16,color:'var(--text)',borderBottom:'2px solid var(--border)',paddingBottom:8,marginBottom:14}}>{title}</div>
@@ -2543,7 +2733,17 @@ function ReportTab({trip}){
 ══════════════════════════════════ */
 function App(){
   const saved=useMemo(()=>loadState(),[]);
-  const[settings,setSettings]=useState(saved?.settings||{githubToken:'',githubUsername:'nimrodekel-hub',githubRepo:'PlanMyTrip',googleMapsKey:'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw',theme:'dark',firebaseUrl:'',syncKey:''});
+  const[settings,setSettings]=useState(()=>{
+    const def={githubToken:'',githubUsername:'nimrodekel-hub',githubRepo:'PlanMyTrip',
+      googleMapsKey:'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw',theme:'dark',
+      firebaseUrl:FB_URL, syncKey:''};
+    const merged={...def,...(saved?.settings||{})};
+    // אם אין Firebase URL — הכנס את ברירת המחדל
+    if(!merged.firebaseUrl) merged.firebaseUrl=FB_URL;
+    // אם אין syncKey — צור אחד אוטומטית
+    if(!merged.syncKey) merged.syncKey=genSyncKey();
+    return merged;
+  });
   const[trips,setTrips]=useState(saved?.trips||[defaultTrip('הטיול הראשון שלי')]);
   const[activeId,setActiveId]=useState(saved?.activeId||(saved?.trips?.[0]?.id??null));
   const[tab,setTab]=useState('map');
@@ -2718,6 +2918,7 @@ function App(){
     {id:'shopping',label:'🛒 קניות'},
     {id:'notes',label:'📝 הערות'},
     {id:'report',label:'📋 דו"ח'},
+    {id:'connectivity',label:'🔗 חיבוריות'},
     {id:'settings',label:'⚙️ הגדרות'},
   ];
 
@@ -2729,7 +2930,7 @@ function App(){
   </div>;
 
   const renderMain=()=>{
-    if (!trip&&tab!=='settings') return noTrip;
+    if (!trip&&tab!=='settings'&&tab!=='connectivity') return noTrip;
     switch(tab){
       case 'map': return (
         <div className="map-view-3col">
@@ -2766,6 +2967,7 @@ function App(){
       case 'shopping': return <Checklist title="רשימת קניות" emoji="🛒" items={trip.shoppingList} onUpdate={items=>updTrip({...trip,shoppingList:items})}/>;
       case 'notes': return <NotesTab trip={trip} onUpdate={updTrip}/>;
       case 'report': return <ReportTab trip={trip}/>;
+      case 'connectivity': return <ConnectivityTab settings={settings} onSettings={setSettings} onPush={push} onPull={pull} ghBusy={ghBusy} syncStatus={syncStatus}/>;
       case 'settings': return <SettingsTab settings={settings} onSettings={setSettings} trips={trips} activeTrip={trip} onNewTrip={newTrip} onLoadTrip={loadTrip} onDeleteTrip={delTrip} onPush={push} onPull={pull} ghBusy={ghBusy} genKey={genSyncKey}/>;
       default: return null;
     }
