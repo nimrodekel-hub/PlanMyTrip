@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="pragma" content="no-cache" />
-  <title>CaravanControl — מנהל טיולים v11</title>
+  <title>CaravanControl — מנהל טיולים v16</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -85,6 +85,8 @@
     @keyframes modalIn { from { opacity: 0; transform: translateY(20px) scale(0.97); } to { opacity: 1; transform: none; } }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
     .timeline { display: flex; flex-direction: column; position: relative; }
     .timeline::before { content: ''; position: absolute; right: 44px; top: 0; bottom: 0; width: 2px; background: var(--border); z-index: 0; }
@@ -98,11 +100,10 @@
     .star { font-size: 20px; cursor: pointer; transition: transform 0.1s; user-select: none; }
     .star:hover { transform: scale(1.2); }
 
-    .split-view { display: grid; grid-template-columns: 1fr 1fr; height: 100%; overflow: hidden; }
-    .split-left { border-left: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; }
-    .split-right { overflow: hidden; display: flex; flex-direction: column; }
+    .split-view { display: flex; flex-direction: row; height: 100%; overflow: hidden; }
+    .split-left { flex: 1 1 50%; min-width: 0; border-left: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; }
+    .split-right { flex: 1 1 50%; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
     @media (max-width: 768px) {
-      .split-view { grid-template-columns: 1fr; }
       .split-left.mobile-hidden { display: none; }
       .split-right.mobile-hidden { display: none; }
     }
@@ -147,12 +148,130 @@
     .doc-item:hover { border-color: var(--accent); transform: translateY(-2px); }
 
     .mobile-toggle { display: none; }
+    .mobile-bottom-nav { display: none; }
+    .bank-backdrop { display: none; }
+    .bank-close-btn { display: none; }
+
     @media (max-width: 768px) {
-      .mobile-toggle { display: flex; }
-      .sidebar-panel { display: none; }
+      /* ── כללי ── */
+      html, body { overflow: hidden; -webkit-text-size-adjust: 100%; }
+
+      /* ── כותרת ── */
+      .app-header { padding: 0 12px; }
+      .vehicle-banner { gap: 8px; padding: 6px 0 4px; flex-wrap: wrap; }
+      .vehicle-banner .btn { padding: 5px 10px; font-size: 12px; }
+
+      /* ── לשוניות — מוסתר על מובייל, מוחלף בניווט תחתון ── */
+      .tab-bar { display: none; }
+      .mobile-toggle { display: none; }
+
+      /* ── תוכן ראשי ── */
+      .main-content { padding-bottom: 56px; }
+
+      /* ── ניווט תחתון ── */
+      .mobile-bottom-nav {
+        display: flex;
+        position: fixed;
+        bottom: 0; left: 0; right: 0;
+        z-index: 500;
+        background: var(--bg2);
+        border-top: 1px solid var(--border);
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scroll-behavior: smooth;
+        gap: 0;
+        padding: 0;
+      }
+      .mobile-bottom-nav::-webkit-scrollbar { display: none; }
+      .mobile-nav-btn {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1px;
+        padding: 6px 10px;
+        min-width: 56px;
+        min-height: 52px;
+        flex-shrink: 0;
+        border: none;
+        background: none;
+        color: var(--text3);
+        font-family: 'Heebo', sans-serif;
+        cursor: pointer;
+        transition: color 0.15s, background 0.15s;
+        border-top: 2px solid transparent;
+      }
+      .mobile-nav-btn.active { color: var(--accent); border-top-color: var(--accent); background: rgba(79,142,247,0.08); }
+      .mobile-nav-icon { font-size: 18px; line-height: 1; }
+      .mobile-nav-label { font-size: 9px; font-weight: 600; white-space: nowrap; }
+
+      /* ── מודאלים ── */
+      .modal-overlay { padding: 0; align-items: flex-end; }
+      .modal { max-width: 100%; width: 100%; border-radius: 20px 20px 0 0; max-height: 92vh; }
+
+      /* ── split view (מפה) — הפאנל הגלוי ממלא כל הגובה ── */
+      .split-left, .split-right { flex: 1 1 100%; }
+
+      /* ── בנק אטרקציות — תפריט תחתון (bottom sheet) ── */
+      .sidebar-panel {
+        position: fixed !important;
+        bottom: 56px; left: 0; right: 0;
+        height: 68vh;
+        width: 100% !important;
+        z-index: 450;
+        border-radius: 20px 20px 0 0 !important;
+        border-right: none !important;
+        border-top: 2px solid var(--accent) !important;
+        box-shadow: 0 -8px 40px rgba(0,0,0,0.6);
+        animation: slideUp .28s ease;
+      }
+      .bank-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 440;
+      }
+      .bank-close-btn { display: flex; }
+
+      /* ── בלוקי ציר זמן ── */
+      .timeline-block { gap: 8px; }
+      .timeline-dot { width: 28px; height: 28px; font-size: 13px; }
+      .card.block-activity, .card.block-travel, .card.block-stop { border-radius: 10px; }
+      .day-header { padding: 10px 12px; gap: 8px; }
+
+      /* ── כפתורים — גודל מגע ── */
+      .btn { min-height: 38px; }
+      .btn-sm { min-height: 32px; }
+      .btn-icon { min-height: 36px; min-width: 36px; }
+      .tab-btn { min-height: 44px; padding: 10px 14px; }
+      input[type="checkbox"] { min-width: 20px; min-height: 20px; }
+
+      /* ── toast ── */
+      .toast-container { bottom: 68px; left: 12px; right: 12px; }
+      .toast { min-width: unset; width: 100%; }
+
+      /* ── doc grid ── */
+      .doc-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+
+      /* ── הוצאות ── */
+      .expense-row { flex-wrap: wrap; gap: 6px; }
+    }
+
+    /* ── מסכים גדולים ── */
+    @media (min-width: 769px) {
+      .mobile-bottom-nav { display: none !important; }
     }
 
     .gm-style .gm-style-iw-c { padding: 0 !important; }
+
+    @media print {
+      .app-header, .tab-bar, .mobile-bottom-nav, .report-toolbar { display: none !important; }
+      html, body, #root, .main-content { overflow: visible !important; height: auto !important; }
+      .scroll-y { overflow: visible !important; height: auto !important; max-height: none !important; }
+      .modal-overlay { display: none !important; }
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
   </style>
 </head>
 <body>
@@ -161,6 +280,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
+const APP_VERSION = 'v16';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -173,12 +293,34 @@ const BLOCK_TYPES     = ['travel','activity','stop'];
 const BLOCK_HE        = {travel:'נסיעה',activity:'פעילות',stop:'עצירה'};
 const BLOCK_EMOJI     = {travel:'🚗',activity:'🎯',stop:'⏸️'};
 const BLOCK_COLOR     = {travel:'var(--accent)',activity:'var(--green)',stop:'var(--amber)'};
+const PLACE_TYPE_HE={restaurant:'🍽️ מסעדה',cafe:'☕ קפה',bar:'🍺 בר',food:'🍽️ אוכל',
+  lodging:'🏨 מלון',shopping_mall:'🛍️ קניון',store:'🛍️ חנות',supermarket:'🛒 סופרמרקט',
+  grocery_or_supermarket:'🛒 סופר',clothing_store:'👗 ביגוד',
+  tourist_attraction:'🎯 אטרקציה',museum:'🏛️ מוזיאון',park:'🌳 פארק',
+  natural_feature:'🏔️ טבע',campground:'⛺ קמפינג',beach:'🏖️ חוף ים',
+  amusement_park:'🎢 פארק שעשועים',zoo:'🦁 גן חיות',aquarium:'🐠 אקווריום',
+  movie_theater:'🎬 קולנוע',gym:'💪 ספורט',stadium:'🏟️ אצטדיון',
+  airport:'✈️ שדה תעופה',train_station:'🚂 רכבת',bus_station:'🚌 אוטובוס',
+  gas_station:'⛽ תחנת דלק',hospital:'🏥 בית חולים',pharmacy:'💊 בית מרקחת',
+  synagogue:'🕍 בית כנסת',church:'⛪ כנסייה',mosque:'🕌 מסגד',
+  spa:'💆 ספא',bank:'🏦 בנק',atm:'🏧 כספומט',
+  point_of_interest:'📍 אטרקציה',establishment:'🏢 עסק'};
+const PLACE_TYPE_PRIORITY=['restaurant','cafe','bar','lodging','shopping_mall','supermarket',
+  'grocery_or_supermarket','clothing_store','store','museum','zoo','aquarium','amusement_park',
+  'park','campground','beach','movie_theater','tourist_attraction','gym','stadium',
+  'airport','train_station','bus_station','gas_station','hospital','pharmacy','spa','bank','atm',
+  'synagogue','church','mosque','natural_feature','food','point_of_interest','establishment'];
+const getPlaceTypeLabel=types=>{
+  if(!types?.length) return '';
+  for(const t of PLACE_TYPE_PRIORITY){ if(types.includes(t)) return PLACE_TYPE_HE[t]||''; }
+  return '';
+};
 const WMO = {0:['☀️','בהיר'],1:['🌤️','בהיר ברובו'],2:['⛅','מעונן חלקית'],3:['☁️','מעונן'],45:['🌫️','ערפל'],51:['🌦️','טפטוף קל'],61:['🌧️','גשם קל'],63:['🌧️','גשם'],65:['🌧️','גשם כבד'],71:['🌨️','שלג קל'],80:['🌦️','מטר'],95:['⛈️','סופת רעמים']};
 
 /* ── ברירות מחדל ── */
 const defaultTrip = (name='טיול חדש') => ({
   id:uid(),name,startDate:'',endDate:'',
-  vehicle:{name:'הקרוון שלי',height:'',width:'',weight:'',plate:'',waterFillDate:'',wasteEmptyDate:''},
+  vehicle:{name:'הקרוון שלי',height:'',width:'',weight:'',plate:'',waterFillDate:'',wasteEmptyDate:'',waterLog:[],wasteLog:[]},
   days:[],expenses:[],interestBank:[],packingList:[],shoppingList:[],documents:[],generalNotes:'',quickNotes:[],
 });
 const defaultDay  = (date='') => ({id:uid(),date,location:'',coordinates:null,blocks:[],notes:'',summary:'',currentTime:'08:00'});
@@ -239,22 +381,110 @@ function Stars({value,onChange,size=18}){
 }
 
 /* ══════════════════════════════════
+   כפתור מעקב מים / קקי
+══════════════════════════════════ */
+function TrackerBtn({label,date,color,warnDays,log,onSave}){
+  const [open,setOpen]=useState(false);
+  const [editDate,setEditDate]=useState('');
+  const ref=useRef(null);
+  const days=daysSince(date);
+  const warn=days!==null&&days>=warnDays;
+
+  // פתיחה → מאתחל את שדה התאריך לתאריך הנוכחי (או היום אם ריק)
+  const openPopover=()=>{ setEditDate(date||todayISO()); setOpen(true); };
+
+  // סגירה בלחיצה מחוץ לפופאובר
+  useEffect(()=>{
+    if(!open) return;
+    const h=e=>{ if(ref.current&&!ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown',h);
+    return ()=>document.removeEventListener('mousedown',h);
+  },[open]);
+
+  const save=(d)=>{
+    if(!d) return;
+    onSave(d);
+    setOpen(false);
+  };
+
+  return <div ref={ref} style={{position:'relative'}}>
+    {/* כפתור תצוגה */}
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',minWidth:94,padding:'4px 6px',borderRadius:8,transition:'background .15s'}}
+      onClick={openPopover}
+      onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.06)'}
+      onMouseLeave={e=>e.currentTarget.style.background=''}
+      title="לחץ לעדכון / עריכה">
+      <span style={{fontSize:10,color:'var(--text3)',fontWeight:600}}>{label}</span>
+      <span style={{fontSize:12,fontWeight:700,color:warn?'#ef4444':color}}>
+        {date?new Date(date).toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit',year:'2-digit'}):'לא עודכן'}
+      </span>
+      {days!==null
+        ?<span style={{fontSize:10,color:warn?'#ef4444':'var(--text3)'}}>לפני {days} ימים{warn?' ⚠️':''}</span>
+        :<span style={{fontSize:9,color:'var(--accent)'}}>לחץ לעדכון ✎</span>}
+    </div>
+
+    {/* פופאובר עריכה */}
+    {open&&<div style={{
+      position:'absolute',top:'calc(100% + 6px)',right:0,zIndex:600,
+      background:'var(--bg2)',border:'1px solid var(--border)',
+      borderRadius:12,padding:14,minWidth:230,boxShadow:'var(--shadow)',
+      animation:'modalIn .15s ease'
+    }}>
+      <div style={{fontSize:12,fontWeight:700,color:'var(--text)',marginBottom:10}}>{label}</div>
+
+      {/* בחירת תאריך */}
+      <label className="label">בחר תאריך</label>
+      <input type="date" className="input" value={editDate}
+        onChange={e=>setEditDate(e.target.value)}
+        style={{marginBottom:8}}/>
+
+      <div style={{display:'flex',gap:6,marginBottom:12}}>
+        <button className="btn btn-primary btn-sm" style={{flex:1}}
+          onClick={()=>save(editDate)}>✓ שמור</button>
+        <button className="btn btn-secondary btn-sm"
+          onClick={()=>{const t=todayISO();setEditDate(t);save(t);}}>📅 היום</button>
+      </div>
+
+      {/* היסטוריה */}
+      {log?.length>0&&<>
+        <div style={{fontSize:10,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:6}}>היסטוריה</div>
+        <div style={{display:'flex',flexDirection:'column',gap:3,maxHeight:140,overflowY:'auto'}}>
+          {[...log].reverse().map((entry,i)=>(
+            <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+              fontSize:11,color:i===0?color:'var(--text2)',padding:'3px 6px',
+              background:i===0?`${color}18`:'var(--surface)',borderRadius:6}}>
+              <span>{new Date(entry).toLocaleDateString('he-IL',{weekday:'short',day:'2-digit',month:'2-digit',year:'2-digit'})}</span>
+              {i===0&&<span style={{fontSize:9,color}}>אחרון</span>}
+            </div>
+          ))}
+        </div>
+      </>}
+    </div>}
+  </div>;
+}
+
+/* ══════════════════════════════════
    כותרת רכב
 ══════════════════════════════════ */
-function VehicleHeader({trip,theme,onThemeToggle,onUpdate}){
+function VehicleHeader({trip,theme,syncStatus,hasGh,onThemeToggle,onUpdate}){
   const v=trip?.vehicle||{};
-  const wDays=daysSince(v.waterFillDate), kDays=daysSince(v.wasteEmptyDate);
-  const markToday=(key)=>{ if(!trip) return; onUpdate({...trip,vehicle:{...trip.vehicle,[key]:todayISO()}}); };
-  const TrackerBtn=({label,dateKey,color,warnDays})=>{
-    const d=v[dateKey]; const days=daysSince(d);
-    const warn=days!==null&&days>=warnDays;
-    return <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',minWidth:90}} onClick={()=>markToday(dateKey)} title={`לחץ לעדכון ל-היום`}>
-      <span style={{fontSize:10,color:'var(--text3)',fontWeight:600}}>{label}</span>
-      <span style={{fontSize:12,fontWeight:700,color:warn?'#ef4444':color}}>{d?dateStr(d):'לא עודכן'}</span>
-      {days!==null&&<span style={{fontSize:10,color:warn?'#ef4444':'var(--text3)'}}>לפני {days} ימים{warn?' ⚠️':''}</span>}
-      {!d&&<span style={{fontSize:9,color:'var(--text3)'}}>לחץ לעדכון</span>}
-    </div>;
+  const syncIcon=hasGh
+    ?syncStatus==='syncing'?{i:'🔄',c:'var(--amber)',t:'מסנכרן עם גיטהאב...'}
+    :syncStatus==='synced' ?{i:'☁️',c:'var(--green)',t:'מסונכרן עם גיטהאב'}
+    :syncStatus==='error'  ?{i:'⚠️',c:'var(--red)',  t:'שגיאת סנכרון — בדוק הגדרות גיטהאב'}
+    :null
+    :null;
+
+  const saveTracker=(dateKey,logKey,newDate)=>{
+    if(!trip) return;
+    const oldDate=v[dateKey]||'';
+    // מוסיף לרקורד רק אם התאריך השתנה
+    const newLog=newDate&&newDate!==oldDate
+      ?[...(v[logKey]||[]),newDate]
+      :(v[logKey]||[]);
+    onUpdate({...trip,vehicle:{...trip.vehicle,[dateKey]:newDate,[logKey]:newLog}});
   };
+
   return <div className="vehicle-banner">
     <div style={{display:'flex',alignItems:'center',gap:8}}>
       <span style={{fontSize:24}}>🚐</span>
@@ -263,16 +493,21 @@ function VehicleHeader({trip,theme,onThemeToggle,onUpdate}){
         <div style={{fontSize:11,color:'var(--text3)'}}>{[v.height&&`גובה:${v.height}מ`,v.width&&`רוחב:${v.width}מ`,v.plate].filter(Boolean).join(' · ')||'לא הוגדרו מידות'}</div>
       </div>
     </div>
-    <div style={{display:'flex',gap:18,flex:1,justifyContent:'center',flexWrap:'wrap',alignItems:'center'}}>
-      <TrackerBtn label="💧 מולאו מים" dateKey="waterFillDate" color="#4f8ef7" warnDays={3}/>
-      <TrackerBtn label="🪣 רוקן קקי" dateKey="wasteEmptyDate" color="#f59e0b" warnDays={4}/>
+    <div style={{display:'flex',gap:14,flex:1,justifyContent:'center',flexWrap:'wrap',alignItems:'center'}}>
+      <TrackerBtn label="💧 מולאו מים" date={v.waterFillDate} color="#4f8ef7" warnDays={3}
+        log={v.waterLog||[]} onSave={d=>saveTracker('waterFillDate','waterLog',d)}/>
+      <TrackerBtn label="🪣 רוקן קקי" date={v.wasteEmptyDate} color="#f59e0b" warnDays={4}
+        log={v.wasteLog||[]} onSave={d=>saveTracker('wasteEmptyDate','wasteLog',d)}/>
     </div>
     <div style={{display:'flex',alignItems:'center',gap:10,marginRight:'auto'}}>
       {trip&&<div style={{fontSize:12,color:'var(--text2)',textAlign:'right'}}>
         <div style={{fontWeight:600}}>{trip.name}</div>
         <div style={{color:'var(--text3)'}}>{trip.startDate||'—'} ← {trip.endDate||'—'}</div>
       </div>}
+      {syncIcon&&<span title={syncIcon.t} style={{fontSize:14,cursor:'default',userSelect:'none',
+        animation:syncStatus==='syncing'?'spin 1s linear infinite':''}}>{syncIcon.i}</span>}
       <button className="btn btn-secondary btn-icon btn-sm" onClick={onThemeToggle}>{theme==='dark'?'☀️':'🌙'}</button>
+      <span style={{fontSize:10,color:'var(--text3)',fontWeight:600,letterSpacing:'0.03em',userSelect:'none',opacity:.7}}>{APP_VERSION}</span>
     </div>
   </div>;
 }
@@ -330,6 +565,16 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
     });
     mapInst.current=map;
     window.__gmFocus=(lat,lng,zoom=17)=>{ map.panTo({lat,lng}); map.setZoom(zoom); };
+
+    // ResizeObserver — מפעיל resize כשהמיכל חוזר להיות גלוי (סלולר: מעבר בין תצוגות)
+    if(window.ResizeObserver&&mapRef.current){
+      const ro=new ResizeObserver(()=>{
+        if(mapRef.current?.offsetWidth>0&&mapRef.current?.offsetHeight>0){
+          window.google.maps.event.trigger(map,'resize');
+        }
+      });
+      ro.observe(mapRef.current);
+    }
 
     // חיפוש — שלוש שכבות: Places API → Nominatim (OpenStreetMap) → Geocoder
     const input=document.getElementById('map-search-input');
@@ -466,7 +711,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
       const name=nameEl?.value?.trim()||p.name;
       onAddToBankRef.current({name,address:p.address,lat:p.lat,lng:p.lng,placeId:p.placeId,
         rating:p.rating,userRatingsTotal:p.userRatingsTotal,openStatus:p.openStatus,
-        todayHours:p.todayHours,allHours:p.allHours,phone:p.phone,website:p.website,photoUrl:p.photoUrl});
+        todayHours:p.todayHours,allHours:p.allHours,phone:p.phone,website:p.website,photoUrl:p.photoUrl,placeType:p.placeType||''});
       iw.close();
       toast(`"${name}" נוסף לבנק האטרקציות`,'success');
     };
@@ -478,7 +723,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
       const name=nameEl?.value?.trim()||p.name;
       onAddToDayRef.current(sel.value,{name,address:p.address,lat:p.lat,lng:p.lng,placeId:p.placeId,
         rating:p.rating,userRatingsTotal:p.userRatingsTotal,openStatus:p.openStatus,
-        todayHours:p.todayHours,allHours:p.allHours,phone:p.phone,website:p.website,photoUrl:p.photoUrl});
+        todayHours:p.todayHours,allHours:p.allHours,phone:p.phone,website:p.website,photoUrl:p.photoUrl,placeType:p.placeType||''});
       iw.close();
       toast(`"${name}" נוסף ליום`,'success');
     };
@@ -499,7 +744,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
 
       /* ── מקור 1: Legacy Places API שדות בסיסיים ── */
       const legacyBasic=()=>new Promise(res=>{
-        svc.getDetails({placeId,fields:['name','formatted_address','geometry','photos','place_id']},
+        svc.getDetails({placeId,fields:['name','formatted_address','geometry','photos','place_id','types']},
           (p,st)=>{console.log('[DEBUG] legacyBasic:',st,p?.name);res(st===OK_ST&&p?p:null);});
       });
 
@@ -538,7 +783,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
         try{
           const r=await fetch(
             `https://places.googleapis.com/v1/places/${placeId}?languageCode=he&key=${key}`,
-            {headers:{'X-Goog-FieldMask':'displayName,formattedAddress,rating,currentOpeningHours,regularOpeningHours,websiteUri,nationalPhoneNumber,userRatingCount,priceLevel,reviews','Accept-Language':'he'}}
+            {headers:{'X-Goog-FieldMask':'displayName,formattedAddress,rating,currentOpeningHours,regularOpeningHours,websiteUri,nationalPhoneNumber,userRatingCount,priceLevel,reviews,types','Accept-Language':'he'}}
           );
           if(!r.ok){const e=await r.json().catch(()=>({}));console.error('[DEBUG] placesV1 failed',r.status,e?.error?.message||e);return null;}
           const d=await r.json();
@@ -556,6 +801,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
             phone:d.nationalPhoneNumber||'',
             website:d.websiteUri||'',
             reviews:(d.reviews||[]).slice(0,2).map(rv=>({author_name:rv.authorAttribution?.displayName||'',rating:rv.rating||0,text:rv.text?.text||''})),
+            types:d.types||[],
           };
         }catch{return null;}
       };
@@ -635,7 +881,8 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
 
         const photoUrl=basic?.photos?.[0]?.getUrl({maxWidth:300,maxHeight:110})||'';
         const _noGoogle=!v1&&!basic&&!geo;
-        iwPlace.data={name,address,lat,lng,placeId,photoUrl,
+        const placeType=getPlaceTypeLabel(v1?.types||basic?.types||[]);
+        iwPlace.data={name,address,lat,lng,placeId,photoUrl,placeType,
           rating:details.rating||null,
           userRatingsTotal:details.userRatingsTotal||null,
           openStatus:details.openStatus||'',
@@ -1000,6 +1247,7 @@ function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem,dragging,drag
         <div style={{fontSize:13,fontWeight:600,color:'var(--text)',cursor:'pointer'}} onClick={()=>onEdit(block)}>
           {block.title||`(${BLOCK_HE[block.type]} ללא שם)`}
         </div>
+        {block.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1,lineHeight:1.4}}>{block.placeType}</div>}
         {block.location&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>📍 {block.location}</div>}
         {block.notes&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,fontStyle:'italic',lineHeight:1.5}}>{block.notes}</div>}
         {/* פרטי מקום שנשמרו */}
@@ -1022,19 +1270,21 @@ function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem,dragging,drag
 ══════════════════════════════════ */
 function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank}){
   const[open,setOpen]=useState(true),[editing,setEd]=useState(null);
-  const[dragIdx,setDragIdx]=useState(null),[dragOver,setDragOver]=useState(null);
+  const dragIdxRef=useRef(null);
+  const[dragOver,setDragOver]=useState(null);
   const updBlock=upd=>onUpdate({...day,blocks:day.blocks.map(b=>b.id===upd.id?upd:b)});
   const delBlock=id=>onUpdate({...day,blocks:day.blocks.filter(b=>b.id!==id)});
   const handleDrop=(toIdx)=>{
-    if(dragIdx===null||dragIdx===toIdx){setDragIdx(null);setDragOver(null);return;}
+    const from=dragIdxRef.current;
+    if(from===null||from===toIdx){dragIdxRef.current=null;setDragOver(null);return;}
     const arr=[...sorted];
-    const[moved]=arr.splice(dragIdx,1);
+    const[moved]=arr.splice(from,1);
     arr.splice(toIdx,0,moved);
     // עדכון שעות: הראשון שומר על שעתו, השאר קוסקדה
     let t=arr[0].startTime;
     const reordered=arr.map(b=>{const nb={...b,startTime:t};t=addMins(t,b.durationMins||60);return nb;});
     onUpdate({...day,blocks:reordered});
-    setDragIdx(null);setDragOver(null);
+    dragIdxRef.current=null;setDragOver(null);
   };
   const addBlock=type=>{
     const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
@@ -1089,11 +1339,11 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
       <div className="timeline">
         {sorted.length===0&&<div style={{padding:'12px 0',color:'var(--text3)',fontSize:13,textAlign:'center'}}>אין בלוקים עדיין — הוסף בלוק למטה</div>}
         {sorted.map((bl,si)=><BlockItem key={bl.id} block={bl} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onFocusItem={onFocusItem}
-          dragging={dragIdx===si} dragOver={dragOver===si}
-          onDragStart={()=>setDragIdx(si)}
-          onDragOver={e=>{e.preventDefault();setDragOver(si);}}
-          onDrop={()=>handleDrop(si)}
-          onDragEnd={()=>{setDragIdx(null);setDragOver(null);}}/>)}
+          dragging={dragOver!==null&&dragIdxRef.current===si} dragOver={dragOver===si}
+          onDragStart={e=>{e.dataTransfer.effectAllowed='move';dragIdxRef.current=si;}}
+          onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move';if(dragOver!==si)setDragOver(si);}}
+          onDrop={e=>{e.preventDefault();handleDrop(si);}}
+          onDragEnd={()=>{dragIdxRef.current=null;setDragOver(null);}}/>)}
       </div>
 
       <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:12}}>
@@ -1130,6 +1380,7 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem}){
     <div style={{display:'flex',alignItems:'flex-start',gap:8}}>
       <div style={{flex:1,minWidth:0,cursor:item.lat?'pointer':'default'}} onClick={focusMap}>
         <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
+        {item.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1,lineHeight:1.4}}>{item.placeType}</div>}
         {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginTop:1}}>{item.address}</div>}
         {item.rating&&<div style={{fontSize:11,color:'var(--amber)',marginTop:2}}>⭐ {item.rating}{item.userRatingsTotal?` (${Number(item.userRatingsTotal).toLocaleString()})`:''}</div>}
         {item.openStatus&&<div style={{fontSize:11,fontWeight:600,marginTop:1,color:item.openStatus==='פתוח עכשיו'?'#22c55e':'#ef4444'}}>{item.openStatus==='פתוח עכשיו'?'✅':'🔴'} {item.openStatus}</div>}
@@ -1183,7 +1434,8 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem}){
       lat:block.lat,lng:block.lng,placeId:block.placeId,
       rating:block.placeRating,userRatingsTotal:block.placeUserRatings,
       openStatus:block.placeOpenStatus,todayHours:block.placeTodayHours,
-      phone:block.placePhone,website:block.placeWebsite,photoUrl:block.placePhotoUrl};
+      phone:block.placePhone,website:block.placeWebsite,photoUrl:block.placePhotoUrl,
+      placeType:block.placeType||''};
     onUpdate({...trip,
       interestBank:[...trip.interestBank,bankItem],
       days:trip.days.map(d=>d.id===dayId?{...d,blocks:d.blocks.filter(b=>b.id!==block.id)}:d)
@@ -1210,6 +1462,7 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem}){
     if(item.phone) newBlock.placePhone=item.phone;
     if(item.website) newBlock.placeWebsite=item.website;
     if(item.photoUrl) newBlock.placePhotoUrl=item.photoUrl;
+    if(item.placeType) newBlock.placeType=item.placeType;
     updDay({...day,blocks:[...day.blocks,newBlock]});
     toast(`"${item.name}" נוסף ליום`,'success');
   };
@@ -1263,9 +1516,12 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem}){
       </div>
     </div>
 
+    {showBank&&<div className="bank-backdrop" onClick={()=>setShowBank(false)}/>}
     {showBank&&<div className="sidebar-panel">
       <div style={{padding:'12px 14px',borderBottom:'1px solid var(--border)',fontWeight:700,fontSize:13,display:'flex',alignItems:'center',gap:8}}>
         🌟 בנק אטרקציות <span className="chip chip-blue" style={{fontSize:10}}>{trip.interestBank.length}</span>
+        <button className="bank-close-btn" onClick={()=>setShowBank(false)}
+          style={{marginRight:'auto',background:'none',border:'none',color:'var(--text3)',fontSize:18,cursor:'pointer',padding:'0 4px',lineHeight:1}}>✕</button>
       </div>
       <div className="scroll-y flex-1" style={{padding:'10px'}}>
         {trip.interestBank.length===0?(
@@ -1701,14 +1957,25 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
             ))}
           </div>
           <div className="section-title" style={{marginTop:8}}>מים וקקי</div>
-          {[['waterFillDate','💧 תאריך מילוי מים'],['wasteEmptyDate','🪣 תאריך ריקון קקי']].map(([k,lbl])=>(
-            <div key={k} style={{display:'flex',alignItems:'center',gap:10}}>
-              <span style={{fontSize:12,color:'var(--text2)',flex:1}}>{lbl}</span>
-              <input type="date" className="input" value={activeTrip.vehicle[k]||''} style={{width:150}}
-                onChange={e=>onLoadTrip(null,{...activeTrip,vehicle:{...activeTrip.vehicle,[k]:e.target.value}})}/>
-              <button className="btn btn-secondary btn-sm" onClick={()=>onLoadTrip(null,{...activeTrip,vehicle:{...activeTrip.vehicle,[k]:todayISO()}})}>היום</button>
-            </div>
-          ))}
+          {[['waterFillDate','waterLog','💧 תאריך מילוי מים'],['wasteEmptyDate','wasteLog','🪣 תאריך ריקון קקי']].map(([k,lk,lbl])=>{
+            const logArr=activeTrip.vehicle[lk]||[];
+            const saveDate=(newDate)=>{
+              const oldDate=activeTrip.vehicle[k]||'';
+              const newLog=newDate&&newDate!==oldDate?[...logArr,newDate]:logArr;
+              onLoadTrip(null,{...activeTrip,vehicle:{...activeTrip.vehicle,[k]:newDate,[lk]:newLog}});
+            };
+            return <div key={k}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}>
+                <span style={{fontSize:12,color:'var(--text2)',flex:1}}>{lbl}</span>
+                <input type="date" className="input" value={activeTrip.vehicle[k]||''} style={{width:150}}
+                  onChange={e=>saveDate(e.target.value)}/>
+                <button className="btn btn-secondary btn-sm" onClick={()=>saveDate(todayISO())}>היום</button>
+              </div>
+              {logArr.length>0&&<div style={{fontSize:10,color:'var(--text3)',paddingRight:4,marginBottom:6}}>
+                היסטוריה: {[...logArr].reverse().slice(0,4).map(d=>new Date(d).toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit',year:'2-digit'})).join(' ← ')}
+              </div>}
+            </div>;
+          })}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginTop:8}}>
             {[['startDate','תאריך תחילה'],['endDate','תאריך סיום']].map(([k,lbl])=>(
               <div key={k}><label className="label">{lbl}</label>
@@ -1747,6 +2014,350 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
 }
 
 /* ══════════════════════════════════
+   דו"ח טיול
+══════════════════════════════════ */
+function ReportSection({title,children}){
+  return <div style={{marginBottom:28}}>
+    <div style={{fontWeight:700,fontSize:16,color:'var(--text)',borderBottom:'2px solid var(--border)',paddingBottom:8,marginBottom:14}}>{title}</div>
+    {children}
+  </div>;
+}
+
+function ReportTab({trip}){
+  // ── חישובי סיכום ──
+  const totalExp=trip.expenses.reduce((s,e)=>s+(e.amount||0),0);
+  const expByCat=trip.expenses.reduce((a,e)=>{const c=e.category||'אחר';a[c]=(a[c]||0)+(e.amount||0);return a;},{});
+  const allBlocks=trip.days.flatMap(d=>d.blocks);
+  const completedBlocks=allBlocks.filter(b=>b.isCompleted).length;
+
+  // ── ייצוא טקסט ──
+  const genText=()=>{
+    const hr=(c='─')=>c.repeat(52);
+    const lines=[
+      `📋 דו"ח טיול: ${trip.name}`,hr('═'),'',
+    ];
+    if(trip.startDate||trip.endDate) lines.push(`📅 תאריכים: ${trip.startDate||'?'} – ${trip.endDate||'?'}`);
+    if(trip.vehicle?.name) lines.push(`🚐 רכב: ${trip.vehicle.name}${trip.vehicle.plate?' | '+trip.vehicle.plate:''}`);
+    lines.push(`📊 ימים: ${trip.days.length} | פעילויות בוצעו: ${completedBlocks}/${allBlocks.length} | הוצאות: ₪${totalExp.toFixed(0)}${trip.interestBank.length?` | אטרקציות שמורות: ${trip.interestBank.length}`:''}`,'');
+
+    if(trip.days.length>0){
+      lines.push(hr(),'📅 לוח זמנים יומי',hr());
+      trip.days.forEach((day,i)=>{
+        const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+        lines.push('',`יום ${i+1}${day.date?` — ${new Date(day.date).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long'})}`:''}`+(day.location?` | 📍 ${day.location}`:''));
+        if(!sorted.length){lines.push('  (אין פעילויות)');return;}
+        sorted.forEach(b=>{
+          const end=addMins(b.startTime,b.durationMins);
+          lines.push(`  ${b.isCompleted?'✅':'⬜'} ${b.startTime}–${end}  ${BLOCK_EMOJI[b.type]} ${b.title||BLOCK_HE[b.type]}${b.placeType?' ['+b.placeType+']':''}`);
+          if(b.location) lines.push(`       📍 ${b.location}`);
+          if(b.notes) lines.push(`       📝 ${b.notes}`);
+          if(b.placeRating) lines.push(`       ⭐ ${b.placeRating}/5`);
+          if(b.cost>0) lines.push(`       💰 ₪${b.cost}`);
+        });
+        if(day.notes) lines.push(`  📝 הערות: ${day.notes}`);
+        if(day.summary) lines.push(`  📌 סיכום: ${day.summary}`);
+      });
+      lines.push('');
+    }
+
+    if(trip.interestBank.length>0){
+      lines.push(hr(),'🌟 בנק אטרקציות',hr());
+      trip.interestBank.forEach(item=>{
+        lines.push(`• ${item.name}${item.placeType?' ['+item.placeType+']':''}${item.address?' — '+item.address:''}`);
+        if(item.rating) lines.push(`  ⭐ ${item.rating}`);
+        if(item.phone) lines.push(`  📞 ${item.phone}`);
+        if(item.website) lines.push(`  🌐 ${item.website}`);
+      });
+      lines.push('');
+    }
+
+    if(trip.expenses.length>0){
+      lines.push(hr(),`💰 הוצאות — סה"כ ₪${totalExp.toFixed(0)}`,hr());
+      Object.entries(expByCat).sort(([,a],[,b])=>b-a).forEach(([cat,sum])=>lines.push(`  ${cat}: ₪${sum.toFixed(0)}`));
+      lines.push('');
+      trip.expenses.forEach(e=>lines.push(`  ${e.date||'—'} | ${e.category||'—'} | ${e.description||''} | ₪${e.amount||0}${e.notes?' | '+e.notes:''}`));
+      lines.push('');
+    }
+
+    if(trip.generalNotes) lines.push(hr(),'📝 הערות כלליות',hr(),trip.generalNotes,'');
+
+    if(trip.quickNotes?.length>0){
+      lines.push(hr(),'📌 פתקים מהירים',hr());
+      trip.quickNotes.forEach(n=>lines.push(`• ${typeof n==='string'?n:n.text||''}`));
+      lines.push('');
+    }
+
+    if(trip.packingList?.length>0){
+      const done=trip.packingList.filter(i=>i.done), undone=trip.packingList.filter(i=>!i.done);
+      lines.push(hr(),`🎒 ציוד (${done.length}/${trip.packingList.length} נארזו)`,hr());
+      done.forEach(i=>lines.push(`  ✅ ${i.text}${i.category?' ['+i.category+']':''}`));
+      undone.forEach(i=>lines.push(`  ⬜ ${i.text}${i.category?' ['+i.category+']':''}`));
+      lines.push('');
+    }
+
+    if(trip.shoppingList?.length>0){
+      const done=trip.shoppingList.filter(i=>i.done), undone=trip.shoppingList.filter(i=>!i.done);
+      lines.push(hr(),`🛒 קניות (${done.length}/${trip.shoppingList.length} נקנו)`,hr());
+      done.forEach(i=>lines.push(`  ✅ ${i.text}${i.category?' ['+i.category+']':''}`));
+      undone.forEach(i=>lines.push(`  ⬜ ${i.text}${i.category?' ['+i.category+']':''}`));
+      lines.push('');
+    }
+
+    if(trip.documents?.length>0){
+      lines.push(hr(),'📁 מסמכים',hr());
+      trip.documents.forEach(d=>lines.push(`• ${d.title}${d.notes?' — '+d.notes:''}`));
+      lines.push('');
+    }
+
+    lines.push(hr('═'),`הדו"ח נוצר: ${new Date().toLocaleDateString('he-IL',{year:'numeric',month:'long',day:'2-digit',hour:'2-digit',minute:'2-digit'})}`);
+    return lines.join('\n');
+  };
+
+  const exportTxt=()=>{
+    const blob=new Blob(['﻿'+genText()],{type:'text/plain;charset=utf-8'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=`${trip.name}-דוח-טיול.txt`;
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+  };
+  const copyText=async()=>{
+    try{await navigator.clipboard.writeText(genText());toast('הדו"ח הועתק ✓','success');}
+    catch{toast('העתקה נכשלה — נסה להוריד','error');}
+  };
+
+  return <div style={{height:'100%',overflow:'hidden',display:'flex',flexDirection:'column'}}>
+    {/* ── סרגל כלים ── */}
+    <div className="report-toolbar" style={{padding:'12px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',flexShrink:0}}>
+      <span style={{fontWeight:700,fontSize:15}}>📋 דו"ח טיול</span>
+      <span style={{fontSize:13,color:'var(--text3)'}}>{trip.name}</span>
+      <div style={{flex:1}}/>
+      <button className="btn btn-secondary btn-sm" onClick={copyText}>📋 העתק טקסט</button>
+      <button className="btn btn-secondary btn-sm" onClick={exportTxt}>⬇️ הורד .txt</button>
+      <button className="btn btn-primary btn-sm" onClick={()=>window.print()}>🖨️ הדפס</button>
+    </div>
+
+    {/* ── תוכן הדו"ח ── */}
+    <div className="scroll-y" style={{flex:1,padding:'24px 28px',fontFamily:'Heebo,sans-serif'}}>
+      <div style={{maxWidth:860,margin:'0 auto'}}>
+
+        {/* כותרת */}
+        <div style={{textAlign:'center',marginBottom:28,paddingBottom:20,borderBottom:'2px solid var(--border)'}}>
+          <div style={{fontSize:26,fontWeight:800}}>{trip.name}</div>
+          {(trip.startDate||trip.endDate)&&<div style={{fontSize:14,color:'var(--text2)',marginTop:6}}>
+            {trip.startDate&&new Date(trip.startDate).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}
+            {trip.startDate&&trip.endDate&&' — '}
+            {trip.endDate&&new Date(trip.endDate).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}
+          </div>}
+          {trip.vehicle?.name&&<div style={{fontSize:12,color:'var(--text3)',marginTop:4}}>🚐 {trip.vehicle.name}{trip.vehicle.plate&&' | '+trip.vehicle.plate}</div>}
+        </div>
+
+        {/* כרטיסיות סיכום */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(110px,1fr))',gap:10,marginBottom:28}}>
+          {[
+            {e:'📅',v:trip.days.length,l:'ימים'},
+            {e:'🎯',v:`${completedBlocks}/${allBlocks.length}`,l:'פעילויות'},
+            {e:'💰',v:`₪${totalExp.toFixed(0)}`,l:'הוצאות'},
+            {e:'🌟',v:trip.interestBank.length,l:'אטרקציות'},
+            {e:'🎒',v:(trip.packingList||[]).filter(i=>i.done).length+'/'+((trip.packingList||[]).length),l:'ציוד נארז'},
+          ].map((s,i)=>(
+            <div key={i} style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:10,padding:'12px 8px',textAlign:'center'}}>
+              <div style={{fontSize:18}}>{s.e}</div>
+              <div style={{fontSize:18,fontWeight:800,color:'var(--accent)',lineHeight:1.2}}>{s.v}</div>
+              <div style={{fontSize:10,color:'var(--text3)',marginTop:2}}>{s.l}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* לוח זמנים */}
+        {trip.days.length>0&&<ReportSection title="📅 לוח זמנים יומי">
+          {trip.days.map((day,i)=>{
+            const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+            const dayColor=DAY_COLORS[i%DAY_COLORS.length];
+            return <div key={day.id} style={{marginBottom:18,borderRight:`3px solid ${dayColor}`,paddingRight:14}}>
+              <div style={{fontWeight:700,fontSize:13,color:dayColor,marginBottom:8,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                יום {i+1}
+                {day.date&&<span style={{color:'var(--text)'}}>{new Date(day.date).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long'})}</span>}
+                {day.location&&<span style={{color:'var(--text3)',fontWeight:400}}>📍 {day.location}</span>}
+              </div>
+              {sorted.length===0
+                ?<div style={{color:'var(--text3)',fontSize:12,fontStyle:'italic'}}>אין פעילויות</div>
+                :sorted.map(b=>{
+                  const end=addMins(b.startTime,b.durationMins);
+                  const col=BLOCK_COLOR[b.type]||'var(--text3)';
+                  return <div key={b.id} style={{display:'flex',gap:10,marginBottom:6,padding:'8px 10px',background:b.isCompleted?'rgba(34,197,94,0.07)':'var(--surface2)',borderRadius:8}}>
+                    <div style={{minWidth:90,flexShrink:0,display:'flex',flexDirection:'column',gap:2}}>
+                      <span style={{fontSize:11,color:col,fontWeight:700}}>{b.startTime}–{end}</span>
+                      <span style={{fontSize:9,color:'var(--text3)'}}>{BLOCK_HE[b.type]}</span>
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:600,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                        {b.isCompleted&&<span style={{color:'var(--green)'}}>✅</span>}
+                        {BLOCK_EMOJI[b.type]} {b.title||BLOCK_HE[b.type]}
+                        {b.placeType&&<span style={{fontSize:10,color:'var(--text3)',fontWeight:400,background:'var(--bg3)',padding:'1px 6px',borderRadius:4}}>{b.placeType}</span>}
+                      </div>
+                      {b.location&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>📍 {b.location}</div>}
+                      {b.notes&&<div style={{fontSize:11,color:'var(--text2)',marginTop:3,fontStyle:'italic',lineHeight:1.5}}>📝 {b.notes}</div>}
+                      <div style={{display:'flex',gap:10,marginTop:4,flexWrap:'wrap'}}>
+                        {b.placeRating>0&&<span style={{fontSize:11,color:'var(--amber)'}}>⭐ {b.placeRating}/5</span>}
+                        {b.cost>0&&<span style={{fontSize:11,color:'var(--amber)'}}>💰 ₪{b.cost}</span>}
+                        {b.durationMins>0&&<span style={{fontSize:11,color:'var(--text3)'}}>⏱ {b.durationMins} דק'</span>}
+                        {b.placePhone&&<span style={{fontSize:11,color:'var(--accent)'}}>📞 {b.placePhone}</span>}
+                        {b.placeWebsite&&<a href={b.placeWebsite} target="_blank" rel="noreferrer" style={{fontSize:11,color:'var(--accent)'}} onClick={e=>e.stopPropagation()}>🌐 {b.placeWebsite.replace(/^https?:\/\//,'').split('/')[0]}</a>}
+                      </div>
+                    </div>
+                  </div>;
+                })
+              }
+              {(day.notes||day.summary)&&<div style={{fontSize:11,color:'var(--text2)',padding:'6px 10px',background:'rgba(79,142,247,0.08)',borderRadius:6,marginTop:4,lineHeight:1.6}}>
+                {day.notes&&<div>📝 {day.notes}</div>}
+                {day.summary&&<div>📌 {day.summary}</div>}
+              </div>}
+            </div>;
+          })}
+        </ReportSection>}
+
+        {/* בנק אטרקציות */}
+        {trip.interestBank.length>0&&<ReportSection title="🌟 בנק אטרקציות">
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:8}}>
+            {trip.interestBank.map(item=>(
+              <div key={item.id} style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:8,padding:'10px 12px'}}>
+                <div style={{fontWeight:600,fontSize:13}}>{item.name}</div>
+                {item.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1}}>{item.placeType}</div>}
+                {item.address&&<div style={{fontSize:11,color:'var(--text3)',marginTop:3,lineHeight:1.4}}>📍 {item.address}</div>}
+                <div style={{display:'flex',gap:8,marginTop:4,flexWrap:'wrap'}}>
+                  {item.rating&&<span style={{fontSize:11,color:'var(--amber)'}}>⭐ {item.rating}</span>}
+                  {item.openStatus&&<span style={{fontSize:10,color:item.openStatus==='פתוח עכשיו'?'var(--green)':'var(--red)'}}>{item.openStatus}</span>}
+                </div>
+                {item.phone&&<div style={{fontSize:11,color:'var(--accent)',marginTop:2}}>📞 {item.phone}</div>}
+                {item.website&&<a href={item.website} target="_blank" rel="noreferrer" style={{fontSize:11,color:'var(--accent)',display:'block',marginTop:2}} onClick={e=>e.stopPropagation()}>🌐 {item.website.replace(/^https?:\/\//,'').split('/')[0]}</a>}
+              </div>
+            ))}
+          </div>
+        </ReportSection>}
+
+        {/* הוצאות */}
+        {trip.expenses.length>0&&<ReportSection title={`💰 הוצאות — סה"כ ₪${totalExp.toFixed(0)}`}>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14}}>
+            {Object.entries(expByCat).sort(([,a],[,b])=>b-a).map(([cat,sum])=>(
+              <div key={cat} style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:8,padding:'5px 12px',fontSize:12,display:'flex',gap:6,alignItems:'center'}}>
+                <span style={{color:CAT_COLORS[cat]||'var(--text3)',fontWeight:600}}>{cat}</span>
+                <span style={{color:'var(--text2)'}}>₪{sum.toFixed(0)}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:2}}>
+            {trip.expenses.map(e=>(
+              <div key={e.id} style={{display:'flex',gap:8,padding:'5px 8px',background:'var(--surface2)',borderRadius:6,fontSize:12,flexWrap:'wrap'}}>
+                <span style={{color:'var(--text3)',minWidth:78,flexShrink:0}}>{e.date||'—'}</span>
+                <span style={{color:CAT_COLORS[e.category]||'var(--text3)',fontWeight:600,minWidth:55,flexShrink:0}}>{e.category||'—'}</span>
+                <span style={{flex:1,color:'var(--text)'}}>{e.description}</span>
+                {e.notes&&<span style={{color:'var(--text3)',fontStyle:'italic'}}>{e.notes}</span>}
+                <span style={{color:'var(--amber)',fontWeight:700,flexShrink:0}}>₪{e.amount||0}</span>
+              </div>
+            ))}
+          </div>
+        </ReportSection>}
+
+        {/* הערות כלליות */}
+        {trip.generalNotes&&<ReportSection title="📝 הערות כלליות">
+          <div style={{whiteSpace:'pre-wrap',fontSize:13,lineHeight:1.85,color:'var(--text2)',padding:'10px 14px',background:'var(--surface2)',borderRadius:8}}>{trip.generalNotes}</div>
+        </ReportSection>}
+
+        {/* פתקים מהירים */}
+        {trip.quickNotes?.length>0&&<ReportSection title="📌 פתקים מהירים">
+          <div style={{display:'flex',flexDirection:'column',gap:5}}>
+            {trip.quickNotes.map((n,i)=>(
+              <div key={i} style={{fontSize:12,color:'var(--text2)',padding:'5px 10px',background:'var(--surface2)',borderRadius:6,borderRight:'3px solid var(--amber)'}}>
+                {typeof n==='string'?n:n.text||''}
+              </div>
+            ))}
+          </div>
+        </ReportSection>}
+
+        {/* ציוד */}
+        {(trip.packingList||[]).length>0&&(()=>{
+          const done=(trip.packingList||[]).filter(i=>i.done);
+          const undone=(trip.packingList||[]).filter(i=>!i.done);
+          return <ReportSection title={`🎒 ציוד — ${done.length}/${trip.packingList.length} נארזו`}>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(170px,1fr))',gap:4}}>
+              {done.map(item=>(
+                <div key={item.id} style={{display:'flex',alignItems:'center',gap:5,fontSize:12,color:'var(--green)'}}>
+                  <span>✅</span><span style={{textDecoration:'line-through',opacity:.7}}>{item.text}</span>
+                  {item.category&&<span style={{fontSize:10,color:'var(--text3)'}}>[{item.category}]</span>}
+                </div>
+              ))}
+              {undone.map(item=>(
+                <div key={item.id} style={{display:'flex',alignItems:'center',gap:5,fontSize:12,color:'var(--text2)'}}>
+                  <span>⬜</span><span>{item.text}</span>
+                  {item.category&&<span style={{fontSize:10,color:'var(--text3)'}}>[{item.category}]</span>}
+                </div>
+              ))}
+            </div>
+          </ReportSection>;
+        })()}
+
+        {/* קניות */}
+        {(trip.shoppingList||[]).length>0&&(()=>{
+          const done=(trip.shoppingList||[]).filter(i=>i.done);
+          const undone=(trip.shoppingList||[]).filter(i=>!i.done);
+          return <ReportSection title={`🛒 קניות — ${done.length}/${trip.shoppingList.length} נקנו`}>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(170px,1fr))',gap:4}}>
+              {done.map(item=>(
+                <div key={item.id} style={{display:'flex',alignItems:'center',gap:5,fontSize:12,color:'var(--green)'}}>
+                  <span>✅</span><span style={{textDecoration:'line-through',opacity:.7}}>{item.text}</span>
+                  {item.category&&<span style={{fontSize:10,color:'var(--text3)'}}>[{item.category}]</span>}
+                </div>
+              ))}
+              {undone.map(item=>(
+                <div key={item.id} style={{display:'flex',alignItems:'center',gap:5,fontSize:12,color:'var(--text2)'}}>
+                  <span>⬜</span><span>{item.text}</span>
+                  {item.category&&<span style={{fontSize:10,color:'var(--text3)'}}>[{item.category}]</span>}
+                </div>
+              ))}
+            </div>
+          </ReportSection>;
+        })()}
+
+        {/* מסמכים */}
+        {(trip.documents||[]).length>0&&<ReportSection title="📁 מסמכים">
+          <div style={{display:'flex',flexDirection:'column',gap:4}}>
+            {trip.documents.map(d=>(
+              <div key={d.id} style={{display:'flex',gap:8,padding:'6px 10px',background:'var(--surface2)',borderRadius:6,fontSize:12,alignItems:'center'}}>
+                <span>📄</span>
+                <span style={{fontWeight:600}}>{d.title}</span>
+                {d.notes&&<span style={{color:'var(--text3)',flex:1}}>— {d.notes}</span>}
+                {d.savedAt&&<span style={{color:'var(--text3)',fontSize:11}}>{new Date(d.savedAt).toLocaleDateString('he-IL')}</span>}
+              </div>
+            ))}
+          </div>
+        </ReportSection>}
+
+        {/* כלי הרכב */}
+        {trip.vehicle&&(trip.vehicle.waterFillDate||trip.vehicle.wasteEmptyDate)&&<ReportSection title="🚐 מצב כלי הרכב">
+          <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+            {trip.vehicle.waterFillDate&&<div style={{padding:'8px 14px',background:'rgba(79,142,247,0.1)',borderRadius:8,border:'1px solid rgba(79,142,247,0.3)'}}>
+              <div style={{fontSize:11,color:'var(--text3)'}}>💧 מילוי מים אחרון</div>
+              <div style={{fontWeight:700,fontSize:13,color:'#4f8ef7'}}>{new Date(trip.vehicle.waterFillDate).toLocaleDateString('he-IL')}</div>
+              {(trip.vehicle.waterLog||[]).length>1&&<div style={{fontSize:10,color:'var(--text3)',marginTop:2}}>סה"כ {trip.vehicle.waterLog.length} מילויים</div>}
+            </div>}
+            {trip.vehicle.wasteEmptyDate&&<div style={{padding:'8px 14px',background:'rgba(245,158,11,0.1)',borderRadius:8,border:'1px solid rgba(245,158,11,0.3)'}}>
+              <div style={{fontSize:11,color:'var(--text3)'}}>🪣 ריקון קקי אחרון</div>
+              <div style={{fontWeight:700,fontSize:13,color:'#f59e0b'}}>{new Date(trip.vehicle.wasteEmptyDate).toLocaleDateString('he-IL')}</div>
+              {(trip.vehicle.wasteLog||[]).length>1&&<div style={{fontSize:10,color:'var(--text3)',marginTop:2}}>סה"כ {trip.vehicle.wasteLog.length} ריקונים</div>}
+            </div>}
+          </div>
+        </ReportSection>}
+
+        {/* תחתית */}
+        <div style={{marginTop:28,paddingTop:12,borderTop:'1px solid var(--border)',fontSize:11,color:'var(--text3)',textAlign:'center'}}>
+          דו"ח נוצר: {new Date().toLocaleDateString('he-IL',{year:'numeric',month:'long',day:'2-digit'})}
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+/* ══════════════════════════════════
    APP
 ══════════════════════════════════ */
 function App(){
@@ -1755,14 +2366,87 @@ function App(){
   const[trips,setTrips]=useState(saved?.trips||[defaultTrip('הטיול הראשון שלי')]);
   const[activeId,setActiveId]=useState(saved?.activeId||(saved?.trips?.[0]?.id??null));
   const[tab,setTab]=useState('map');
-  const[mobileSide,setMobile]=useState('timeline');
+  const[mobileSide,setMobile]=useState('map');
   const[ghBusy,setGhBusy]=useState(false);
+  const[syncStatus,setSyncStatus]=useState('idle'); // 'idle'|'syncing'|'synced'|'error'
   const[hlDay,setHlDay]=useState(null);
   const[hlItem,setHlItem]=useState(null);
   const ghSha=useRef(null);
+  const autoSyncTimer=useRef(null);
+  const skipNextPush=useRef(false);
+  const syncMounted=useRef(false);
 
   useEffect(()=>saveState({settings,trips,activeId}),[settings,trips,activeId]);
   useEffect(()=>{document.body.className=settings.theme==='light'?'light':'';},[settings.theme]);
+
+  // ── טעינה אוטומטית בעת פתיחה ──
+  useEffect(()=>{
+    const{githubToken:tok,githubUsername:user,githubRepo:repo}=settings;
+
+    // גיבוי: טעינה מה-URL הציבורי של GitHub Pages (ללא צורך בפרטי גישה)
+    const loadFromPublicUrl=()=>{
+      const base=window.location.href.replace(/\/index\.html.*$/,'').replace(/\?.*$/,'');
+      const url=`${base}/trip_data.json?_=${Date.now()}`;
+      fetch(url)
+        .then(r=>r.ok?r.json():Promise.reject('not found'))
+        .then(content=>{
+          if(content?.trips?.length>0){
+            skipNextPush.current=true;
+            setTrips(content.trips);
+            if(content.activeId) setActiveId(content.activeId);
+            setSyncStatus('synced');
+            toast('הטיול נטען מהאתר ✓','success');
+          }
+        })
+        .catch(()=>setSyncStatus('idle'));
+    };
+
+    if(tok&&user&&repo){
+      // יש פרטי גישה → טעינה מלאה דרך GitHub API (קריאה + כתיבה)
+      setSyncStatus('syncing');
+      ghLoad(tok,user,repo,'trip_data.json')
+        .then(({content,sha})=>{
+          ghSha.current=sha;
+          if(content.trips&&content.trips.length>0){
+            skipNextPush.current=true;
+            setTrips(content.trips);
+            if(content.activeId) setActiveId(content.activeId);
+            toast('נטען מגיטהאב ✓','success');
+          }
+          setSyncStatus('synced');
+        })
+        .catch(()=>{
+          // API נכשל — נסה URL ציבורי
+          loadFromPublicUrl();
+        });
+    } else {
+      // אין פרטי גישה (סלולר / מכשיר חדש) → קריאה מ-URL ציבורי
+      loadFromPublicUrl();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+
+  // ── שמירה אוטומטית לגיטהאב אחרי כל שינוי (debounce 2.5s) ──
+  useEffect(()=>{
+    if(!syncMounted.current){syncMounted.current=true;return;}
+    if(skipNextPush.current){skipNextPush.current=false;return;}
+    const{githubToken:tok,githubUsername:user,githubRepo:repo}=settings;
+    if(!tok||!user||!repo) return;
+    setSyncStatus('syncing');
+    clearTimeout(autoSyncTimer.current);
+    autoSyncTimer.current=setTimeout(async()=>{
+      try{
+        const res=await ghSave(tok,user,repo,'trip_data.json',{trips,activeId,savedAt:new Date().toISOString()},ghSha.current);
+        ghSha.current=res.content.sha;
+        setSyncStatus('synced');
+      }catch(e){
+        setSyncStatus('error');
+        console.error('Auto-sync error:',e.message);
+      }
+    },2500);
+    return ()=>clearTimeout(autoSyncTimer.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[trips,activeId]);
 
   const trip=useMemo(()=>trips.find(t=>t.id===activeId)||trips[0]||null,[trips,activeId]);
 
@@ -1808,19 +2492,29 @@ function App(){
     if(item.phone) newBlock.placePhone=item.phone;
     if(item.website) newBlock.placeWebsite=item.website;
     if(item.photoUrl) newBlock.placePhotoUrl=item.photoUrl;
+    if(item.placeType) newBlock.placeType=item.placeType;
     const updatedDay={...day,blocks:[...day.blocks,newBlock]};
     updTrip({...trip,days:trip.days.map(d=>d.id===dayId?updatedDay:d)});
   },[trip,updTrip]);
 
   const push=async()=>{
-    if (!trip) return; setGhBusy(true);
-    try{const res=await ghSave(settings.githubToken,settings.githubUsername,settings.githubRepo,'trip_data.json',{trips,activeId,savedAt:new Date().toISOString()},ghSha.current);ghSha.current=res.content.sha;toast('נדחף לגיטהאב ✓','success');}
-    catch(e){toast(`שגיאת דחיפה: ${e.message}`,'error');}finally{setGhBusy(false);}
+    setGhBusy(true); setSyncStatus('syncing');
+    try{
+      const res=await ghSave(settings.githubToken,settings.githubUsername,settings.githubRepo,'trip_data.json',{trips,activeId,savedAt:new Date().toISOString()},ghSha.current);
+      ghSha.current=res.content.sha; setSyncStatus('synced');
+      toast('נדחף לגיטהאב ✓','success');
+    }catch(e){setSyncStatus('error');toast(`שגיאת דחיפה: ${e.message}`,'error');}
+    finally{setGhBusy(false);}
   };
   const pull=async()=>{
-    setGhBusy(true);
-    try{const{content,sha}=await ghLoad(settings.githubToken,settings.githubUsername,settings.githubRepo,'trip_data.json');ghSha.current=sha;if(content.trips){setTrips(content.trips);setActiveId(content.activeId);}toast('נמשך מגיטהאב ✓','success');}
-    catch(e){toast(`שגיאת משיכה: ${e.message}`,'error');}finally{setGhBusy(false);}
+    setGhBusy(true); setSyncStatus('syncing');
+    try{
+      const{content,sha}=await ghLoad(settings.githubToken,settings.githubUsername,settings.githubRepo,'trip_data.json');
+      ghSha.current=sha;
+      if(content.trips){skipNextPush.current=true;setTrips(content.trips);if(content.activeId)setActiveId(content.activeId);}
+      setSyncStatus('synced'); toast('נמשך מגיטהאב ✓','success');
+    }catch(e){setSyncStatus('error');toast(`שגיאת משיכה: ${e.message}`,'error');}
+    finally{setGhBusy(false);}
   };
 
   const TABS=[
@@ -1831,6 +2525,7 @@ function App(){
     {id:'packing',label:'🎒 ציוד'},
     {id:'shopping',label:'🛒 קניות'},
     {id:'notes',label:'📝 הערות'},
+    {id:'report',label:'📋 דו"ח'},
     {id:'settings',label:'⚙️ הגדרות'},
   ];
 
@@ -1865,6 +2560,7 @@ function App(){
       case 'packing': return <Checklist title="רשימת ציוד" emoji="🎒" items={trip.packingList} onUpdate={items=>updTrip({...trip,packingList:items})}/>;
       case 'shopping': return <Checklist title="רשימת קניות" emoji="🛒" items={trip.shoppingList} onUpdate={items=>updTrip({...trip,shoppingList:items})}/>;
       case 'notes': return <NotesTab trip={trip} onUpdate={updTrip}/>;
+      case 'report': return <ReportTab trip={trip}/>;
       case 'settings': return <SettingsTab settings={settings} onSettings={setSettings} trips={trips} activeTrip={trip} onNewTrip={newTrip} onLoadTrip={loadTrip} onDeleteTrip={delTrip} onPush={push} onPull={pull} ghBusy={ghBusy}/>;
       default: return null;
     }
@@ -1872,7 +2568,7 @@ function App(){
 
   return <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
     <div className="app-header">
-      <VehicleHeader trip={trip} theme={settings.theme} onThemeToggle={()=>setSettings(s=>({...s,theme:s.theme==='dark'?'light':'dark'}))} onUpdate={updTrip}/>
+      <VehicleHeader trip={trip} theme={settings.theme} syncStatus={syncStatus} hasGh={!!(settings.githubToken&&settings.githubUsername&&settings.githubRepo)} onThemeToggle={()=>setSettings(s=>({...s,theme:s.theme==='dark'?'light':'dark'}))} onUpdate={updTrip}/>
       <div className="tab-bar">
         {TABS.map(t=>(
           <button key={t.id} className={`tab-btn${tab===t.id?' active':''}`} onClick={()=>setTab(t.id)}>{t.label}</button>
@@ -1883,6 +2579,19 @@ function App(){
       </div>
     </div>
     <div className="main-content">{renderMain()}</div>
+    <nav className="mobile-bottom-nav">
+      {TABS.map(t=>{
+        const [icon,...words]=t.label.split(' ');
+        return <button key={t.id} className={`mobile-nav-btn${tab===t.id?' active':''}`} onClick={()=>setTab(t.id)}>
+          <span className="mobile-nav-icon">{icon}</span>
+          <span className="mobile-nav-label">{words.join(' ')}</span>
+        </button>;
+      })}
+      {tab==='map'&&<button className="mobile-nav-btn" style={{color:'var(--amber)',borderTop:'2px solid var(--amber)'}} onClick={()=>setMobile(s=>s==='map'?'timeline':'map')}>
+        <span className="mobile-nav-icon">{mobileSide==='map'?'📋':'🗺️'}</span>
+        <span className="mobile-nav-label">{mobileSide==='map'?'לוח':'מפה'}</span>
+      </button>}
+    </nav>
     <Toasts/>
   </div>;
 }
