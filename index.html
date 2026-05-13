@@ -519,13 +519,15 @@ function TrackerBtn({label,date,color,warnDays,log,onSave}){
 /* ══════════════════════════════════
    כותרת רכב
 ══════════════════════════════════ */
-function VehicleHeader({trip,theme,syncStatus,hasGh,onThemeToggle,onUpdate,onGoSettings}){
+function VehicleHeader({trip,theme,syncStatus,hasGh,hasFb,onThemeToggle,onUpdate,onGoSettings}){
   const v=trip?.vehicle||{};
-  const syncIcon=hasGh
-    ?syncStatus==='syncing'?{i:'🔄',c:'var(--amber)',t:'מסנכרן עם גיטהאב...'}
-    :syncStatus==='synced' ?{i:'☁️',c:'var(--green)',t:'מסונכרן עם גיטהאב'}
-    :syncStatus==='error'  ?{i:'⚠️',c:'var(--red)',  t:'שגיאת סנכרון — בדוק הגדרות'}
-    :{i:'☁️',c:'var(--text3)',t:'לא מסונכרן'}
+  const hasSync=hasGh||hasFb;
+  const syncLabel=hasFb?'Firebase':hasGh?'גיטהאב':'';
+  const syncIcon=hasSync
+    ?syncStatus==='syncing'?{i:'🔄',c:'var(--amber)',t:`מסנכרן עם ${syncLabel}...`}
+    :syncStatus==='synced' ?{i:'☁️',c:'var(--green)',t:`מסונכרן עם ${syncLabel} ✓`}
+    :syncStatus==='error'  ?{i:'⚠️',c:'var(--red)',  t:'שגיאת סנכרון — עבור לחיבוריות 🔗'}
+    :{i:'☁️',c:'var(--text3)',t:'ממתין לסנכרון...'}
     :{i:'🔴',c:'var(--red)',t:'סנכרון לא מוגדר — לחץ להגדרה'};
 
   const saveTracker=(dateKey,logKey,newDate)=>{
@@ -557,8 +559,8 @@ function VehicleHeader({trip,theme,syncStatus,hasGh,onThemeToggle,onUpdate,onGoS
         <div style={{fontWeight:600}}>{trip.name}</div>
         <div style={{color:'var(--text3)'}}>{trip.startDate||'—'} ← {trip.endDate||'—'}</div>
       </div>}
-      <span title={syncIcon.t} onClick={!hasGh?onGoSettings:undefined}
-        style={{fontSize:14,cursor:hasGh?'default':'pointer',userSelect:'none',color:syncIcon.c,
+      <span title={syncIcon.t} onClick={!hasSync?onGoSettings:undefined}
+        style={{fontSize:14,cursor:hasSync?'default':'pointer',userSelect:'none',color:syncIcon.c,
         animation:syncStatus==='syncing'?'spin 1s linear infinite':''}}>{syncIcon.i}</span>
       <button className="btn btn-secondary btn-icon btn-sm" onClick={onThemeToggle}>{theme==='dark'?'☀️':'🌙'}</button>
       <span style={{fontSize:10,color:'var(--text3)',fontWeight:600,letterSpacing:'0.03em',userSelect:'none',opacity:.7}}>{APP_VERSION}</span>
@@ -3091,7 +3093,7 @@ function App(){
 
   return <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
     <div className="app-header">
-      <VehicleHeader trip={trip} theme={settings.theme} syncStatus={syncStatus} hasGh={!!settings.githubToken} onThemeToggle={()=>setSettings(s=>({...s,theme:s.theme==='dark'?'light':'dark'}))} onUpdate={updTrip} onGoSettings={()=>setTab('settings')}/>
+      <VehicleHeader trip={trip} theme={settings.theme} syncStatus={syncStatus} hasGh={!!settings.githubToken} hasFb={!!(settings.firebaseUrl&&settings.syncKey)} onThemeToggle={()=>setSettings(s=>({...s,theme:s.theme==='dark'?'light':'dark'}))} onUpdate={updTrip} onGoSettings={()=>setTab('connectivity')}/>
       <div className="tab-bar">
         {TABS.map(t=>(
           <button key={t.id} className={`tab-btn${tab===t.id?' active':''}`} onClick={()=>setTab(t.id)}>{t.label}</button>
