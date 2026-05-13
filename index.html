@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="pragma" content="no-cache" />
-  <title>CaravanControl — מנהל טיולים v21</title>
+  <title>CaravanControl — מנהל טיולים v22</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -41,7 +41,7 @@
     .tab-btn { padding: 8px 16px; border: none; background: none; color: var(--text2); font-size: 13px; font-weight: 500; font-family: 'Heebo', sans-serif; cursor: pointer; border-radius: 8px 8px 0 0; border-bottom: 2px solid transparent; transition: all 0.15s; white-space: nowrap; }
     .tab-btn:hover { color: var(--text); background: var(--surface); }
     .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--surface); }
-    .main-content { flex: 1; overflow: hidden; display: flex; }
+    .main-content { flex: 1; overflow: hidden; display: flex; width: 100%; }
 
     .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border: none; border-radius: var(--radius); font-size: 13px; font-weight: 500; font-family: 'Heebo', sans-serif; cursor: pointer; transition: all 0.15s; }
     .btn-primary { background: var(--accent); color: #fff; }
@@ -101,7 +101,7 @@
     .star:hover { transform: scale(1.2); }
 
     /* ── תצוגת מפה 3 עמודות ── */
-    .map-view-3col { display: flex; flex-direction: row; height: 100%; overflow: hidden; }
+    .map-view-3col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: row; height: 100%; overflow: hidden; }
     .map-col { flex: 1 1 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
     .map-col + .map-col { border-left: 1px solid var(--border); }
 
@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v21';
+const APP_VERSION = 'v22';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
