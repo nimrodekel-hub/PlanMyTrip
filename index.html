@@ -574,16 +574,19 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
         let lng=basic?.geometry?.location?.lng()||geo?.lng||lng0;
 
         if(!name){
-          // גיבוי: רכיב ראשון של הכתובת — רק אם לא נראה ככתובת רחוב
           const fromAddr=(address||'').split(',')[0]?.trim()||'';
           if(fromAddr&&!isStreetAddr(fromAddr)){
             name=fromAddr;
           } else {
-            // ניסיון אחרון: Nominatim (גיאוגרפי, רק אם הכל נכשל)
             const nom=await nominatimLookup();
             const nomName=nom?.name||'';
-            name=nomName&&!isStreetAddr(nomName)?nomName:fromAddr&&!isStreetAddr(fromAddr)?fromAddr:'מקום';
-            if(!address) address=nom?.address||'';
+            if(nom?.address&&!address) address=nom.address;
+            // גם אם אין שם POI — ניסה להשתמש בחלק הראשון של הכתובת מ-Nominatim
+            const nomFromAddr=(nom?.address||address||'').split(',')[0]?.trim()||'';
+            name=nomName&&!isStreetAddr(nomName)?nomName
+                :fromAddr&&!isStreetAddr(fromAddr)?fromAddr
+                :nomFromAddr?nomFromAddr
+                :'מקום';
           }
         }
 
