@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="pragma" content="no-cache" />
-  <title>CaravanControl — מנהל טיולים v22</title>
+  <title>CaravanControl — מנהל טיולים v23</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v22';
+const APP_VERSION = 'v23';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -2136,9 +2136,9 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
             </span>
           </div>
 
-          <div><label className="label">כתובת Firebase Database URL</label>
-            <input className="input" type="text" value={s.firebaseUrl||''} onChange={e=>upd('firebaseUrl',e.target.value.trim())}
-              placeholder="https://my-project-default-rtdb.firebaseio.com"/></div>
+          <div><label className="label">כתובת Firebase (מוגדרת אוטומטית ✓)</label>
+            <input className="input" type="text" value={FB_URL} readOnly
+              style={{fontFamily:'monospace',fontSize:11,color:'var(--green)',background:'var(--bg3)',cursor:'default'}}/></div>
 
           <div style={{display:'flex',gap:8,alignItems:'flex-end'}}>
             <div style={{flex:1}}><label className="label">מפתח סנכרון (Sync Key) — זהה בכל המכשירים</label>
@@ -2229,7 +2229,7 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus}){
   };
 
   const saveAndSync=()=>{
-    const newS={...s,firebaseUrl:s.firebaseUrl||FB_URL};
+    const newS={...s,firebaseUrl:FB_URL}; // תמיד FB_URL הנכון
     onSettings(newS);
     setTimeout(()=>onPush(newS),300);
   };
@@ -2285,11 +2285,17 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus}){
         <div className="card-header"><span style={{fontWeight:700}}>⚙️ הגדרות חיבור</span></div>
         <div className="card-body" style={{display:'flex',flexDirection:'column',gap:12}}>
           <div>
-            <label className="label">כתובת Firebase Database URL</label>
-            <input className="input" type="text" value={s.firebaseUrl||FB_URL}
-              onChange={e=>upd('firebaseUrl',e.target.value.trim())}
-              placeholder="https://xxx-default-rtdb.firebaseio.com"/>
-            <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>כבר הוגדרה עבורך: <code style={{color:'var(--accent)'}}>{FB_URL}</code></div>
+            <label className="label">כתובת Firebase Database — מוגדרת אוטומטית ✓</label>
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              <input className="input" type="text" value={FB_URL} readOnly
+                style={{fontFamily:'monospace',fontSize:11,color:'var(--green)',background:'var(--bg3)',cursor:'default'}}/>
+              <button className="btn btn-secondary btn-sm" style={{flexShrink:0,whiteSpace:'nowrap'}}
+                onClick={()=>{navigator.clipboard?.writeText(FB_URL);toast('הועתק','success');}}>📋</button>
+            </div>
+            <div style={{marginTop:6,background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.25)',borderRadius:6,padding:'7px 10px',fontSize:11,lineHeight:1.7}}>
+              ⚠️ <strong>שים לב:</strong> זו כתובת ה-API של מסד הנתונים — <strong>לא</strong> כתובת הקונסול.<br/>
+              אל תשנה אותה. הכתובת נקבעת אוטומטית לפי הפרויקט שלך.
+            </div>
           </div>
           <div>
             <label className="label">מפתח סנכרון — זהה בכל המכשירים</label>
@@ -2739,7 +2745,8 @@ function App(){
       firebaseUrl:FB_URL, syncKey:''};
     const merged={...def,...(saved?.settings||{})};
     // אם אין Firebase URL — הכנס את ברירת המחדל
-    if(!merged.firebaseUrl) merged.firebaseUrl=FB_URL;
+    // תמיד השתמש בכתובת הנכונה — לא כתובת הקונסול
+    merged.firebaseUrl=FB_URL;
     // אם אין syncKey — צור אחד אוטומטית
     if(!merged.syncKey) merged.syncKey=genSyncKey();
     return merged;
