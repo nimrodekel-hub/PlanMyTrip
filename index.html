@@ -501,20 +501,28 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
           const comps=results[0].address_components||[];
           const addr=results[0].formatted_address||'';
           const loc=results[0].geometry?.location;
-          // שם מ-address_components: מחפש establishment/POI
-          const EXCLUDE=['street_number','route','postal_code','country',
-            'administrative_area_level_1','administrative_area_level_2',
-            'administrative_area_level_3','administrative_area_level_4',
-            'locality','sublocality','sublocality_level_1','neighborhood','political'];
+          // שם רק מ-address_components; לא משתמשים ב-fromAddr כי יכול להיות כתובת רחוב
           const poi=comps.find(c=>c.types.some(t=>['establishment','natural_feature',
-            'tourist_attraction','park','airport','premise','colloquial_area'].includes(t)));
-          const nonRoad=comps.find(c=>!c.types.some(t=>EXCLUDE.includes(t)));
-          // גיבוי: הרכיב הראשון של formatted_address הוא תמיד שם המקום עבור POI
-          const fromAddr=addr.split(',')[0]?.trim()||'';
-          const name=poi?.long_name||nonRoad?.long_name||fromAddr||'';
+            'tourist_attraction','park','airport','premise','colloquial_area',
+            'point_of_interest'].includes(t)));
+          const name=poi?.long_name||'';
           res({name,address:addr,lat:loc?.lat()||lat0,lng:loc?.lng()||lng0});
         });
       });
+
+      /* ── מקור 5: Overpass API (OpenStreetMap) — שם POI מדויק ── */
+      const overpassLookup=async()=>{
+        try{
+          const q=`[out:json][timeout:4];(node["name"](around:50,${lat0},${lng0});way["name"](around:50,${lat0},${lng0}););out tags 8;`;
+          const r=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',body:'data='+encodeURIComponent(q)});
+          const d=await r.json();
+          const els=(d.elements||[]).filter(e=>e.tags?.name);
+          // מעדיף שם בעברית; מוציא רחובות (highway=*)
+          const nonStreet=els.filter(e=>!e.tags?.highway);
+          const best=nonStreet.find(e=>e.tags?.['name:he'])||nonStreet[0];
+          return best?.tags?.['name:he']||best?.tags?.name||null;
+        }catch{return null;}
+      };
 
       /* ── מקור 4: Places API v1 (New REST) — שם + פרטים מלאים ── */
       const placesV1=async()=>{
@@ -555,27 +563,32 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
         }catch{return null;}
       };
 
-      try{
-        // מריץ את כל המקורות במקביל
-        const [basic, geo, v1]=await Promise.all([legacyBasic(), geocoderLookup(), placesV1()]);
+      // בודק אם מחרוזת נראית כמו כתובת רחוב (ולא שם מקום)
+      const isStreetAddr=s=>/^\d|.*\s\d+$|^דרך\s|^רחוב\s|^שדרות\s|^הרחוב\s|^St\s|^Rd\s|^Ave\s/i.test(s?.trim()||'');
 
-        // מקביל: שדות בתשלום של Legacy (רק אם basic הצליח)
+      try{
+        // מריץ את כל המקורות במקביל כולל Overpass
+        const [basic, geo, v1, ovp]=await Promise.all([legacyBasic(), geocoderLookup(), placesV1(), overpassLookup()]);
+
+        // שדות בתשלום של Legacy (רק אם basic הצליח)
         const rich=basic?await legacyRich(basic.geometry):null;
 
-        // ── בוחר שם: v1 > legacy > geocoder > nominatim ──
-        let name=v1?.name||basic?.name||geo?.name||'';
+        // ── בוחר שם: v1 > legacy > geocoder(poi) > overpass > nominatim > fromAddr ──
+        let name=v1?.name||basic?.name||geo?.name||ovp||'';
         let address=v1?.address||basic?.formatted_address||geo?.address||'';
         let lat=basic?.geometry?.location?.lat()||geo?.lat||lat0;
         let lng=basic?.geometry?.location?.lng()||geo?.lng||lng0;
 
         if(!name){
-          // ניסיון: השם הוא הרכיב הראשון של הכתובת (לפני הפסיק הראשון)
-          const fromAddr=address.split(',')[0]?.trim();
-          if(fromAddr){
+          // גיבוי: רכיב ראשון של הכתובת — רק אם לא נראה ככתובת רחוב
+          const fromAddr=(address||'').split(',')[0]?.trim()||'';
+          if(fromAddr&&!isStreetAddr(fromAddr)){
             name=fromAddr;
           } else {
+            // ניסיון אחרון: Nominatim
             const nom=await nominatimLookup();
-            name=nom?.name||(nom?.address?.split(',')[0]?.trim())||'מקום';
+            const nomName=nom?.name||'';
+            name=nomName&&!isStreetAddr(nomName)?nomName:fromAddr&&!isStreetAddr(fromAddr)?fromAddr:'מקום';
             if(!address) address=nom?.address||'';
           }
         }
