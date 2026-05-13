@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="pragma" content="no-cache" />
-  <title>CaravanControl — מנהל טיולים v18</title>
+  <title>CaravanControl — מנהל טיולים v19</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -280,7 +280,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v18';
+const APP_VERSION = 'v19';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -343,6 +343,25 @@ const ghSave = (tok,user,repo,path,data,sha=null) => ghFetch(tok,user,repo,path,
 const ghLoad = async (tok,user,repo,path) => { const d=await ghFetch(tok,user,repo,path); return {content:JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\n/g,''))))),sha:d.sha}; };
 const ghUpload = (tok,user,repo,path,b64,sha=null) => ghFetch(tok,user,repo,path,'PUT',{message:`העלאת ${path}`,content:b64,...(sha?{sha}:{})});
 const fileToB64 = f => new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(f);});
+
+/* ── Firebase Realtime Database REST (ללא SDK) ── */
+const fbBase = url => url?.replace(/\/$/,'');
+const fbRead = async (dbUrl,key) => {
+  const r = await fetch(`${fbBase(dbUrl)}/planmytrip/${key}.json?_=${Date.now()}`);
+  if(!r.ok) throw new Error(`Firebase read ${r.status}`);
+  return r.json(); // null אם אין נתונים
+};
+const fbWrite = async (dbUrl,key,data) => {
+  const r = await fetch(`${fbBase(dbUrl)}/planmytrip/${key}.json`,{
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(data)
+  });
+  if(!r.ok) throw new Error(`Firebase write ${r.status}`);
+  return r.json();
+};
+const genSyncKey = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{
+  const r=Math.random()*16|0;return(c==='x'?r:(r&3|8)).toString(16);
+});
 
 /* ── מזג אוויר ── */
 const fetchWeather = (lat,lon) => fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,weathercode&current_weather=true&timezone=auto&forecast_days=3`).then(r=>r.json());
@@ -1898,7 +1917,7 @@ function NotesTab({trip,onUpdate}){
 /* ══════════════════════════════════
    לשונית הגדרות
 ══════════════════════════════════ */
-function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,onDeleteTrip,onPush,onPull,ghBusy}){
+function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,onDeleteTrip,onPush,onPull,ghBusy,genKey}){
   const[s,setS]=useState({...settings});
   const upd=(k,v)=>setS(p=>({...p,[k]:v}));
   const[showForm,setShowForm]=useState(false);
@@ -1986,45 +2005,79 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
         </div>
       </div>}
 
-      <div className="card" style={{border:!s.githubToken?'2px solid var(--amber)':'1px solid var(--border)'}}>
+      {/* ── Firebase (מועדף) ── */}
+      <div className="card" style={{border:s.firebaseUrl&&s.syncKey?'2px solid var(--green)':!s.githubToken?'2px solid var(--amber)':'1px solid var(--border)'}}>
         <div className="card-header">
           <span style={{fontWeight:700}}>☁️ סנכרון בין מכשירים</span>
-          {s.githubToken?<span className="chip chip-green" style={{fontSize:10}}>✓ מוגדר</span>
-            :<span className="chip chip-amber" style={{fontSize:10}}>⚠️ נדרש הגדרה</span>}
+          {s.firebaseUrl&&s.syncKey?<span className="chip chip-green" style={{fontSize:10}}>✓ Firebase</span>
+            :s.githubToken?<span className="chip chip-blue" style={{fontSize:10}}>GitHub</span>
+            :<span className="chip chip-amber" style={{fontSize:10}}>⚠️ לא מוגדר</span>}
         </div>
         <div className="card-body" style={{display:'flex',flexDirection:'column',gap:12}}>
-          {!s.githubToken&&<div style={{background:'rgba(245,158,11,0.1)',border:'1px solid rgba(245,158,11,0.3)',borderRadius:8,padding:'10px 12px',fontSize:12,lineHeight:1.9}}>
-            <strong style={{color:'var(--amber)'}}>📋 הגדרה חד-פעמית — 3 צעדים:</strong><br/>
-            1. לחץ: <a href="https://github.com/settings/tokens/new?scopes=public_repo&description=PlanMyTrip" target="_blank" rel="noreferrer" style={{color:'var(--accent)',fontWeight:600}}>צור GitHub Token</a> ← לחץ "Generate token" ← העתק<br/>
-            2. הדבק את ה-Token בשדה למטה ← לחץ "שמור ✓"<br/>
-            3. זהו! הנתונים יסונכרנו אוטומטית לכל מכשיר 📱💻
+
+          {/* הוראות Firebase */}
+          <div style={{background:'rgba(79,142,247,0.08)',border:'1px solid rgba(79,142,247,0.2)',borderRadius:8,padding:'12px 14px',fontSize:12,lineHeight:2}}>
+            <strong style={{color:'var(--accent)',fontSize:13}}>🔥 סנכרון דרך Firebase (מומלץ — חינמי)</strong><br/>
+            <span style={{color:'var(--text2)'}}>
+              1. פתח <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" style={{color:'var(--accent)',fontWeight:600}}>console.firebase.google.com</a><br/>
+              2. "Add project" → שם → Create<br/>
+              3. "Build" → "Realtime Database" → Create → <strong>"Start in test mode"</strong><br/>
+              4. העתק את כתובת ה-Database (מסתיימת ב-<code>.firebaseio.com</code>)<br/>
+              5. הדבק למטה ← לחץ "צור מפתח סנכרון" ← שמור
+            </span>
+          </div>
+
+          <div><label className="label">כתובת Firebase Database URL</label>
+            <input className="input" type="text" value={s.firebaseUrl||''} onChange={e=>upd('firebaseUrl',e.target.value.trim())}
+              placeholder="https://my-project-default-rtdb.firebaseio.com"/></div>
+
+          <div style={{display:'flex',gap:8,alignItems:'flex-end'}}>
+            <div style={{flex:1}}><label className="label">מפתח סנכרון (Sync Key) — זהה בכל המכשירים</label>
+              <input className="input" type="text" value={s.syncKey||''} onChange={e=>upd('syncKey',e.target.value.trim())}
+                placeholder="לחץ 'צור' ליצירת מפתח אוטומטי" style={{fontFamily:'monospace',fontSize:11}}/></div>
+            <button className="btn btn-secondary btn-sm" style={{flexShrink:0,whiteSpace:'nowrap'}}
+              onClick={()=>upd('syncKey',genSyncKey())}>🔑 צור מפתח</button>
+          </div>
+
+          {s.syncKey&&<div style={{background:'var(--bg3)',borderRadius:8,padding:'8px 12px',fontSize:11,color:'var(--text2)',lineHeight:1.8}}>
+            📱 <strong>להגדרת סלולר:</strong> פתח הגדרות ⚙️ באפליקציה ← הכנס את אותה כתובת Firebase ואת המפתח:<br/>
+            <code style={{color:'var(--accent)',wordBreak:'break-all'}}>{s.syncKey}</code>
           </div>}
-          <div>
-            <label className="label">GitHub Personal Access Token {s.githubToken&&'✓'}</label>
-            <input className="input" type="password" value={s.githubToken||''} onChange={e=>upd('githubToken',e.target.value)}
-              placeholder="ghp_xxxxxxxxxxxx" autoComplete="off"/>
-          </div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-            <div><label className="label">שם משתמש GitHub</label>
-              <input className="input" type="text" value={s.githubUsername||''} onChange={e=>upd('githubUsername',e.target.value)} placeholder="nimrodekel-hub"/></div>
-            <div><label className="label">שם הריפו</label>
-              <input className="input" type="text" value={s.githubRepo||''} onChange={e=>upd('githubRepo',e.target.value)} placeholder="PlanMyTrip"/></div>
-          </div>
-          <div><label className="label">מפתח API של גוגל מפות</label>
-            <input className="input" type="password" value={s.googleMapsKey||''} onChange={e=>upd('googleMapsKey',e.target.value)} autoComplete="off"/></div>
-          <div style={{display:'flex',gap:10,flexWrap:'wrap',marginTop:4}}>
-            <button className="btn btn-primary" onClick={()=>{onSettings(s);toast('ההגדרות נשמרו','success');if(s.githubToken&&activeTrip)setTimeout(onPush,300);}}>
-              💾 שמור{s.githubToken?' ✓ ויסנכרן':''}
-            </button>
-            {activeTrip&&s.githubToken&&<>
-              <button className="btn btn-success" onClick={onPush} disabled={ghBusy}>{ghBusy?'⏳ שומר…':'⬆ סנכרן עכשיו'}</button>
-              <button className="btn btn-secondary" onClick={onPull} disabled={ghBusy}>{ghBusy?'⏳…':'⬇ טען מגיטהאב'}</button>
+
+          <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center'}}>
+            <button className="btn btn-primary" onClick={()=>{
+              onSettings(s);
+              toast('ההגדרות נשמרו','success');
+              if((s.firebaseUrl&&s.syncKey)||s.githubToken) setTimeout(()=>onPush(s),400);
+            }}>💾 שמור{(s.firebaseUrl&&s.syncKey)||s.githubToken?' ✓ ויסנכרן':''}</button>
+            {activeTrip&&((s.firebaseUrl&&s.syncKey)||s.githubToken)&&<>
+              <button className="btn btn-success" onClick={onPush} disabled={ghBusy}>{ghBusy?'⏳…':'⬆ סנכרן עכשיו'}</button>
+              <button className="btn btn-secondary" onClick={onPull} disabled={ghBusy}>{ghBusy?'⏳…':'⬇ טען מהענן'}</button>
             </>}
           </div>
-          {s.githubToken&&<div style={{fontSize:11,color:'var(--green)',lineHeight:1.7}}>
-            ✓ הנתונים נשמרים אוטומטית ב-GitHub ומסונכרנים לכל מכשיר.<br/>
-            📱 במכשיר אחר: פשוט פתח את האתר — הטיול יטען אוטומטית.
-          </div>}
+
+          {/* GitHub — אפשרות מתקדמת */}
+          <details style={{marginTop:4}}>
+            <summary style={{fontSize:11,color:'var(--text3)',cursor:'pointer',userSelect:'none'}}>⚙️ הגדרות GitHub (מתקדם)</summary>
+            <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:10}}>
+              <div><label className="label">GitHub Personal Access Token</label>
+                <input className="input" type="password" value={s.githubToken||''} onChange={e=>upd('githubToken',e.target.value)} placeholder="ghp_xxx" autoComplete="off"/></div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <div><label className="label">שם משתמש</label>
+                  <input className="input" type="text" value={s.githubUsername||''} onChange={e=>upd('githubUsername',e.target.value)}/></div>
+                <div><label className="label">שם ריפו</label>
+                  <input className="input" type="text" value={s.githubRepo||''} onChange={e=>upd('githubRepo',e.target.value)}/></div>
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header"><span style={{fontWeight:700}}>🗺️ Google Maps API</span></div>
+        <div className="card-body">
+          <label className="label">מפתח API של גוגל מפות</label>
+          <input className="input" type="password" value={s.googleMapsKey||''} onChange={e=>upd('googleMapsKey',e.target.value)} autoComplete="off"/>
         </div>
       </div>
 
@@ -2381,7 +2434,7 @@ function ReportTab({trip}){
 ══════════════════════════════════ */
 function App(){
   const saved=useMemo(()=>loadState(),[]);
-  const[settings,setSettings]=useState(saved?.settings||{githubToken:'',githubUsername:'nimrodekel-hub',githubRepo:'PlanMyTrip',googleMapsKey:'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw',theme:'dark'});
+  const[settings,setSettings]=useState(saved?.settings||{githubToken:'',githubUsername:'nimrodekel-hub',githubRepo:'PlanMyTrip',googleMapsKey:'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw',theme:'dark',firebaseUrl:'',syncKey:''});
   const[trips,setTrips]=useState(saved?.trips||[defaultTrip('הטיול הראשון שלי')]);
   const[activeId,setActiveId]=useState(saved?.activeId||(saved?.trips?.[0]?.id??null));
   const[tab,setTab]=useState('map');
@@ -2400,33 +2453,29 @@ function App(){
 
   // ── טעינה אוטומטית בעת פתיחה ──
   useEffect(()=>{
-    const{githubToken:tok,githubUsername:user,githubRepo:repo}=settings;
+    const{firebaseUrl:fbUrl,syncKey,githubToken:tok,githubUsername:user,githubRepo:repo}=settings;
 
-    // גיבוי: טעינה מה-URL הציבורי של GitHub Pages (ללא צורך בפרטי גישה)
-    const loadFromPublicUrl=()=>{
-      const base=window.location.href.replace(/\/index\.html.*$/,'').replace(/\?.*$/,'').replace(/\/$/,'');
-      const url=`${base}/trip_data.json?_=${Date.now()}`;
-      fetch(url)
-        .then(r=>r.ok?r.json():Promise.reject('not found'))
-        .then(content=>{
-          if(content?.trips?.length>0){
+    if(fbUrl&&syncKey){
+      // Firebase — המסלול המועדף
+      setSyncStatus('syncing');
+      fbRead(fbUrl,syncKey)
+        .then(data=>{
+          if(data?.trips?.length>0){
             skipNextPush.current=true;
-            setTrips(content.trips);
-            if(content.activeId) setActiveId(content.activeId);
-            setSyncStatus('synced');
-            toast('הטיול נטען מהאתר ✓','success');
+            setTrips(data.trips);
+            if(data.activeId) setActiveId(data.activeId);
+            toast('הטיול נטען מ-Firebase ✓','success');
           }
+          setSyncStatus('synced');
         })
-        .catch(()=>setSyncStatus('idle'));
-    };
-
-    if(tok&&user&&repo){
-      // יש פרטי גישה → טעינה מלאה דרך GitHub API (קריאה + כתיבה)
+        .catch(()=>setSyncStatus('error'));
+    } else if(tok&&user&&repo){
+      // GitHub API — מסלול גיבוי
       setSyncStatus('syncing');
       ghLoad(tok,user,repo,'trip_data.json')
         .then(({content,sha})=>{
           ghSha.current=sha;
-          if(content.trips&&content.trips.length>0){
+          if(content.trips?.length>0){
             skipNextPush.current=true;
             setTrips(content.trips);
             if(content.activeId) setActiveId(content.activeId);
@@ -2434,43 +2483,36 @@ function App(){
           }
           setSyncStatus('synced');
         })
-        .catch(()=>{
-          // API נכשל — נסה URL ציבורי
-          loadFromPublicUrl();
-        });
+        .catch(()=>setSyncStatus('idle'));
     } else {
-      // אין פרטי גישה (סלולר / מכשיר חדש) → קריאה מ-URL ציבורי
-      loadFromPublicUrl();
-      // תזכורת הגדרה חד-פעמית — רק אם לא מכשיר סלולר (כדי לא לבלבל)
-      if(!navigator.maxTouchPoints&&!window.matchMedia('(max-width:768px)').matches){
-        setTimeout(()=>toast('🔴 הסנכרון לא מוגדר — עבור להגדרות ⚙️ להפעלה','info'),4000);
+      // אין סנכרון — הצג תזכורת חד-פעמית במחשב
+      if(!(navigator.maxTouchPoints>0)&&!window.matchMedia('(max-width:768px)').matches){
+        setTimeout(()=>toast('☁️ הסנכרון לא מוגדר — עבור להגדרות ⚙️ להפעלה','info'),4000);
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
 
-  // ── שמירה אוטומטית לגיטהאב אחרי כל שינוי (debounce 2.5s) ──
+  // ── שמירה אוטומטית אחרי כל שינוי (debounce 2s) ──
   useEffect(()=>{
     if(!syncMounted.current){syncMounted.current=true;return;}
     if(skipNextPush.current){skipNextPush.current=false;return;}
-    const{githubToken:tok,githubUsername:user,githubRepo:repo}=settings;
-    if(!tok||!user||!repo) return;
+    const{firebaseUrl:fbUrl,syncKey,githubToken:tok,githubUsername:user,githubRepo:repo}=settings;
+    if(!fbUrl&&(!tok||!user||!repo)) return;
     setSyncStatus('syncing');
     clearTimeout(autoSyncTimer.current);
     autoSyncTimer.current=setTimeout(async()=>{
       try{
-        // אם אין SHA (נטען מ-URL ציבורי), שלוף SHA נוכחי קודם
-        if(!ghSha.current){
-          try{ const r=await ghLoad(tok,user,repo,'trip_data.json'); ghSha.current=r.sha; }catch{}
+        if(fbUrl&&syncKey){
+          await fbWrite(fbUrl,syncKey,{trips,activeId,savedAt:new Date().toISOString()});
+        } else if(tok&&user&&repo){
+          if(!ghSha.current){try{const r=await ghLoad(tok,user,repo,'trip_data.json');ghSha.current=r.sha;}catch{}}
+          const res=await ghSave(tok,user,repo,'trip_data.json',{trips,activeId,savedAt:new Date().toISOString()},ghSha.current);
+          ghSha.current=res.content.sha;
         }
-        const res=await ghSave(tok,user,repo,'trip_data.json',{trips,activeId,savedAt:new Date().toISOString()},ghSha.current);
-        ghSha.current=res.content.sha;
         setSyncStatus('synced');
-      }catch(e){
-        setSyncStatus('error');
-        console.error('Auto-sync error:',e.message);
-      }
-    },2500);
+      }catch(e){setSyncStatus('error');console.error('Sync error:',e.message);}
+    },2000);
     return ()=>clearTimeout(autoSyncTimer.current);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[trips,activeId]);
@@ -2524,23 +2566,37 @@ function App(){
     updTrip({...trip,days:trip.days.map(d=>d.id===dayId?updatedDay:d)});
   },[trip,updTrip]);
 
-  const push=async()=>{
+  const push=async(s=settings)=>{
     setGhBusy(true); setSyncStatus('syncing');
     try{
-      const res=await ghSave(settings.githubToken,settings.githubUsername,settings.githubRepo,'trip_data.json',{trips,activeId,savedAt:new Date().toISOString()},ghSha.current);
-      ghSha.current=res.content.sha; setSyncStatus('synced');
-      toast('נדחף לגיטהאב ✓','success');
-    }catch(e){setSyncStatus('error');toast(`שגיאת דחיפה: ${e.message}`,'error');}
+      if(s.firebaseUrl&&s.syncKey){
+        await fbWrite(s.firebaseUrl,s.syncKey,{trips,activeId,savedAt:new Date().toISOString()});
+        toast('נשמר ב-Firebase ✓','success');
+      } else {
+        if(!ghSha.current){try{const r=await ghLoad(s.githubToken,s.githubUsername,s.githubRepo,'trip_data.json');ghSha.current=r.sha;}catch{}}
+        const res=await ghSave(s.githubToken,s.githubUsername,s.githubRepo,'trip_data.json',{trips,activeId,savedAt:new Date().toISOString()},ghSha.current);
+        ghSha.current=res.content.sha;
+        toast('נדחף לגיטהאב ✓','success');
+      }
+      setSyncStatus('synced');
+    }catch(e){setSyncStatus('error');toast(`שגיאת שמירה: ${e.message}`,'error');}
     finally{setGhBusy(false);}
   };
-  const pull=async()=>{
+  const pull=async(s=settings)=>{
     setGhBusy(true); setSyncStatus('syncing');
     try{
-      const{content,sha}=await ghLoad(settings.githubToken,settings.githubUsername,settings.githubRepo,'trip_data.json');
-      ghSha.current=sha;
-      if(content.trips){skipNextPush.current=true;setTrips(content.trips);if(content.activeId)setActiveId(content.activeId);}
-      setSyncStatus('synced'); toast('נמשך מגיטהאב ✓','success');
-    }catch(e){setSyncStatus('error');toast(`שגיאת משיכה: ${e.message}`,'error');}
+      let data=null;
+      if(s.firebaseUrl&&s.syncKey){
+        data=await fbRead(s.firebaseUrl,s.syncKey);
+        toast('נטען מ-Firebase ✓','success');
+      } else {
+        const{content,sha}=await ghLoad(s.githubToken,s.githubUsername,s.githubRepo,'trip_data.json');
+        ghSha.current=sha; data=content;
+        toast('נמשך מגיטהאב ✓','success');
+      }
+      if(data?.trips){skipNextPush.current=true;setTrips(data.trips);if(data.activeId)setActiveId(data.activeId);}
+      setSyncStatus('synced');
+    }catch(e){setSyncStatus('error');toast(`שגיאת טעינה: ${e.message}`,'error');}
     finally{setGhBusy(false);}
   };
 
@@ -2588,7 +2644,7 @@ function App(){
       case 'shopping': return <Checklist title="רשימת קניות" emoji="🛒" items={trip.shoppingList} onUpdate={items=>updTrip({...trip,shoppingList:items})}/>;
       case 'notes': return <NotesTab trip={trip} onUpdate={updTrip}/>;
       case 'report': return <ReportTab trip={trip}/>;
-      case 'settings': return <SettingsTab settings={settings} onSettings={setSettings} trips={trips} activeTrip={trip} onNewTrip={newTrip} onLoadTrip={loadTrip} onDeleteTrip={delTrip} onPush={push} onPull={pull} ghBusy={ghBusy}/>;
+      case 'settings': return <SettingsTab settings={settings} onSettings={setSettings} trips={trips} activeTrip={trip} onNewTrip={newTrip} onLoadTrip={loadTrip} onDeleteTrip={delTrip} onPush={push} onPull={pull} ghBusy={ghBusy} genKey={genSyncKey}/>;
       default: return null;
     }
   };
