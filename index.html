@@ -1602,15 +1602,22 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
   const[collapsed,setCollapsed]=useState(()=>new Set());
   const takeoutRef=useRef(null);
 
-  /* חילוץ שם מדינה מהכתובת — חלק אחרון אחרי פסיק */
+  /* חילוץ שם מדינה מהכתובת — חלק אחרון אחרי פסיק, ללא מיקוד */
   const getCountry=item=>{
     const addr=(item.address||'').trim();
     if(!addr) return 'ללא כתובת';
     const parts=addr.split(',').map(s=>s.trim()).filter(Boolean);
     if(parts.length<2) return parts[0]||'ללא כתובת';
     let last=parts[parts.length-1];
-    // אם החלק האחרון הוא מיקוד בלבד (ספרות) → קח את לפניו
-    if(/^\d[\d\s-]{1,8}$/.test(last)&&parts.length>2) last=parts[parts.length-2];
+    // הסר מיקוד בתחילה: "1013 הונגריה" → "הונגריה"
+    last=last.replace(/^\d[\d\s\-]{0,9}\s+/,'').trim();
+    // הסר מיקוד בסוף: "הונגריה 1013" → "הונגריה"
+    last=last.replace(/\s+\d[\d\s\-]{0,9}$/,'').trim();
+    // אם נשאר ריק או רק ספרות (מיקוד בלבד) → קח את החלק שלפניו ונקה גם אותו
+    if(!last||/^\d+$/.test(last)){
+      last=parts[parts.length-2]||'';
+      last=last.replace(/^\d[\d\s\-]{0,9}\s+/,'').replace(/\s+\d[\d\s\-]{0,9}$/,'').trim();
+    }
     return last||'ללא כתובת';
   };
 
