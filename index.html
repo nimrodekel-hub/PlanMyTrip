@@ -1889,44 +1889,71 @@ function Checklist({title,emoji,items,onUpdate}){
    לשונית מסמכים
 ══════════════════════════════════ */
 function DocsTab({trip,onUpdate,settings}){
-  const[busy,setBusy]=useState(false),fileRef=useRef(null);
+  const[busy,setBusy]=useState(false);
+  const fileRef=useRef(null);
+  const hasFb=!!(settings.firebaseUrl&&settings.syncKey);
+  const MAX_BYTES=8*1024*1024; // 8MB — Firebase REST practical limit
+  const WARN_BYTES=3*1024*1024; // 3MB — אזהרה
+  const fmtSize=b=>b>=1024*1024?`${(b/1024/1024).toFixed(1)}MB`:b>=1024?`${Math.round(b/1024)}KB`:`${b}B`;
+  const icon=t=>t?.includes('pdf')?'📄':t?.startsWith('image')?'🖼️':t?.includes('word')||t?.includes('document')?'📝':t?.includes('sheet')||t?.includes('excel')?'📊':'📎';
+
   const upload=async file=>{
-    const hasGH=settings.githubToken&&settings.githubUsername&&settings.githubRepo;
-    if (!hasGH){
-      const r=new FileReader();
-      r.onload=()=>{
-        onUpdate({...trip,documents:[...trip.documents,{id:uid(),name:file.name,type:file.type,size:file.size,url:r.result,uploadedAt:new Date().toISOString(),source:'local'}]});
-        toast(`"${file.name}" נשמר מקומית`,'info');
-      }; r.readAsDataURL(file); return;
+    if(file.size>MAX_BYTES){
+      toast(`הקובץ גדול מדי (${fmtSize(file.size)}) — המגבלה היא ${fmtSize(MAX_BYTES)} לקובץ`,'error');
+      return;
     }
     setBusy(true);
-    try {
-      const b64=await fileToB64(file);
-      const path=`docs/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
-      const res=await ghUpload(settings.githubToken,settings.githubUsername,settings.githubRepo,path,b64);
-      onUpdate({...trip,documents:[...trip.documents,{id:uid(),name:file.name,type:file.type,size:file.size,url:res.content.download_url||res.content.html_url,ghPath:path,uploadedAt:new Date().toISOString(),source:'github'}]});
-      toast(`"${file.name}" הועלה לגיטהאב ✓`,'success');
-    } catch(err){toast(`העלאה נכשלה: ${err.message}`,'error');}
+    try{
+      const url=await new Promise((res,rej)=>{
+        const r=new FileReader();
+        r.onload=()=>res(r.result);
+        r.onerror=rej;
+        r.readAsDataURL(file);
+      });
+      const doc={id:uid(),name:file.name,type:file.type,size:file.size,
+        url,savedAt:new Date().toISOString(),
+        source:hasFb?'firebase':'local'};
+      onUpdate({...trip,documents:[...trip.documents,doc]});
+      if(file.size>WARN_BYTES)
+        toast(`"${file.name}" נשמר (${fmtSize(file.size)}) — קובץ גדול עלול להאט סנכרון`,'info');
+      else
+        toast(`"${file.name}" ${hasFb?'נשמר ויסונכרן ל-Firebase ✓':'נשמר מקומית — הגדר Firebase לסנכרון'}`,'success');
+    }catch(e){toast(`שגיאה בשמירה: ${e.message}`,'error');}
     finally{setBusy(false);}
   };
-  const icon=t=>t?.includes('pdf')?'📄':t?.startsWith('image')?'🖼️':t?.includes('word')?'📝':'📎';
+
+  const totalSize=trip.documents.reduce((s,d)=>s+(d.size||0),0);
+  const srcLabel=doc=>doc.source==='github'?'☁️ גיטהאב':hasFb?'☁️ Firebase':'💾 מקומי';
 
   return <div style={{height:'100%',overflow:'hidden',display:'flex',flexDirection:'column'}}>
-    <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:12}}>
+    {/* כותרת */}
+    <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
       <span style={{fontWeight:700,fontSize:15}}>📁 מסמכים</span>
       <span className="chip chip-blue" style={{fontSize:11}}>{trip.documents.length} קבצים</span>
+      {trip.documents.length>0&&<span style={{fontSize:11,color:'var(--text3)'}}>{fmtSize(totalSize)} סה"כ</span>}
       <div style={{flex:1}}/>
       <button className="btn btn-primary" onClick={()=>fileRef.current?.click()} disabled={busy}>
-        {busy?'⏳ מעלה…':'+ העלה קובץ'}
+        {busy?'⏳ שומר…':'+ העלה קובץ'}
       </button>
-      <input ref={fileRef} type="file" style={{display:'none'}} multiple onChange={e=>Array.from(e.target.files).forEach(upload)}/>
+      <input ref={fileRef} type="file" style={{display:'none'}} multiple
+        onChange={e=>{Array.from(e.target.files).forEach(upload);e.target.value='';}}/>
     </div>
-    <div className="scroll-y flex-1" style={{padding:16}} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();Array.from(e.dataTransfer.files).forEach(upload);}}>
+
+    {/* תוכן */}
+    <div className="scroll-y flex-1" style={{padding:16}}
+      onDragOver={e=>e.preventDefault()}
+      onDrop={e=>{e.preventDefault();Array.from(e.dataTransfer.files).forEach(upload);}}>
       {trip.documents.length===0?(
         <div className="empty-state">
           <div className="emoji">📁</div>
           <div style={{fontWeight:600,color:'var(--text)'}}>אין מסמכים עדיין</div>
-          <p>העלה דרכונים, ביטוח, כרטיסים, מפות אתרי קמפינג ועוד.<br/>{settings.githubRepo?'הקבצים ישמרו ב-/docs בגיטהאב.':'הגדר גיטהאב בהגדרות לשמירה בענן.'}</p>
+          <p style={{lineHeight:1.9}}>
+            העלה דרכונים, ביטוח, כרטיסים, מפות קמפינג ועוד.<br/>
+            {hasFb
+              ?<><strong style={{color:'var(--green)'}}>☁️ Firebase מחובר</strong> — הקבצים יסונכרנו אוטומטית לכל המכשירים.</>
+              :<><strong style={{color:'var(--amber)'}}>💾 אחסון מקומי</strong> — הגדר Firebase בלשונית 🔗 חיבוריות כדי לסנכרן.</>}
+            <br/><span style={{fontSize:11,color:'var(--text3)'}}>מגבלה: עד {fmtSize(MAX_BYTES)} לקובץ</span>
+          </p>
           <button className="btn btn-primary" onClick={()=>fileRef.current?.click()}>+ העלה קובץ</button>
         </div>
       ):(
@@ -1934,17 +1961,37 @@ function DocsTab({trip,onUpdate,settings}){
           {trip.documents.map(doc=>(
             <div key={doc.id} className="doc-item">
               <button onClick={()=>onUpdate({...trip,documents:trip.documents.filter(d=>d.id!==doc.id)})}
-                style={{position:'absolute',top:6,left:6,background:'var(--red)',color:'#fff',border:'none',borderRadius:6,width:20,height:20,fontSize:10,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>✕</button>
-              {doc.type?.startsWith('image/')&&doc.url?(
-                <img src={doc.url} alt={doc.name} style={{width:'100%',height:80,objectFit:'cover',borderRadius:6,marginBottom:6}}/>
-              ):<div style={{fontSize:36,marginBottom:8}}>{icon(doc.type)}</div>}
-              <div style={{fontSize:11,color:'var(--text2)',wordBreak:'break-all'}}>{doc.name}</div>
-              <div style={{fontSize:10,color:'var(--text3)',marginTop:2}}>{doc.source==='github'?'☁️ גיטהאב':'💾 מקומי'}</div>
-              {doc.url&&doc.source==='github'&&<a href={doc.url} target="_blank" rel="noreferrer" style={{fontSize:10,color:'var(--accent)',textDecoration:'none'}}>פתח ↗</a>}
+                style={{position:'absolute',top:6,left:6,background:'var(--red)',color:'#fff',border:'none',
+                  borderRadius:6,width:20,height:20,fontSize:10,cursor:'pointer',
+                  display:'flex',alignItems:'center',justifyContent:'center'}}>✕</button>
+              {doc.type?.startsWith('image/')&&doc.url
+                ?<img src={doc.url} alt={doc.name} style={{width:'100%',height:80,objectFit:'cover',borderRadius:6,marginBottom:6}}/>
+                :<div style={{fontSize:36,marginBottom:8}}>{icon(doc.type)}</div>}
+              <div style={{fontSize:11,color:'var(--text2)',wordBreak:'break-word',lineHeight:1.4}}>{doc.name}</div>
+              <div style={{fontSize:10,color:'var(--text3)',marginTop:3,display:'flex',gap:6,flexWrap:'wrap'}}>
+                <span>{srcLabel(doc)}</span>
+                {doc.size>0&&<span>{fmtSize(doc.size)}</span>}
+                {doc.savedAt&&<span>{new Date(doc.savedAt).toLocaleDateString('he-IL')}</span>}
+              </div>
+              {doc.url&&(
+                doc.source==='github'
+                  ?<a href={doc.url} target="_blank" rel="noreferrer" style={{fontSize:10,color:'var(--accent)',textDecoration:'none',display:'block',marginTop:4}}>פתח ↗</a>
+                  :<a href={doc.url} download={doc.name} style={{fontSize:10,color:'var(--accent)',textDecoration:'none',display:'block',marginTop:4}}>הורד ↓</a>
+              )}
             </div>
           ))}
         </div>
       )}
+    </div>
+
+    {/* פס מידע תחתון */}
+    <div style={{padding:'7px 16px',borderTop:'1px solid var(--border)',background:'var(--bg2)',
+      fontSize:11,color:'var(--text3)',lineHeight:1.7}}>
+      {hasFb
+        ?<>☁️ <strong>Firebase</strong> — הקבצים שמורים בתוך ה-JSON ומסונכרנים אוטומטית לכל המכשירים.
+          &nbsp;מגבלה: עד {fmtSize(MAX_BYTES)} לקובץ. הנתונים <strong>לא נמחקים לעולם</strong> — רק הגישה יכולה להיחסם אם Rules מוגדרים שגוי.</>
+        :<>💾 <strong>מקומי</strong> — הקבצים שמורים בדפדפן זה בלבד ולא מסונכרנים.
+          &nbsp;<span style={{color:'var(--amber)'}}>הגדר Firebase בלשונית 🔗 חיבוריות לסנכרון.</span></>}
     </div>
   </div>;
 }
@@ -2456,46 +2503,50 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus}){
         </div>
       </div>
 
-      {/* ── חידוש כל 30 יום ── */}
-      <div className="card" style={{border:'1px solid rgba(245,158,11,0.4)'}}>
-        <div className="card-header" style={{background:'rgba(245,158,11,0.06)'}}>
-          <span style={{fontWeight:700}}>🔄 חידוש הגישה כל 30 יום</span>
-          <span className="chip chip-amber" style={{fontSize:10}}>חשוב!</span>
+      {/* ── שאלות נפוצות ── */}
+      <div className="card" style={{border:'1px solid rgba(79,142,247,0.3)'}}>
+        <div className="card-header" style={{background:'rgba(79,142,247,0.06)'}}>
+          <span style={{fontWeight:700}}>❓ שאלות נפוצות על Firebase</span>
         </div>
-        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:14}}>
-          <div style={{fontSize:13,color:'var(--text2)',lineHeight:1.8,background:'rgba(245,158,11,0.06)',borderRadius:8,padding:'10px 14px'}}>
-            Firebase "Test Mode" מאפשר גישה חופשית לנתונים למשך <strong>30 יום בלבד</strong>.<br/>
-            לאחר 30 ימים הגישה תחסם אוטומטית ויש לחדש אותה (פעולה של דקה אחת).
+        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:16}}>
+
+          {/* שאלה 1 */}
+          <div style={{borderBottom:'1px solid var(--border)',paddingBottom:14}}>
+            <div style={{fontWeight:700,fontSize:13,marginBottom:6}}>האם הנתונים שלי יימחקו אחרי 30 יום?</div>
+            <div style={{fontSize:13,color:'var(--text2)',lineHeight:1.9,background:'rgba(34,197,94,0.07)',borderRadius:8,padding:'10px 14px'}}>
+              <strong style={{color:'var(--green)'}}>לא — הנתונים לא נמחקים לעולם.</strong><br/>
+              Firebase שומר את המידע ללא הגבלת זמן. ה-30 יום האגדיים
+              קשורים רק לחוקי גישה (Rules) שFirebase מגדיר <em>אוטומטית</em> כשיוצרים מסד בTest Mode.<br/><br/>
+              <strong>אם הגדרת את ה-Rules שהנחינו אותך כאן</strong> (הקוד בכרטיס האדום למעלה),
+              אין לך שום מגבלת זמן — הגישה פתוחה לנצח.
+              רק אם Firebase חסם אותך ← חזור לכרטיס האדום ועדכן את ה-Rules.
+            </div>
           </div>
-          {[
-            {n:1,t:'פתח את קונסול Firebase',d:<>לחץ על הקישור: <a href={FB_RULES_URL} target="_blank" rel="noreferrer" style={{color:'var(--accent)',fontWeight:600}}>Realtime Database → Rules</a></>},
-            {n:2,t:'עדכן את חוקי הגישה',d:'החלף את התוכן הקיים בחוקים הבאים:'},
-            {n:3,t:'שנה את תאריך הפקיעה',d:'בשורת "now < ..." שנה לתאריך 30 יום קדימה (timestamp בשניות)'},
-            {n:4,t:'לחץ "Publish"',d:'הסנכרון ימשיך לעבוד עוד 30 יום 🎉'},
-          ].map(({n,t,d})=><div key={n} style={{display:'flex',gap:14,alignItems:'flex-start'}}>
-            <div style={{width:28,height:28,borderRadius:'50%',background:'var(--amber)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:13,flexShrink:0}}>{n}</div>
-            <div><div style={{fontWeight:600,fontSize:13}}>{t}</div><div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>{d}</div></div>
-          </div>)}
-          <div style={{background:'var(--bg3)',borderRadius:10,padding:14,fontFamily:'monospace',fontSize:12,lineHeight:1.9,direction:'ltr',textAlign:'left'}}>
-            <span style={{color:'var(--text3)'}}>{'{'}</span><br/>
-            &nbsp;&nbsp;<span style={{color:'var(--accent)'}}>"rules"</span>: <span style={{color:'var(--text3)'}}>{'{'}</span><br/>
-            &nbsp;&nbsp;&nbsp;&nbsp;<span style={{color:'var(--accent)'}}>"planmytrip"</span>: <span style={{color:'var(--text3)'}}>{'{'}</span><br/>
-            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style={{color:'var(--accent)'}}>"$key"</span>: <span style={{color:'var(--text3)'}}>{'{'}</span><br/>
-            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style={{color:'var(--green)'}}>"</span><span style={{color:'var(--green)'}}>.</span><span style={{color:'var(--green)'}}>read"</span>: <span style={{color:'var(--amber)'}}>"auth == null || auth != null"</span>,<br/>
-            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style={{color:'var(--green)'}}>"</span><span style={{color:'var(--green)'}}>.</span><span style={{color:'var(--green)'}}>write"</span>: <span style={{color:'var(--amber)'}}>"now &lt; <strong style={{color:'var(--red)'}}>הכנס_כאן_timestamp</strong>"</span><br/>
-            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style={{color:'var(--text3)'}}>{'}'}</span><br/>
-            &nbsp;&nbsp;&nbsp;&nbsp;<span style={{color:'var(--text3)'}}>{'}'}</span><br/>
-            &nbsp;&nbsp;<span style={{color:'var(--text3)'}}>{'}'}</span><br/>
-            <span style={{color:'var(--text3)'}}>{'}'}</span>
+
+          {/* שאלה 2 */}
+          <div style={{borderBottom:'1px solid var(--border)',paddingBottom:14}}>
+            <div style={{fontWeight:700,fontSize:13,marginBottom:6}}>מה קורה אם Firebase חוסם גישה?</div>
+            <div style={{fontSize:13,color:'var(--text2)',lineHeight:1.8}}>
+              הנתונים בטוחים — רק אי אפשר לקרוא/לכתוב אליהם עד לתיקון.<br/>
+              <strong>פתרון:</strong> פתח Firebase Rules (הכפתור בכרטיס האדום) ← הדבק את הקוד המוכן ← Publish.
+              זה לוקח פחות מדקה.
+            </div>
           </div>
-          <div style={{fontSize:12,color:'var(--text3)',lineHeight:1.8}}>
-            💡 <strong>טיפ:</strong> ה-timestamp הוא מספר השניות מ-1/1/1970.<br/>
-            לדוגמה: 30 יום מהיום = <code style={{color:'var(--accent)'}}>{Math.floor(Date.now()/1000)+30*86400}</code><br/>
-            אפשר גם להשתמש בחוק <code style={{color:'var(--amber)'}}>"true"</code> לגישה תמידית (פחות מאובטח).
+
+          {/* שאלה 3 */}
+          <div>
+            <div style={{fontWeight:700,fontSize:13,marginBottom:6}}>איפה הנתונים שמורים בפועל?</div>
+            <div style={{fontSize:13,color:'var(--text2)',lineHeight:1.8}}>
+              הכל — נתוני טיולים, ימים, הוצאות, מסמכים, תמונות — נשמר בקובץ JSON אחד
+              בשרתי Google (Firebase). ניתן לצפות בנתונים ישירות בקונסול Firebase:
+            </div>
+            <a href="https://planmytrip-de33c-default-rtdb.firebaseio.com/planmytrip.json"
+              target="_blank" rel="noreferrer"
+              className="btn btn-secondary btn-sm" style={{marginTop:8,textDecoration:'none',display:'inline-flex'}}>
+              🔍 צפה בנתונים גולמיים ↗
+            </a>
           </div>
-          <a href={FB_RULES_URL} target="_blank" rel="noreferrer" className="btn btn-amber" style={{textDecoration:'none',textAlign:'center'}}>
-            🔗 פתח Firebase Rules לחידוש
-          </a>
+
         </div>
       </div>
 
