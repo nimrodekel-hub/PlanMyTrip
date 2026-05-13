@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="pragma" content="no-cache" />
-  <title>CaravanControl — מנהל טיולים v19</title>
+  <title>CaravanControl — מנהל טיולים v20</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -100,13 +100,10 @@
     .star { font-size: 20px; cursor: pointer; transition: transform 0.1s; user-select: none; }
     .star:hover { transform: scale(1.2); }
 
-    .split-view { display: flex; flex-direction: row; height: 100%; overflow: hidden; }
-    .split-left { flex: 2 2 40%; min-width: 0; border-left: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; }
-    .split-right { flex: 3 3 60%; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
-    @media (max-width: 768px) {
-      .split-left.mobile-hidden { display: none; }
-      .split-right.mobile-hidden { display: none; }
-    }
+    /* ── תצוגת מפה 3 עמודות ── */
+    .map-view-3col { display: flex; flex-direction: row; height: 100%; overflow: hidden; }
+    .map-col { flex: 1 1 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
+    .map-col + .map-col { border-left: 1px solid var(--border); }
 
     .interest-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--border); transition: all 0.15s; animation: slideIn 0.2s ease; }
     .interest-item:hover { border-color: var(--accent); }
@@ -209,10 +206,33 @@
       .modal-overlay { padding: 0; align-items: flex-end; }
       .modal { max-width: 100%; width: 100%; border-radius: 20px 20px 0 0; max-height: 92vh; }
 
-      /* ── split view (מפה) — הפאנל הגלוי ממלא כל הגובה ── */
-      .split-left, .split-right { flex: 1 1 100%; }
+      /* ── תצוגת מפה 3 עמודות: בסלולר רק המפה גלויה, שאר הפאנלים bottom-sheets ── */
+      .map-col + .map-col { border-left: none; }
+      .map-col-map { flex: 1 1 100%; }
+      .map-col-timeline, .map-col-bank {
+        position: fixed !important;
+        bottom: 56px; left: 0; right: 0;
+        height: 68vh;
+        z-index: 450;
+        background: var(--bg2);
+        border-radius: 20px 20px 0 0 !important;
+        border-top: 2px solid var(--accent) !important;
+        box-shadow: 0 -8px 40px rgba(0,0,0,0.6);
+        transform: translateY(105%);
+        transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+      }
+      .map-col-timeline.mob-open, .map-col-bank.mob-open {
+        transform: translateY(0);
+      }
+      .mob-panel-backdrop {
+        display: none;
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.45);
+        z-index: 440;
+      }
+      .mob-panel-backdrop.show { display: block; }
 
-      /* ── בנק אטרקציות — תפריט תחתון (bottom sheet) ── */
+      /* ── בנק אטרקציות בלשונית לוח זמנים עצמאית ── */
       .sidebar-panel {
         position: fixed !important;
         bottom: 56px; left: 0; right: 0;
@@ -225,13 +245,7 @@
         box-shadow: 0 -8px 40px rgba(0,0,0,0.6);
         animation: slideUp .28s ease;
       }
-      .bank-backdrop {
-        display: block;
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,0.5);
-        z-index: 440;
-      }
+      .bank-backdrop { display: block; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 440; }
       .bank-close-btn { display: flex; }
 
       /* ── בלוקי ציר זמן ── */
@@ -280,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v19';
+const APP_VERSION = 'v20';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -1434,8 +1448,8 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem}){
   </div>;
 }
 
-function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem}){
-  const[showBank,setShowBank]=useState(true);
+function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=false}){
+  const[showBank,setShowBank]=useState(!compact);
   const[showTakeout,setShowTakeout]=useState(false);
   const takeoutRef=useRef(null);
 
@@ -1516,9 +1530,9 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem}){
         <span style={{fontWeight:700,fontSize:15}}>🗓 לוח זמנים</span>
         <button className="btn btn-primary btn-sm" onClick={addDay}>+ הוסף יום</button>
         <div style={{flex:1}}/>
-        <button className="btn btn-secondary btn-sm" onClick={()=>setShowBank(b=>!b)}>
-          🌟 {showBank?'הסתר':'הצג'} בנק אטרקציות
-        </button>
+        {!compact&&<button className="btn btn-secondary btn-sm" onClick={()=>setShowBank(b=>!b)}>
+          🌟 {showBank?'הסתר':'הצג'} בנק
+        </button>}
       </div>
       <div className="scroll-y flex-1" style={{padding:'16px'}}>
         {trip.days.length===0?(
@@ -1536,8 +1550,8 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem}){
       </div>
     </div>
 
-    {showBank&&<div className="bank-backdrop" onClick={()=>setShowBank(false)}/>}
-    {showBank&&<div className="sidebar-panel">
+    {!compact&&showBank&&<div className="bank-backdrop" onClick={()=>setShowBank(false)}/>}
+    {!compact&&showBank&&<div className="sidebar-panel">
       <div style={{padding:'12px 14px',borderBottom:'1px solid var(--border)',fontWeight:700,fontSize:13,display:'flex',alignItems:'center',gap:8}}>
         🌟 בנק אטרקציות <span className="chip chip-blue" style={{fontSize:10}}>{trip.interestBank.length}</span>
         <button className="bank-close-btn" onClick={()=>setShowBank(false)}
@@ -1586,6 +1600,101 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem}){
             <div style={{fontSize:13,color:'var(--text2)'}}>לחץ כאן או גרור את "Saved Places.json"</div>
           </div>
           <input ref={takeoutRef} type="file" accept=".json" style={{display:'none'}} onChange={e=>e.target.files[0]&&importTakeout(e.target.files[0])}/>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
+/* ══════════════════════════════════
+   פאנל בנק אטרקציות (עמודה עצמאית)
+══════════════════════════════════ */
+function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
+  const[showTakeout,setShowTakeout]=useState(false);
+  const takeoutRef=useRef(null);
+
+  const addToBank=item=>onUpdate({...trip,interestBank:[...trip.interestBank,{...item,id:uid()}]});
+  const delBank=id=>onUpdate({...trip,interestBank:trip.interestBank.filter(i=>i.id!==id)});
+
+  const addItemToDay=(dayId,item)=>{
+    const day=trip.days.find(d=>d.id===dayId); if(!day) return;
+    const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+    const last=sorted[sorted.length-1];
+    const start=last?addMins(last.startTime,last.durationMins):(day.currentTime||'09:00');
+    const nb=defaultBlock('activity',start);
+    nb.title=item.name; nb.location=item.address||'';
+    if(item.lat){nb.lat=item.lat;nb.lng=item.lng;}
+    if(item.placeId)nb.placeId=item.placeId;
+    if(item.rating)nb.placeRating=item.rating;
+    if(item.userRatingsTotal)nb.placeUserRatings=item.userRatingsTotal;
+    if(item.openStatus)nb.placeOpenStatus=item.openStatus;
+    if(item.todayHours)nb.placeTodayHours=item.todayHours;
+    if(item.phone)nb.placePhone=item.phone;
+    if(item.website)nb.placeWebsite=item.website;
+    if(item.photoUrl)nb.placePhotoUrl=item.photoUrl;
+    if(item.placeType)nb.placeType=item.placeType;
+    onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,blocks:[...d.blocks,nb]}:d)});
+    toast(`"${item.name}" נוסף ליום`,'success');
+  };
+
+  const importTakeout=file=>{
+    const r=new FileReader();
+    r.onload=e=>{
+      try{
+        const data=JSON.parse(e.target.result);
+        const features=data.features||data.geometry?.geometries||[];
+        const items=features.map(f=>{
+          const name=f.properties?.Title||f.properties?.name||'מקום ללא שם';
+          const addr=f.properties?.['Google Maps URL']||f.properties?.address||'';
+          const coords=f.geometry?.coordinates;
+          return{id:uid(),name,address:addr,lat:coords?coords[1]:null,lng:coords?coords[0]:null};
+        }).filter(i=>i.name);
+        if(!items.length){toast('לא נמצאו מקומות בקובץ','error');return;}
+        onUpdate({...trip,interestBank:[...trip.interestBank,...items]});
+        toast(`יובאו ${items.length} מקומות ✓`,'success');
+        setShowTakeout(false);
+      }catch{toast('שגיאה בקריאת הקובץ','error');}
+    };
+    r.readAsText(file);
+  };
+
+  return <div style={{height:'100%',display:'flex',flexDirection:'column',overflow:'hidden',background:'var(--bg2)'}}>
+    <div style={{padding:'12px 14px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+      <span style={{fontWeight:700,fontSize:14}}>⭐ בנק אטרקציות</span>
+      <span className="chip chip-blue" style={{fontSize:10}}>{trip.interestBank.length}</span>
+      <div style={{flex:1}}/>
+      {onClose&&<button onClick={onClose} style={{background:'none',border:'none',color:'var(--text3)',fontSize:20,cursor:'pointer',lineHeight:1,padding:'0 2px'}}>✕</button>}
+    </div>
+    <div className="scroll-y flex-1" style={{padding:'10px'}}>
+      {trip.interestBank.length===0
+        ?<div style={{color:'var(--text3)',fontSize:12,textAlign:'center',padding:'24px 8px',lineHeight:1.9}}>
+            לחץ על מקום במפה ← "הוסף לבנק האטרקציות".<br/>או ייבא מ-Google Takeout.
+          </div>
+        :trip.interestBank.map(item=>(
+          <BankItem key={item.id} item={item} days={trip.days} onAddToDay={addItemToDay}
+            onDelete={()=>delBank(item.id)} onLocate={onLocate} onFocusItem={onFocusItem}/>
+        ))
+      }
+    </div>
+    <div style={{padding:'10px 12px',borderTop:'1px solid var(--border)',display:'flex',flexDirection:'column',gap:6,flexShrink:0}}>
+      <button className="btn btn-secondary btn-sm" style={{width:'100%'}}
+        onClick={()=>{const n=prompt('שם המקום:');if(n)addToBank({name:n,address:'',id:uid()});}}>+ הוסף ידנית</button>
+      <button className="btn btn-amber btn-sm" style={{width:'100%'}} onClick={()=>setShowTakeout(true)}>⭐ ייבא מ-Google Takeout</button>
+    </div>
+    {showTakeout&&<div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowTakeout(false)}>
+      <div className="modal">
+        <div className="modal-header">
+          <span style={{fontWeight:700}}>⭐ ייבוא מ-Google Takeout</span>
+          <button className="btn btn-secondary btn-icon btn-sm" onClick={()=>setShowTakeout(false)}>✕</button>
+        </div>
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div style={{background:'var(--bg3)',borderRadius:10,padding:14,fontSize:13,lineHeight:1.8,color:'var(--text2)'}}>
+            1. עבור ל-<a href="https://takeout.google.com" target="_blank" rel="noreferrer" style={{color:'var(--accent)'}}>takeout.google.com</a><br/>
+            2. בחר "מפות (מקומות שלי)" → הורד<br/>
+            3. חפש קובץ <strong>Saved Places.json</strong> → העלה כאן
+          </div>
+          <input ref={takeoutRef} type="file" accept=".json" style={{display:'none'}} onChange={e=>e.target.files[0]&&importTakeout(e.target.files[0])}/>
+          <button className="btn btn-primary" style={{width:'100%'}} onClick={()=>takeoutRef.current?.click()}>📂 בחר קובץ JSON</button>
         </div>
       </div>
     </div>}
@@ -2438,7 +2547,7 @@ function App(){
   const[trips,setTrips]=useState(saved?.trips||[defaultTrip('הטיול הראשון שלי')]);
   const[activeId,setActiveId]=useState(saved?.activeId||(saved?.trips?.[0]?.id??null));
   const[tab,setTab]=useState('map');
-  const[mobileSide,setMobile]=useState('map');
+  const[mobilePanel,setMobilePanel]=useState('map'); // 'map'|'timeline'|'bank'
   const[ghBusy,setGhBusy]=useState(false);
   const[syncStatus,setSyncStatus]=useState('idle'); // 'idle'|'syncing'|'synced'|'error'
   const[hlDay,setHlDay]=useState(null);
@@ -2623,16 +2732,29 @@ function App(){
     if (!trip&&tab!=='settings') return noTrip;
     switch(tab){
       case 'map': return (
-        <div className="split-view" style={{height:'100%'}}>
-          <div className={`split-left${mobileSide==='timeline'?' mobile-hidden':''}`}>
+        <div className="map-view-3col">
+          {/* עמודה 1: מפה */}
+          <div className="map-col map-col-map">
             <MapView mapsKey={settings.googleMapsKey} trip={trip} onAddToBank={addToBank} onAddToDay={addToDay}
               highlightDay={hlDay} highlightItem={hlItem}/>
           </div>
-          <div className={`split-right${mobileSide==='map'?' mobile-hidden':''}`} style={{overflow:'hidden'}}>
-            {trip?<TimelineTab trip={trip} onUpdate={updTrip}
+          {/* backdrop בסלולר */}
+          <div className={`mob-panel-backdrop${mobilePanel!=='map'?' show':''}`}
+            onClick={()=>setMobilePanel('map')}/>
+          {/* עמודה 2: לוח זמנים */}
+          <div className={`map-col map-col-timeline${mobilePanel==='timeline'?' mob-open':''}`}>
+            {trip?<TimelineTab trip={trip} onUpdate={updTrip} compact={true}
               onLocate={(lat,lng)=>window.__gmFocus?.(lat,lng)}
               onFocusDay={(dayId,dayIndex,blocks)=>setHlDay({dayId,dayIndex,blocks})}
               onFocusItem={(lat,lng,name)=>{setHlItem({lat,lng,name});setHlDay(null);}}
+            />:noTrip}
+          </div>
+          {/* עמודה 3: בנק אטרקציות */}
+          <div className={`map-col map-col-bank${mobilePanel==='bank'?' mob-open':''}`}>
+            {trip?<BankPanel trip={trip} onUpdate={updTrip}
+              onLocate={(lat,lng)=>window.__gmFocus?.(lat,lng)}
+              onFocusItem={(lat,lng,name)=>{setHlItem({lat,lng,name});setHlDay(null);}}
+              onClose={()=>setMobilePanel('map')}
             />:noTrip}
           </div>
         </div>
@@ -2656,9 +2778,6 @@ function App(){
         {TABS.map(t=>(
           <button key={t.id} className={`tab-btn${tab===t.id?' active':''}`} onClick={()=>setTab(t.id)}>{t.label}</button>
         ))}
-        {tab==='map'&&<button className="tab-btn mobile-toggle" style={{marginRight:'auto',color:'var(--amber)'}} onClick={()=>setMobile(s=>s==='map'?'timeline':'map')}>
-          {mobileSide==='map'?'📋 לוח זמנים':'🗺️ מפה'}
-        </button>}
       </div>
     </div>
     <div className="main-content">{renderMain()}</div>
@@ -2670,10 +2789,20 @@ function App(){
           <span className="mobile-nav-label">{words.join(' ')}</span>
         </button>;
       })}
-      {tab==='map'&&<button className="mobile-nav-btn" style={{color:'var(--amber)',borderTop:'2px solid var(--amber)'}} onClick={()=>setMobile(s=>s==='map'?'timeline':'map')}>
-        <span className="mobile-nav-icon">{mobileSide==='map'?'📋':'🗺️'}</span>
-        <span className="mobile-nav-label">{mobileSide==='map'?'לוח':'מפה'}</span>
-      </button>}
+      {tab==='map'&&<>
+        <button className={`mobile-nav-btn${mobilePanel==='timeline'?' active':''}`}
+          style={mobilePanel==='timeline'?{color:'var(--green)',borderTopColor:'var(--green)'}:{}}
+          onClick={()=>setMobilePanel(p=>p==='timeline'?'map':'timeline')}>
+          <span className="mobile-nav-icon">📅</span>
+          <span className="mobile-nav-label">לוז</span>
+        </button>
+        <button className={`mobile-nav-btn${mobilePanel==='bank'?' active':''}`}
+          style={mobilePanel==='bank'?{color:'var(--amber)',borderTopColor:'var(--amber)'}:{}}
+          onClick={()=>setMobilePanel(p=>p==='bank'?'map':'bank')}>
+          <span className="mobile-nav-icon">⭐</span>
+          <span className="mobile-nav-label">אטרקציות</span>
+        </button>
+      </>}
     </nav>
     <Toasts/>
   </div>;
