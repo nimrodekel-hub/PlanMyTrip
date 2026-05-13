@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="pragma" content="no-cache" />
-  <title>CaravanControl — מנהל טיולים v9</title>
+  <title>CaravanControl — מנהל טיולים v10</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -921,49 +921,49 @@ function BlockModal({block,onSave,onClose,onDelete}){
 function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem}){
   const end=addMins(block.startTime,block.durationMins);
   const col=BLOCK_COLOR[block.type]||'var(--text3)';
-  const handleClick=()=>{
-    if(block.lat&&onFocusItem) onFocusItem(block.lat,block.lng,block.title);
-    onEdit(block);
-  };
+  const btnStyle={background:'none',border:'none',cursor:'pointer',padding:'2px 5px',borderRadius:4,fontSize:15,lineHeight:1,flexShrink:0};
   return <div className="timeline-block">
     <div className="timeline-dot" style={{background:col}}>{BLOCK_EMOJI[block.type]}</div>
-    <div style={{flex:1,marginRight:4,display:'flex',gap:4,alignItems:'flex-start'}}>
-      <div className={`card block-${block.type}`} style={{flex:1,cursor:'pointer',opacity:block.isCompleted?.6:1}} onClick={handleClick}>
-        <div style={{padding:'10px 14px'}}>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
-            <span style={{fontSize:11,fontWeight:700,color:col}}>{block.startTime}–{end}</span>
-            <div style={{display:'flex',alignItems:'center',gap:6}}>
-              {block.isCompleted&&<span className="chip chip-green" style={{fontSize:10,padding:'2px 7px'}}>✓ הושלם</span>}
-              {block.rating>0&&<Stars value={block.rating} size={13}/>}
-            </div>
-          </div>
-          <div style={{fontSize:13,fontWeight:600,color:'var(--text)',marginTop:2}}>{block.title||`(${BLOCK_HE[block.type]} ללא שם)`}</div>
-          {block.location&&<div style={{fontSize:11,color:'var(--text3)',marginTop:1}}>📍 {block.location}</div>}
-          {block.notes&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,fontStyle:'italic',lineHeight:1.5}}>{block.notes}</div>}
-          {block.placeRating&&<div style={{fontSize:11,color:'var(--amber)',marginTop:3}}>⭐ {block.placeRating}{block.placeUserRatings?` (${Number(block.placeUserRatings).toLocaleString()})`:''}</div>}
-          {block.placeOpenStatus&&<div style={{fontSize:11,fontWeight:600,marginTop:2,color:block.placeOpenStatus==='פתוח עכשיו'?'#22c55e':'#ef4444'}}>{block.placeOpenStatus==='פתוח עכשיו'?'✅':'🔴'} {block.placeOpenStatus}</div>}
-          {block.placeTodayHours&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>🕐 {block.placeTodayHours}</div>}
-          {block.placePhone&&<div style={{fontSize:11,color:'var(--accent)',marginTop:2}}>📞 {block.placePhone}</div>}
-          {block.placeWebsite&&<a href={block.placeWebsite} target="_blank" rel="noreferrer" style={{fontSize:11,color:'var(--accent)',display:'block',marginTop:2,wordBreak:'break-all'}} onClick={e=>e.stopPropagation()}>🌐 {block.placeWebsite.replace(/^https?:\/\//,'').split('/')[0]}</a>}
-          <div style={{display:'flex',gap:10,marginTop:6,flexWrap:'wrap'}}>
-            {block.durationMins>0&&<span style={{fontSize:11,color:'var(--text3)'}}>⏱ {block.durationMins} דקות</span>}
-            {block.cost>0&&<span style={{fontSize:11,color:'var(--amber)'}}>💰 ₪{block.cost.toFixed(0)}</span>}
+    <div className={`card block-${block.type}`} style={{flex:1,marginRight:4,opacity:block.isCompleted?0.6:1}}>
+      <div style={{padding:'8px 12px'}}>
+        {/* שורת כותרת: שעה + כפתורי פעולה */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:6,marginBottom:4}}>
+          <span style={{fontSize:11,fontWeight:700,color:col,flexShrink:0}}>{block.startTime}–{end}</span>
+          <div style={{display:'flex',alignItems:'center',gap:2}}>
+            {block.isCompleted&&<span className="chip chip-green" style={{fontSize:10,padding:'2px 6px'}}>✓</span>}
+            {block.rating>0&&<Stars value={block.rating} size={12}/>}
+            {block.lat&&onFocusItem&&(
+              <button style={{...btnStyle,color:'#6b7280'}} title="הצג במפה"
+                onClick={e=>{e.stopPropagation();onFocusItem(block.lat,block.lng,block.title);}}>📍</button>
+            )}
+            {onMoveToBank&&(
+              <button style={{...btnStyle,color:'#f59e0b'}} title="העבר לבנק האטרקציות"
+                onClick={e=>{e.stopPropagation();onMoveToBank(block);}}>⭐</button>
+            )}
+            <button style={{...btnStyle,color:'#6b7280'}} title="ערוך פרטים"
+              onClick={e=>{e.stopPropagation();onEdit(block);}}>✏️</button>
+            {onDelete&&(
+              <button style={{...btnStyle,color:'#ef4444',fontWeight:700,fontSize:13}} title="הסר מהיום"
+                onClick={e=>{e.stopPropagation();if(window.confirm(`להסיר "${block.title||'פעילות'}" מהיום?`))onDelete(block.id);}}>✕</button>
+            )}
           </div>
         </div>
-      </div>
-      <div style={{display:'flex',flexDirection:'column',gap:4,flexShrink:0,marginTop:4}}>
-        {block.lat&&onFocusItem&&(
-          <button className="btn btn-secondary btn-icon btn-sm" title="הצג במפה"
-            onClick={e=>{e.stopPropagation();onFocusItem(block.lat,block.lng,block.title);}}>📍</button>
-        )}
-        {onMoveToBank&&(
-          <button className="btn btn-secondary btn-icon btn-sm" title="העבר לבנק האטרקציות"
-            onClick={e=>{e.stopPropagation();onMoveToBank(block);}}>⭐</button>
-        )}
-        {onDelete&&(
-          <button className="btn btn-danger btn-icon btn-sm" title="הסר מהיום"
-            onClick={e=>{e.stopPropagation();if(confirm(`להסיר "${block.title||'פעילות'}" מהיום?`))onDelete(block.id);}}>✕</button>
-        )}
+        {/* תוכן */}
+        <div style={{fontSize:13,fontWeight:600,color:'var(--text)',cursor:'pointer'}} onClick={()=>onEdit(block)}>
+          {block.title||`(${BLOCK_HE[block.type]} ללא שם)`}
+        </div>
+        {block.location&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>📍 {block.location}</div>}
+        {block.notes&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,fontStyle:'italic',lineHeight:1.5}}>{block.notes}</div>}
+        {/* פרטי מקום שנשמרו */}
+        {block.placeRating&&<div style={{fontSize:11,color:'var(--amber)',marginTop:3}}>⭐ {block.placeRating}{block.placeUserRatings?` (${Number(block.placeUserRatings).toLocaleString()})`:''}</div>}
+        {block.placeOpenStatus&&<div style={{fontSize:11,fontWeight:600,marginTop:2,color:block.placeOpenStatus==='פתוח עכשיו'?'#22c55e':'#ef4444'}}>{block.placeOpenStatus==='פתוח עכשיו'?'✅':'🔴'} {block.placeOpenStatus}</div>}
+        {block.placeTodayHours&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>🕐 {block.placeTodayHours}</div>}
+        {block.placePhone&&<div style={{fontSize:11,color:'var(--accent)',marginTop:2}}>📞 {block.placePhone}</div>}
+        {block.placeWebsite&&<a href={block.placeWebsite} target="_blank" rel="noreferrer" style={{fontSize:11,color:'var(--accent)',display:'block',marginTop:2}} onClick={e=>e.stopPropagation()}>🌐 {block.placeWebsite.replace(/^https?:\/\//,'').split('/')[0]}</a>}
+        <div style={{display:'flex',gap:10,marginTop:5,flexWrap:'wrap'}}>
+          {block.durationMins>0&&<span style={{fontSize:11,color:'var(--text3)'}}>⏱ {block.durationMins} דקות</span>}
+          {block.cost>0&&<span style={{fontSize:11,color:'var(--amber)'}}>💰 ₪{block.cost.toFixed(0)}</span>}
+        </div>
       </div>
     </div>
   </div>;
