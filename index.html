@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="pragma" content="no-cache" />
-  <title>CaravanControl — מנהל טיולים v24</title>
+  <title>CaravanControl — מנהל טיולים v25</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v24';
+const APP_VERSION = 'v25';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -361,11 +361,12 @@ const fileToB64 = f => new Promise((res,rej)=>{const r=new FileReader();r.onload
 /* ── Firebase Realtime Database REST (ללא SDK) ── */
 const fbBase = url => url?.replace(/\/$/,'');
 const fbErrMsg = async r => {
-  try{ const j=await r.json(); return j?.error||`שגיאה ${r.status}`; }catch{ return `שגיאה ${r.status}`; }
+  try{ const j=await r.json(); return (typeof j?.error==='string'?j.error:null)||`שגיאה ${r.status}`; }catch(e){ return `שגיאה ${r.status}`; }
 };
+const fbIsAuthErr = msg => typeof msg==='string'&&(msg==='Permission denied'||msg.toLowerCase().includes('credential')||msg.toLowerCase().includes('unauthorized'));
 const fbRead = async (dbUrl,key) => {
   const r = await fetch(`${fbBase(dbUrl)}/planmytrip/${key}.json?_=${Date.now()}`);
-  if(!r.ok){ const msg=await fbErrMsg(r); throw new Error(msg==='Permission denied'||msg?.toLowerCase?.().includes('credential')?'rules_denied':msg); }
+  if(!r.ok){ const msg=await fbErrMsg(r); throw new Error(fbIsAuthErr(msg)?'rules_denied':msg); }
   return r.json();
 };
 const fbWrite = async (dbUrl,key,data) => {
@@ -373,8 +374,24 @@ const fbWrite = async (dbUrl,key,data) => {
     method:'PUT', headers:{'Content-Type':'application/json'},
     body:JSON.stringify(data)
   });
-  if(!r.ok){ const msg=await fbErrMsg(r); throw new Error(msg==='Permission denied'||msg?.toLowerCase?.().includes('credential')?'rules_denied':msg); }
+  if(!r.ok){ const msg=await fbErrMsg(r); throw new Error(fbIsAuthErr(msg)?'rules_denied':msg); }
   return r.json();
+};
+/* מנרמל נתוני טיול שנטענו מהענן — מוסיף שדות חסרים מגרסאות ישנות */
+const normTrip = t => {
+  if(!t||typeof t!=='object') return null;
+  return {
+    expenses:[],interestBank:[],packingList:[],shoppingList:[],documents:[],quickNotes:[],days:[],generalNotes:'',
+    ...t,
+    days:(t.days||[]).map(d=>({blocks:[],...d,blocks:(d.blocks||[])})),
+    interestBank:t.interestBank||[],
+    expenses:t.expenses||[],
+    packingList:t.packingList||[],
+    shoppingList:t.shoppingList||[],
+    documents:t.documents||[],
+    quickNotes:t.quickNotes||[],
+    vehicle:{name:'הקרוון שלי',height:'',width:'',weight:'',plate:'',waterFillDate:'',wasteEmptyDate:'',waterLog:[],wasteLog:[],...(t.vehicle||{})},
+  };
 };
 const genSyncKey = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{
   const r=Math.random()*16|0;return(c==='x'?r:(r&3|8)).toString(16);
@@ -2779,6 +2796,40 @@ function ReportTab({trip}){
 }
 
 /* ══════════════════════════════════
+   ERROR BOUNDARY
+══════════════════════════════════ */
+class ErrorBoundary extends React.Component {
+  constructor(p){super(p);this.state={err:null,info:null};}
+  static getDerivedStateFromError(e){return{err:e};}
+  componentDidCatch(e,i){console.error('CaravanControl crash:',e,i?.componentStack);}
+  render(){
+    if(this.state.err){
+      const msg=String(this.state.err);
+      const isData=msg.includes('undefined')||msg.includes('null')||msg.includes('forEach')||msg.includes('map')||msg.includes('filter');
+      return(
+        <div style={{height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:18,padding:32,background:'var(--bg)'}}>
+          <div style={{fontSize:52}}>⚠️</div>
+          <div style={{fontSize:20,fontWeight:800,color:'var(--text)'}}>שגיאה בטעינת האפליקציה</div>
+          <div style={{fontSize:13,color:'var(--text2)',maxWidth:420,textAlign:'center',lineHeight:1.8}}>
+            {isData?'נתוני הטיול אינם תואמים את הגרסה הנוכחית. לחץ "אפס ונסה שוב" כדי לנקות את הנתונים המקומיים ולרענן.':'אירעה שגיאה בלתי צפויה. נסה לרענן את הדף.'}
+          </div>
+          <div style={{fontSize:11,color:'var(--text3)',fontFamily:'monospace',maxWidth:460,wordBreak:'break-word',textAlign:'center',opacity:.7}}>{msg}</div>
+          <div style={{display:'flex',gap:12,flexWrap:'wrap',justifyContent:'center'}}>
+            <button className="btn btn-primary" onClick={()=>location.reload()}>🔄 רענן דף</button>
+            <button className="btn btn-danger" onClick={()=>{try{localStorage.removeItem('caravanCtrl_he');}catch(e){}location.reload();}}>🗑️ אפס ונסה שוב</button>
+          </div>
+          <div style={{fontSize:11,color:'var(--text3)',textAlign:'center',lineHeight:1.7}}>
+            ⚠️ <strong>אפס ונסה שוב</strong> ימחק את הנתונים המקומיים בדפדפן זה בלבד.<br/>
+            הטיולים השמורים ב-Firebase לא יימחקו.
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/* ══════════════════════════════════
    APP
 ══════════════════════════════════ */
 function App(){
@@ -2795,7 +2846,11 @@ function App(){
     if(!merged.syncKey) merged.syncKey=genSyncKey();
     return merged;
   });
-  const[trips,setTrips]=useState(saved?.trips||[defaultTrip('הטיול הראשון שלי')]);
+  const[trips,setTrips]=useState(()=>{
+    const raw=saved?.trips;
+    if(raw?.length>0){const n=raw.map(normTrip).filter(Boolean);if(n.length>0)return n;}
+    return[defaultTrip('הטיול הראשון שלי')];
+  });
   const[activeId,setActiveId]=useState(saved?.activeId||(saved?.trips?.[0]?.id??null));
   const[tab,setTab]=useState('map');
   const[mobilePanel,setMobilePanel]=useState('map'); // 'map'|'timeline'|'bank'
@@ -2821,10 +2876,13 @@ function App(){
       fbRead(fbUrl,syncKey)
         .then(data=>{
           if(data?.trips?.length>0){
-            skipNextPush.current=true;
-            setTrips(data.trips);
-            if(data.activeId) setActiveId(data.activeId);
-            toast('הטיול נטען מ-Firebase ✓','success');
+            const loaded=data.trips.map(normTrip).filter(Boolean);
+            if(loaded.length>0){
+              skipNextPush.current=true;
+              setTrips(loaded);
+              if(data.activeId) setActiveId(data.activeId);
+              toast('הטיול נטען מ-Firebase ✓','success');
+            }
           }
           setSyncStatus('synced');
         })
@@ -2961,7 +3019,7 @@ function App(){
         ghSha.current=sha; data=content;
         toast('נמשך מגיטהאב ✓','success');
       }
-      if(data?.trips){skipNextPush.current=true;setTrips(data.trips);if(data.activeId)setActiveId(data.activeId);}
+      if(data?.trips){const loaded=data.trips.map(normTrip).filter(Boolean);if(loaded.length>0){skipNextPush.current=true;setTrips(loaded);if(data.activeId)setActiveId(data.activeId);}}
       setSyncStatus('synced');
     }catch(e){setSyncStatus('error');toast(`שגיאת טעינה: ${e.message}`,'error');}
     finally{setGhBusy(false);}
@@ -3068,7 +3126,7 @@ function App(){
   </div>;
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+ReactDOM.createRoot(document.getElementById('root')).render(<ErrorBoundary><App/></ErrorBoundary>);
 </script>
 </body>
 </html>
