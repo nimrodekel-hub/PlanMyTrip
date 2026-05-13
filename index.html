@@ -1721,19 +1721,44 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
     });
   };
 
-  /* ייבוא Google Takeout */
-  const importTakeout=file=>{
-    const r=new FileReader();
-    r.onload=e=>{
-      try{
-        const items=parseTakeoutFeatures(JSON.parse(e.target.result));
-        if(!items.length){toast('לא נמצאו מקומות בקובץ — בדוק שזה "Saved Places.json"','error');return;}
-        onUpdate({...trip,interestBank:[...trip.interestBank,...items]});
-        toast(`יובאו ${items.length} מקומות ✓`,'success');
-        setShowTakeout(false);
-      }catch(e){toast('שגיאה בקריאת הקובץ','error');}
+  /* ייבוא Google Takeout — תומך במספר קבצים בבת אחת */
+  const importTakeout=files=>{
+    const fileList=Array.from(files);
+    if(!fileList.length) return;
+    let totalAdded=0;
+    let totalFiles=0;
+    let errors=0;
+    const readOne=(file,done)=>{
+      const r=new FileReader();
+      r.onload=e=>{
+        try{
+          const items=parseTakeoutFeatures(JSON.parse(e.target.result));
+          totalAdded+=items.length;
+          totalFiles++;
+          done(items);
+        }catch(err){errors++;done([]);}
+      };
+      r.onerror=()=>{errors++;done([]);};
+      r.readAsText(file);
     };
-    r.readAsText(file);
+    // קרא את כל הקבצים, ואז עדכן state פעם אחת
+    const allItems=[];
+    let pending=fileList.length;
+    fileList.forEach(file=>readOne(file,items=>{
+      allItems.push(...items);
+      if(--pending===0){
+        if(!allItems.length){
+          toast('לא נמצאו מקומות באף קובץ — ודא שאלה קבצי JSON מגוגל טייקאוט','error');
+          return;
+        }
+        onUpdate({...trip,interestBank:[...trip.interestBank,...allItems]});
+        const msg=fileList.length>1
+          ?`יובאו ${allItems.length} מקומות מ-${totalFiles} קבצים ✓`
+          :`יובאו ${allItems.length} מקומות ✓`;
+        toast(msg,'success');
+        setShowTakeout(false);
+      }
+    }));
   };
 
   return <div style={{height:'100%',display:'flex',flexDirection:'column',overflow:'hidden',background:'var(--bg2)'}}>
@@ -1817,16 +1842,32 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
           <button className="btn btn-secondary btn-icon btn-sm" onClick={()=>setShowTakeout(false)}>✕</button>
         </div>
         <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:14}}>
-          <div style={{background:'var(--bg3)',borderRadius:10,padding:14,fontSize:13,lineHeight:1.8,color:'var(--text2)'}}>
+          {/* הוראות */}
+          <div style={{background:'var(--bg3)',borderRadius:10,padding:14,fontSize:13,lineHeight:1.9,color:'var(--text2)'}}>
+            <strong style={{color:'var(--text)'}}>איך מייצאים מגוגל מפות:</strong><br/>
             1. עבור ל-<a href="https://takeout.google.com" target="_blank" rel="noreferrer" style={{color:'var(--accent)'}}>takeout.google.com</a><br/>
-            2. בחר "מפות (מקומות שלי)" → הורד<br/>
-            3. חפש קובץ <strong>Saved Places.json</strong> → העלה כאן
+            2. בחר <strong>"מפות (מקומות שלי)"</strong> בלבד → הורד<br/>
+            3. פתח את ה-ZIP שהורד ← תיקיית <em>Maps</em>
           </div>
-          <input ref={takeoutRef} type="file" accept=".json" style={{display:'none'}}
-            onChange={e=>e.target.files[0]&&importTakeout(e.target.files[0])}/>
-          <button className="btn btn-primary" style={{width:'100%'}} onClick={()=>takeoutRef.current?.click()}>
-            📂 בחר קובץ JSON
-          </button>
+          {/* הסבר הקבצים */}
+          <div style={{background:'var(--bg3)',borderRadius:10,padding:12,fontSize:12,lineHeight:2,color:'var(--text2)'}}>
+            <strong style={{color:'var(--text)',fontSize:13}}>אילו קבצים לבחור?</strong><br/>
+            ❤️ <strong>Liked places.json</strong> — מקומות שסימנת בלב<br/>
+            🏴 <strong>Want to go.json</strong> — מקומות "רוצה לבקר"<br/>
+            🔖 <strong>Saved Places.json</strong> — מקומות שמורים (כוכב / שמירה)<br/>
+            <span style={{color:'var(--text3)',fontSize:11}}>ניתן לבחור מספר קבצים בבת אחת — כולם יצורפו לבנק</span>
+          </div>
+          {/* אזור גרירה / בחירה */}
+          <div style={{border:'2px dashed var(--border)',borderRadius:10,padding:20,textAlign:'center',cursor:'pointer'}}
+            onClick={()=>takeoutRef.current?.click()}
+            onDragOver={e=>e.preventDefault()}
+            onDrop={e=>{e.preventDefault();if(e.dataTransfer.files.length)importTakeout(e.dataTransfer.files);}}>
+            <div style={{fontSize:28,marginBottom:6}}>📂</div>
+            <div style={{fontSize:13,color:'var(--text2)',fontWeight:600}}>לחץ לבחירה או גרור קבצים לכאן</div>
+            <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>ניתן לבחור כמה קבצים יחד (Ctrl+לחיצה)</div>
+          </div>
+          <input ref={takeoutRef} type="file" accept=".json" multiple style={{display:'none'}}
+            onChange={e=>e.target.files.length&&importTakeout(e.target.files)}/>
         </div>
       </div>
     </div>}
