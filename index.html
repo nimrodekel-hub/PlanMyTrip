@@ -337,7 +337,8 @@ const defaultTrip = (name='טיול חדש') => ({
   vehicle:{name:'הקרוון שלי',height:'',width:'',weight:'',plate:'',waterFillDate:'',wasteEmptyDate:'',waterLog:[],wasteLog:[]},
   days:[],expenses:[],interestBank:[],packingList:[],shoppingList:[],documents:[],generalNotes:'',quickNotes:[],
 });
-const defaultDay  = (date='') => ({id:uid(),date,location:'',coordinates:null,blocks:[],notes:'',summary:'',currentTime:'08:00'});
+const defaultDay  = (date='') => ({id:uid(),date,location:'',coordinates:null,blocks:[],notes:'',summary:'',currentTime:'08:00',
+  startLocation:'',startTime:'08:00',endLocation:'',endTime:'20:00',startPending:false});
 const defaultBlock= (type='activity',start='09:00') => ({id:uid(),type,title:'',startTime:start,durationMins:60,location:'',notes:'',rating:0,isCompleted:false,cost:0});
 
 /* ── שמירה מקומית ── */
@@ -383,7 +384,9 @@ const normTrip = t => {
   return {
     expenses:[],interestBank:[],packingList:[],shoppingList:[],documents:[],quickNotes:[],days:[],generalNotes:'',
     ...t,
-    days:(t.days||[]).map(d=>({blocks:[],...d,blocks:(d.blocks||[])})),
+    days:(t.days||[]).map(d=>({blocks:[],...d,blocks:(d.blocks||[]),
+      startLocation:d.startLocation||'',startTime:d.startTime||'08:00',
+      endLocation:d.endLocation||'',endTime:d.endTime||'20:00',startPending:d.startPending||false})),
     interestBank:t.interestBank||[],
     expenses:t.expenses||[],
     packingList:t.packingList||[],
@@ -1456,9 +1459,23 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
   return <div className="card" style={{marginBottom:12,animation:'fadeIn .3s ease'}}>
     <div className="day-header" onClick={()=>setOpen(o=>!o)}>
       <span style={{fontSize:20,color:dayColor}}>📅</span>
-      <div style={{flex:1}}>
+      <div style={{flex:1,minWidth:0}}>
         <div style={{fontWeight:700,fontSize:14}}>יום {idx+1}{day.date?` — ${dateStr(day.date)}`:''}</div>
-        {day.location&&<div style={{fontSize:11,color:'var(--text3)'}}>📍 {day.location}</div>}
+        {/* תצוגת מסלול: מוצא → יעד */}
+        {(day.startLocation||day.endLocation)
+          ?<div style={{fontSize:11,color:'var(--text3)',display:'flex',alignItems:'center',gap:4,flexWrap:'wrap',marginTop:1}}>
+              {day.startLocation
+                ?<span style={{color:day.startPending?'var(--amber)':'var(--green)',fontWeight:600}}>
+                    {day.startPending?'❓':'🟢'} {day.startLocation}{day.startTime?` ${day.startTime}`:''}
+                  </span>
+                :<span style={{color:'var(--text3)'}}>🟢 —</span>}
+              <span style={{color:'var(--text3)'}}>→</span>
+              {day.endLocation
+                ?<span style={{color:'var(--red)',fontWeight:600}}>🔴 {day.endLocation}{day.endTime?` ${day.endTime}`:''}</span>
+                :<span style={{color:'var(--text3)'}}>🔴 —</span>}
+            </div>
+          :day.location&&<div style={{fontSize:11,color:'var(--text3)'}}>📍 {day.location}</div>
+        }
       </div>
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         {day.blocks.length>0&&<span className="chip chip-blue" style={{fontSize:10}}>{done}/{day.blocks.length}</span>}
@@ -1476,11 +1493,59 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
     </div>
 
     {open&&<div style={{padding:'14px 16px'}}>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
         <div><label className="label">תאריך</label>
           <input className="input" type="date" value={day.date} onChange={e=>onUpdate({...day,date:e.target.value})}/></div>
-        <div><label className="label">מיקום / אתר</label>
+        <div><label className="label">מיקום / אתר לינה</label>
           <input className="input" value={day.location} onChange={e=>onUpdate({...day,location:e.target.value})} placeholder="עיר / אתר קמפינג"/></div>
+      </div>
+
+      {/* ── נקודת מוצא ויעד ── */}
+      <div style={{background:'var(--bg3)',borderRadius:10,padding:12,marginBottom:12}}>
+        <div style={{fontSize:11,fontWeight:700,color:'var(--text2)',marginBottom:8}}>🗺️ מסלול היום</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+          {/* מוצא */}
+          <div>
+            <label className="label" style={{color:'var(--green)'}}>🟢 נקודת מוצא</label>
+            <div style={{display:'flex',gap:4,alignItems:'center'}}>
+              <input className="input" style={{flex:1,
+                background:day.startPending?'rgba(234,179,8,0.13)':'',
+                borderColor:day.startPending?'var(--amber)':''}}
+                value={day.startLocation}
+                onChange={e=>onUpdate({...day,startLocation:e.target.value,startPending:false})}
+                placeholder="מאיפה יוצאים..."/>
+              <input type="time" value={day.startTime||'08:00'}
+                onChange={e=>onUpdate({...day,startTime:e.target.value})}
+                style={{width:72,background:'var(--bg2)',border:'1px solid var(--border)',
+                  color:'var(--text)',borderRadius:6,padding:'6px 4px',fontSize:12,
+                  fontFamily:'Heebo,sans-serif',flexShrink:0}}/>
+            </div>
+            {day.startPending&&<div style={{display:'flex',alignItems:'center',gap:6,marginTop:5}}>
+              <span style={{fontSize:11,color:'var(--amber)'}}>❓ הועתק מיעד אתמול — לאשר?</span>
+              <button className="btn btn-sm" style={{padding:'1px 8px',fontSize:11,
+                background:'var(--amber)',color:'#000',border:'none',borderRadius:5,cursor:'pointer'}}
+                onClick={()=>onUpdate({...day,startPending:false})}>✓ אשר</button>
+              <button className="btn btn-sm" style={{padding:'1px 8px',fontSize:11,
+                background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--border)',borderRadius:5,cursor:'pointer'}}
+                onClick={()=>onUpdate({...day,startLocation:'',startPending:false})}>✕ נקה</button>
+            </div>}
+          </div>
+          {/* יעד */}
+          <div>
+            <label className="label" style={{color:'var(--red)'}}>🔴 נקודת יעד</label>
+            <div style={{display:'flex',gap:4,alignItems:'center'}}>
+              <input className="input" style={{flex:1}}
+                value={day.endLocation}
+                onChange={e=>onUpdate({...day,endLocation:e.target.value})}
+                placeholder="לאן מגיעים..."/>
+              <input type="time" value={day.endTime||'20:00'}
+                onChange={e=>onUpdate({...day,endTime:e.target.value})}
+                style={{width:72,background:'var(--bg2)',border:'1px solid var(--border)',
+                  color:'var(--text)',borderRadius:6,padding:'6px 4px',fontSize:12,
+                  fontFamily:'Heebo,sans-serif',flexShrink:0}}/>
+            </div>
+          </div>
+        </div>
       </div>
 
       <Weather coordinates={day.coordinates} location={day.location}/>
@@ -1582,7 +1647,14 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=fals
     const last=trip.days[trip.days.length-1];
     let nd='';
     if(last?.date){const d=new Date(last.date);d.setDate(d.getDate()+1);nd=d.toISOString().slice(0,10);}
-    const newTrip={...trip,days:[...trip.days,defaultDay(nd)]};
+    const newDay={
+      ...defaultDay(nd),
+      // מוצא חדש = יעד היום הקודם (ממתין לאישור)
+      startLocation:last?.endLocation||'',
+      startTime:last?.endLocation?(last?.endTime||'08:00'):'08:00',
+      startPending:!!(last?.endLocation),
+    };
+    const newTrip={...trip,days:[...trip.days,newDay]};
     onUpdate(newTrip);
     // גלול אוטומטית לדף האחרון אחרי הוספה
     const newLen=newTrip.days.length;
@@ -2819,6 +2891,7 @@ function ReportTab({trip}){
       trip.days.forEach((day,i)=>{
         const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
         lines.push('',`יום ${i+1}${day.date?` — ${new Date(day.date).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long'})}`:''}`+(day.location?` | 📍 ${day.location}`:''));
+        if(day.startLocation||day.endLocation) lines.push(`  🟢 ${day.startLocation||'—'}${day.startTime?' '+day.startTime:''} → 🔴 ${day.endLocation||'—'}${day.endTime?' '+day.endTime:''}`);
         if(!sorted.length){lines.push('  (אין פעילויות)');return;}
         sorted.forEach(b=>{
           const end=addMins(b.startTime,b.durationMins);
@@ -2954,6 +3027,11 @@ function ReportTab({trip}){
                 {day.date&&<span style={{color:'var(--text)'}}>{new Date(day.date).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long'})}</span>}
                 {day.location&&<span style={{color:'var(--text3)',fontWeight:400}}>📍 {day.location}</span>}
               </div>
+              {(day.startLocation||day.endLocation)&&<div style={{fontSize:11,color:'var(--text2)',marginBottom:6,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                <span style={{color:'var(--green)',fontWeight:600}}>🟢 {day.startLocation||'—'}{day.startTime?' '+day.startTime:''}</span>
+                <span>→</span>
+                <span style={{color:'var(--red)',fontWeight:600}}>🔴 {day.endLocation||'—'}{day.endTime?' '+day.endTime:''}</span>
+              </div>}
               {sorted.length===0
                 ?<div style={{color:'var(--text3)',fontSize:12,fontStyle:'italic'}}>אין פעילויות</div>
                 :sorted.map(b=>{
