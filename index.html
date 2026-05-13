@@ -1491,11 +1491,14 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
 /* ══════════════════════════════════
    פריט בנק אטרקציות
 ══════════════════════════════════ */
-function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem}){
+function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,onSelect,onEnrich,enriching}){
   const[selDay,setSelDay]=useState('');
   const focusMap=()=>{if(item.lat){onLocate?.(item.lat,item.lng);onFocusItem?.(item.lat,item.lng,item.name);}};
-  return <div className="interest-item" style={{marginBottom:8,flexDirection:'column',alignItems:'stretch',gap:8}}>
-    <div style={{display:'flex',alignItems:'flex-start',gap:8}}>
+  return <div className="interest-item" style={{marginBottom:6,flexDirection:'column',alignItems:'stretch',gap:8,
+    outline:selected?'2px solid var(--accent)':'2px solid transparent',borderRadius:8,transition:'outline 0.15s'}}>
+    <div style={{display:'flex',alignItems:'flex-start',gap:6}}>
+      {onSelect&&<input type="checkbox" checked={!!selected} onChange={e=>onSelect(item.id,e.target.checked)}
+        style={{marginTop:3,flexShrink:0,cursor:'pointer',width:14,height:14}} onClick={e=>e.stopPropagation()}/>}
       <div style={{flex:1,minWidth:0,cursor:item.lat?'pointer':'default'}} onClick={focusMap}>
         <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
         {item.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1,lineHeight:1.4}}>{item.placeType}</div>}
@@ -1510,43 +1513,37 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem}){
         {item.lat&&(onLocate||onFocusItem)&&(
           <button className="btn btn-secondary btn-icon btn-sm" title="הצג במפה" onClick={focusMap}>📍</button>
         )}
+        {onEnrich&&<button className="btn btn-secondary btn-icon btn-sm"
+          title={item.placeId?'רענן פרטים מגוגל מפות':'קשר לגוגל מפות והשלם פרטים'}
+          onClick={()=>onEnrich(item)} disabled={!!enriching}
+          style={{fontSize:enriching?12:11,opacity:enriching?0.6:1}}>{enriching?'⏳':'🔍'}</button>}
         <button className="btn btn-danger btn-icon btn-sm" onClick={onDelete} title="הסר">✕</button>
       </div>
     </div>
     <div style={{display:'flex',gap:5}}>
-      <select
-        value={selDay}
-        onChange={e=>setSelDay(e.target.value)}
-        style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border)',color:'var(--text)',borderRadius:7,padding:'5px 8px',fontSize:11,fontFamily:'Heebo,sans-serif',direction:'rtl'}}
-      >
+      <select value={selDay} onChange={e=>setSelDay(e.target.value)}
+        style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border)',color:'var(--text)',borderRadius:7,padding:'5px 8px',fontSize:11,fontFamily:'Heebo,sans-serif',direction:'rtl'}}>
         <option value="">➕ בחר יום להוסיף...</option>
         {days.map((d,i)=><option key={d.id} value={d.id}>יום {i+1}{d.location?' — '+d.location:''}</option>)}
       </select>
-      <button
-        className="btn btn-primary btn-sm"
-        disabled={!selDay}
+      <button className="btn btn-primary btn-sm" disabled={!selDay}
         onClick={()=>{if(selDay){onAddToDay(selDay,item);setSelDay('');}}}
-        style={{opacity:selDay?1:0.4,flexShrink:0}}
-      >הוסף</button>
+        style={{opacity:selDay?1:0.4,flexShrink:0}}>הוסף</button>
     </div>
   </div>;
 }
 
 function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=false}){
   const[showBank,setShowBank]=useState(!compact);
-  const[showTakeout,setShowTakeout]=useState(false);
-  const takeoutRef=useRef(null);
 
   const updDay=upd=>onUpdate({...trip,days:trip.days.map(d=>d.id===upd.id?upd:d)});
   const addDay=()=>{
     const last=trip.days[trip.days.length-1];
     let nd='';
-    if (last?.date){const d=new Date(last.date);d.setDate(d.getDate()+1);nd=d.toISOString().slice(0,10);}
+    if(last?.date){const d=new Date(last.date);d.setDate(d.getDate()+1);nd=d.toISOString().slice(0,10);}
     onUpdate({...trip,days:[...trip.days,defaultDay(nd)]});
   };
   const delDay=id=>onUpdate({...trip,days:trip.days.filter(d=>d.id!==id)});
-  const addToBank=item=>onUpdate({...trip,interestBank:[...trip.interestBank,{...item,id:uid()}]});
-  const delBank=id=>onUpdate({...trip,interestBank:trip.interestBank.filter(i=>i.id!==id)});
   const moveBlockToBank=(block,dayId)=>{
     const bankItem={id:uid(),name:block.title||'פעילות',address:block.location||'',
       lat:block.lat,lng:block.lng,placeId:block.placeId,
@@ -1559,45 +1556,6 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=fals
       days:trip.days.map(d=>d.id===dayId?{...d,blocks:d.blocks.filter(b=>b.id!==block.id)}:d)
     });
     toast(`"${bankItem.name}" הועבר לבנק האטרקציות`,'success');
-  };
-
-  // הוספת פריט מהבנק ישירות ליום ספציפי
-  const addItemToDay=(dayId,item)=>{
-    const day=trip.days.find(d=>d.id===dayId);
-    if (!day) return;
-    const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
-    const last=sorted[sorted.length-1];
-    const start=last?addMins(last.startTime,last.durationMins):(day.currentTime||'09:00');
-    const newBlock=defaultBlock('activity',start);
-    newBlock.title=item.name;
-    newBlock.location=item.address||'';
-    if(item.lat){newBlock.lat=item.lat; newBlock.lng=item.lng;}
-    if(item.placeId) newBlock.placeId=item.placeId;
-    if(item.rating) newBlock.placeRating=item.rating;
-    if(item.userRatingsTotal) newBlock.placeUserRatings=item.userRatingsTotal;
-    if(item.openStatus) newBlock.placeOpenStatus=item.openStatus;
-    if(item.todayHours) newBlock.placeTodayHours=item.todayHours;
-    if(item.phone) newBlock.placePhone=item.phone;
-    if(item.website) newBlock.placeWebsite=item.website;
-    if(item.photoUrl) newBlock.placePhotoUrl=item.photoUrl;
-    if(item.placeType) newBlock.placeType=item.placeType;
-    updDay({...day,blocks:[...day.blocks,newBlock]});
-    toast(`"${item.name}" נוסף ליום`,'success');
-  };
-
-  // ייבוא Google Takeout
-  const importTakeout=file=>{
-    const r=new FileReader();
-    r.onload=e=>{
-      try {
-        const items=parseTakeoutFeatures(JSON.parse(e.target.result));
-        if (!items.length){toast('לא נמצאו מקומות בקובץ — בדוק שזה "Saved Places.json"','error');return;}
-        onUpdate({...trip,interestBank:[...trip.interestBank,...items]});
-        toast(`יובאו ${items.length} מקומות מגוגל טייקאוט ✓`,'success');
-        setShowTakeout(false);
-      } catch {toast('שגיאה בקריאת הקובץ — וודא שזה קובץ GeoJSON מגוגל טייקאוט','error');}
-    };
-    r.readAsText(file);
   };
 
   return <div style={{display:'flex',height:'100%',overflow:'hidden'}}>
@@ -1627,71 +1585,68 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=fals
     </div>
 
     {!compact&&showBank&&<div className="bank-backdrop" onClick={()=>setShowBank(false)}/>}
-    {!compact&&showBank&&<div className="sidebar-panel">
-      <div style={{padding:'12px 14px',borderBottom:'1px solid var(--border)',fontWeight:700,fontSize:13,display:'flex',alignItems:'center',gap:8}}>
-        🌟 בנק אטרקציות <span className="chip chip-blue" style={{fontSize:10}}>{trip.interestBank.length}</span>
-        <button className="bank-close-btn" onClick={()=>setShowBank(false)}
-          style={{marginRight:'auto',background:'none',border:'none',color:'var(--text3)',fontSize:18,cursor:'pointer',padding:'0 4px',lineHeight:1}}>✕</button>
-      </div>
-      <div className="scroll-y flex-1" style={{padding:'10px'}}>
-        {trip.interestBank.length===0?(
-          <div style={{color:'var(--text3)',fontSize:12,textAlign:'center',padding:'20px 8px',lineHeight:1.8}}>
-            לחץ על כל אטרקציה במפה גוגל ובחר "הוסף לבנק האטרקציות".<br/>
-            או ייבא מקומות מ-Google Takeout.
-          </div>
-        ):trip.interestBank.map(item=>(
-          <BankItem key={item.id} item={item} days={trip.days} onAddToDay={addItemToDay} onDelete={()=>delBank(item.id)} onLocate={onLocate} onFocusItem={onFocusItem}/>
-        ))}
-      </div>
-      <div style={{padding:'10px 12px',borderTop:'1px solid var(--border)',display:'flex',flexDirection:'column',gap:6}}>
-        <button className="btn btn-secondary btn-sm" style={{width:'100%'}} onClick={()=>{const n=prompt('שם המקום:');if(n)addToBank({name:n,address:'',id:uid()});}}>
-          + הוסף ידנית
-        </button>
-        <button className="btn btn-amber btn-sm" style={{width:'100%'}} onClick={()=>setShowTakeout(true)}>
-          ⭐ ייבא מ-Google Takeout
-        </button>
-      </div>
-    </div>}
-
-    {showTakeout&&<div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowTakeout(false)}>
-      <div className="modal">
-        <div className="modal-header">
-          <span style={{fontWeight:700}}>⭐ ייבוא מועדפים מגוגל מפות</span>
-          <button className="btn btn-secondary btn-icon btn-sm" onClick={()=>setShowTakeout(false)}>✕</button>
-        </div>
-        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:14}}>
-          <div style={{background:'var(--bg3)',borderRadius:10,padding:14,fontSize:13,lineHeight:1.8,color:'var(--text2)'}}>
-            <strong style={{color:'var(--text)'}}>איך מייצאים כוכבים מגוגל מפות:</strong><br/>
-            1. עבור ל-<a href="https://takeout.google.com" target="_blank" rel="noreferrer" style={{color:'var(--accent)'}}>takeout.google.com</a><br/>
-            2. בחר רק <strong>"מפות (מקומות שלי)"</strong><br/>
-            3. הורד את הקובץ → פתח את התיקייה<br/>
-            4. חפש קובץ בשם <strong>"Saved Places.json"</strong><br/>
-            5. העלה אותו כאן ↓
-          </div>
-          <div style={{border:'2px dashed var(--border)',borderRadius:10,padding:24,textAlign:'center',cursor:'pointer'}}
-            onClick={()=>takeoutRef.current?.click()}
-            onDragOver={e=>e.preventDefault()}
-            onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)importTakeout(f);}}>
-            <div style={{fontSize:32,marginBottom:8}}>📂</div>
-            <div style={{fontSize:13,color:'var(--text2)'}}>לחץ כאן או גרור את "Saved Places.json"</div>
-          </div>
-          <input ref={takeoutRef} type="file" accept=".json" style={{display:'none'}} onChange={e=>e.target.files[0]&&importTakeout(e.target.files[0])}/>
-        </div>
-      </div>
+    {!compact&&showBank&&<div className="sidebar-panel" style={{display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <BankPanel trip={trip} onUpdate={onUpdate} onLocate={onLocate} onFocusItem={onFocusItem} onClose={()=>setShowBank(false)}/>
     </div>}
   </div>;
 }
 
 /* ══════════════════════════════════
    פאנל בנק אטרקציות (עמודה עצמאית)
+   תכונות: קיבוץ לפי מדינה, בחירה קבוצתית, העשרת פרטים מגוגל מפות
 ══════════════════════════════════ */
 function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
   const[showTakeout,setShowTakeout]=useState(false);
+  const[selected,setSelected]=useState(()=>new Set());
+  const[enrichingId,setEnrichingId]=useState(null);
+  const[collapsed,setCollapsed]=useState(()=>new Set());
   const takeoutRef=useRef(null);
 
-  const addToBank=item=>onUpdate({...trip,interestBank:[...trip.interestBank,{...item,id:uid()}]});
-  const delBank=id=>onUpdate({...trip,interestBank:trip.interestBank.filter(i=>i.id!==id)});
+  /* חילוץ שם מדינה מהכתובת — חלק אחרון אחרי פסיק */
+  const getCountry=item=>{
+    const addr=(item.address||'').trim();
+    if(!addr) return 'ללא כתובת';
+    const parts=addr.split(',').map(s=>s.trim()).filter(Boolean);
+    if(parts.length<2) return parts[0]||'ללא כתובת';
+    let last=parts[parts.length-1];
+    // אם החלק האחרון הוא מיקוד בלבד (ספרות) → קח את לפניו
+    if(/^\d[\d\s-]{1,8}$/.test(last)&&parts.length>2) last=parts[parts.length-2];
+    return last||'ללא כתובת';
+  };
 
+  /* קיבוץ לפי מדינה, ממויין אלפביתית */
+  const grouped=useMemo(()=>{
+    const map={};
+    for(const item of trip.interestBank){
+      const c=getCountry(item);
+      if(!map[c]) map[c]=[];
+      map[c].push(item);
+    }
+    return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0],'he'));
+  },[trip.interestBank]);
+
+  /* ניהול בחירה */
+  const toggleSelect=(id,val)=>setSelected(prev=>{const s=new Set(prev);val?s.add(id):s.delete(id);return s;});
+  const toggleCountry=(items,allSel)=>setSelected(prev=>{
+    const s=new Set(prev);
+    items.forEach(i=>allSel?s.delete(i.id):s.add(i.id));
+    return s;
+  });
+  const delMany=ids=>{
+    onUpdate({...trip,interestBank:trip.interestBank.filter(i=>!ids.has(i.id))});
+    setSelected(prev=>{const s=new Set(prev);ids.forEach(id=>s.delete(id));return s;});
+    toast(`נמחקו ${ids.size} פריטים`,'success');
+  };
+
+  /* פעולות בודדות */
+  const addToBank=item=>onUpdate({...trip,interestBank:[...trip.interestBank,{...item,id:uid()}]});
+  const delBank=id=>{
+    onUpdate({...trip,interestBank:trip.interestBank.filter(i=>i.id!==id)});
+    setSelected(prev=>{const s=new Set(prev);s.delete(id);return s;});
+  };
+  const toggleCollapse=country=>setCollapsed(prev=>{const s=new Set(prev);s.has(country)?s.delete(country):s.add(country);return s;});
+
+  /* הוספה ליום */
   const addItemToDay=(dayId,item)=>{
     const day=trip.days.find(d=>d.id===dayId); if(!day) return;
     const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
@@ -1713,6 +1668,53 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
     toast(`"${item.name}" נוסף ליום`,'success');
   };
 
+  /* העשרת פריט מגוגל מפות (PlacesService) */
+  const enrichItem=item=>{
+    if(!window.google?.maps?.places){toast('Google Maps אינו זמין — יש לפתוח את האפליקציה עם מפה פעילה','error');return;}
+    if(enrichingId){toast('המתן לסיום ההעשרה הנוכחית','error');return;}
+    setEnrichingId(item.id);
+    const svc=new window.google.maps.places.PlacesService(document.createElement('div'));
+    const query=item.name+(item.address?' '+item.address:'');
+    svc.textSearch({query},(results,status)=>{
+      const PS=window.google.maps.places.PlacesServiceStatus;
+      if(status!==PS.OK||!results?.length){
+        toast('לא נמצאו תוצאות בגוגל מפות','error');
+        setEnrichingId(null);return;
+      }
+      const r=results[0];
+      svc.getDetails({
+        placeId:r.place_id,
+        fields:['name','formatted_address','geometry','rating','user_ratings_total',
+                'opening_hours','formatted_phone_number','website','types','photos','place_id']
+      },(pl,st)=>{
+        setEnrichingId(null);
+        if(st!==PS.OK||!pl){toast('שגיאה בקבלת פרטי המקום','error');return;}
+        const oh=pl.opening_hours;
+        const isOpenNow=oh?.isOpen?.();
+        const todayIdx=new Date().getDay();
+        const todayLine=oh?.weekday_text?.[todayIdx]||'';
+        const updated={...item,
+          placeId:pl.place_id||item.placeId,
+          name:pl.name||item.name,
+          address:pl.formatted_address||item.address,
+          lat:pl.geometry?.location?.lat()??item.lat,
+          lng:pl.geometry?.location?.lng()??item.lng,
+          rating:pl.rating||item.rating||null,
+          userRatingsTotal:pl.user_ratings_total||item.userRatingsTotal||null,
+          phone:pl.formatted_phone_number||item.phone||'',
+          website:pl.website||item.website||'',
+          openStatus:isOpenNow===true?'פתוח עכשיו':isOpenNow===false?'סגור עכשיו':item.openStatus||'',
+          todayHours:todayLine||item.todayHours||'',
+          placeType:getPlaceTypeLabel(pl.types)||item.placeType||'',
+          photoUrl:pl.photos?.[0]?.getUrl({maxWidth:400})||item.photoUrl||'',
+        };
+        onUpdate({...trip,interestBank:trip.interestBank.map(i=>i.id===item.id?updated:i)});
+        toast(`✓ "${pl.name}" עודכן מגוגל מפות`,'success');
+      });
+    });
+  };
+
+  /* ייבוא Google Takeout */
   const importTakeout=file=>{
     const r=new FileReader();
     r.onload=e=>{
@@ -1728,28 +1730,79 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
   };
 
   return <div style={{height:'100%',display:'flex',flexDirection:'column',overflow:'hidden',background:'var(--bg2)'}}>
-    <div style={{padding:'12px 14px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+    {/* כותרת */}
+    <div style={{padding:'12px 14px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
       <span style={{fontWeight:700,fontSize:14}}>⭐ בנק אטרקציות</span>
       <span className="chip chip-blue" style={{fontSize:10}}>{trip.interestBank.length}</span>
+      {selected.size>0&&<button className="btn btn-danger btn-sm"
+        style={{padding:'2px 8px',fontSize:11,marginRight:2}}
+        onClick={()=>{if(confirm(`למחוק ${selected.size} פריטים מסומנים?`))delMany(new Set(selected));}}>
+        🗑 מחק {selected.size}
+      </button>}
       <div style={{flex:1}}/>
+      {enrichingId&&<span style={{fontSize:10,color:'var(--amber)',animation:'pulse 1s infinite'}}>⏳ מעשיר...</span>}
       {onClose&&<button onClick={onClose} style={{background:'none',border:'none',color:'var(--text3)',fontSize:20,cursor:'pointer',lineHeight:1,padding:'0 2px'}}>✕</button>}
     </div>
-    <div className="scroll-y flex-1" style={{padding:'10px'}}>
+
+    {/* רשימה מקובצת */}
+    <div className="scroll-y flex-1" style={{padding:'8px 10px'}}>
       {trip.interestBank.length===0
         ?<div style={{color:'var(--text3)',fontSize:12,textAlign:'center',padding:'24px 8px',lineHeight:1.9}}>
             לחץ על מקום במפה ← "הוסף לבנק האטרקציות".<br/>או ייבא מ-Google Takeout.
           </div>
-        :trip.interestBank.map(item=>(
-          <BankItem key={item.id} item={item} days={trip.days} onAddToDay={addItemToDay}
-            onDelete={()=>delBank(item.id)} onLocate={onLocate} onFocusItem={onFocusItem}/>
-        ))
+        :grouped.map(([country,items])=>{
+          const allSel=items.every(i=>selected.has(i.id));
+          const someSel=items.some(i=>selected.has(i.id));
+          const isCollapsed=collapsed.has(country);
+          const selCount=items.filter(i=>selected.has(i.id)).length;
+          return <div key={country} style={{marginBottom:10}}>
+            {/* כותרת מדינה */}
+            <div style={{display:'flex',alignItems:'center',gap:6,padding:'5px 8px',
+              background:'var(--bg3)',borderRadius:8,cursor:'pointer',userSelect:'none',
+              marginBottom:isCollapsed?0:6,borderBottom:isCollapsed?'none':'1px solid var(--border)'}}
+              onClick={()=>toggleCollapse(country)}>
+              <span style={{fontSize:10,color:'var(--text3)',lineHeight:1}}>{isCollapsed?'▶':'▼'}</span>
+              <span style={{fontSize:12,fontWeight:700,flex:1,color:'var(--text)'}}>{country}</span>
+              <span style={{fontSize:10,color:'var(--text3)'}}>({items.length})</span>
+              {/* צ'קבוקס לבחירת כל המדינה */}
+              <input type="checkbox"
+                checked={allSel}
+                ref={el=>{if(el)el.indeterminate=someSel&&!allSel;}}
+                onChange={e=>{e.stopPropagation();toggleCountry(items,allSel);}}
+                onClick={e=>e.stopPropagation()}
+                style={{cursor:'pointer',width:13,height:13,flexShrink:0}}
+                title="בחר/בטל הכל"/>
+              {someSel&&<button className="btn btn-danger btn-sm"
+                style={{padding:'1px 6px',fontSize:10,flexShrink:0}}
+                onClick={e=>{e.stopPropagation();
+                  if(confirm(`למחוק ${selCount} פריטים מסומנים מ-${country}?`))
+                    delMany(new Set(items.filter(i=>selected.has(i.id)).map(i=>i.id)));}}
+                title={`מחק פריטים מסומנים מ-${country}`}>🗑 {selCount}</button>}
+            </div>
+            {/* פריטים */}
+            {!isCollapsed&&items.map(item=>(
+              <BankItem key={item.id} item={item} days={trip.days} onAddToDay={addItemToDay}
+                onDelete={()=>delBank(item.id)} onLocate={onLocate} onFocusItem={onFocusItem}
+                selected={selected.has(item.id)} onSelect={toggleSelect}
+                onEnrich={enrichItem} enriching={enrichingId===item.id}/>
+            ))}
+          </div>;
+        })
       }
     </div>
+
+    {/* כפתורי תחתית */}
     <div style={{padding:'10px 12px',borderTop:'1px solid var(--border)',display:'flex',flexDirection:'column',gap:6,flexShrink:0}}>
       <button className="btn btn-secondary btn-sm" style={{width:'100%'}}
-        onClick={()=>{const n=prompt('שם המקום:');if(n)addToBank({name:n,address:'',id:uid()});}}>+ הוסף ידנית</button>
-      <button className="btn btn-amber btn-sm" style={{width:'100%'}} onClick={()=>setShowTakeout(true)}>⭐ ייבא מ-Google Takeout</button>
+        onClick={()=>{const n=prompt('שם המקום:');if(n)addToBank({name:n,address:'',id:uid()});}}>
+        + הוסף ידנית
+      </button>
+      <button className="btn btn-amber btn-sm" style={{width:'100%'}} onClick={()=>setShowTakeout(true)}>
+        ⭐ ייבא מ-Google Takeout
+      </button>
     </div>
+
+    {/* מודל ייבוא Takeout */}
     {showTakeout&&<div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowTakeout(false)}>
       <div className="modal">
         <div className="modal-header">
@@ -1762,8 +1815,11 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
             2. בחר "מפות (מקומות שלי)" → הורד<br/>
             3. חפש קובץ <strong>Saved Places.json</strong> → העלה כאן
           </div>
-          <input ref={takeoutRef} type="file" accept=".json" style={{display:'none'}} onChange={e=>e.target.files[0]&&importTakeout(e.target.files[0])}/>
-          <button className="btn btn-primary" style={{width:'100%'}} onClick={()=>takeoutRef.current?.click()}>📂 בחר קובץ JSON</button>
+          <input ref={takeoutRef} type="file" accept=".json" style={{display:'none'}}
+            onChange={e=>e.target.files[0]&&importTakeout(e.target.files[0])}/>
+          <button className="btn btn-primary" style={{width:'100%'}} onClick={()=>takeoutRef.current?.click()}>
+            📂 בחר קובץ JSON
+          </button>
         </div>
       </div>
     </div>}
