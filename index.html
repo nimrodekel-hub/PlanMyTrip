@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="pragma" content="no-cache" />
-  <title>CaravanControl — מנהל טיולים v7</title>
+  <title>CaravanControl — מנהל טיולים v8</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -409,7 +409,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
         <input id="gm-name-edit" value="${(p.name||'').replace(/"/g,'&quot;')}"
           style="width:100%;border:1px solid #ddd;border-radius:6px;padding:5px 8px;font-size:14px;font-weight:700;font-family:Heebo,Arial,sans-serif;direction:rtl;color:#111;margin-bottom:3px;box-sizing:border-box"/>
         <div style="font-size:11px;color:#888;margin-bottom:6px;line-height:1.4">${p.address}</div>
-        ${p._dbg?`<div style="font-size:9px;color:#bbb;margin-bottom:4px;direction:ltr;text-align:left">${p._dbg}</div>`:''}
+        ${p._noGoogle?`<div style="font-size:10px;color:#f59e0b;background:#fffbeb;border-radius:5px;padding:4px 7px;margin-bottom:6px">⚠️ פרטים מלאים דורשים <a href="https://console.cloud.google.com/billing" target="_blank" style="color:#d97706">Billing Account</a> ב-Google Cloud</div>`:''}
         ${p.rating?`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
           <span style="color:#f59e0b;font-size:14px">${starsHtml}</span>
           <span style="font-size:12px;font-weight:600;color:#333">${p.rating}</span>
@@ -549,11 +549,24 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
       /* ── מקור 5: Nominatim — גיבוי אחרון לשם בלבד ── */
       const nominatimLookup=async()=>{
         try{
-          const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat0}&lon=${lng0}&format=json&zoom=18&namedetails=1&extratags=1&accept-language=he`,{headers:{'Accept-Language':'he'}});
-          const d=await r.json();
-          const n=d.namedetails?.name||d.name||d.address?.tourism||d.address?.amenity||d.address?.leisure||d.address?.natural||d.address?.historic||d.address?.shop||d.address?.restaurant||d.address?.cafe||d.extratags?.name||'';
-          const parts=[d.address?.road,d.address?.city||d.address?.town||d.address?.village].filter(Boolean);
-          return{name:n||null,address:parts.join(', ')||d.display_name||''};
+          // מנסה שני zoom: 18 לבניין/עסק ספציפי, 16 לאזור/POI גדול (נמל, קניון, פארק)
+          const [r18,r16]=await Promise.all([
+            fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat0}&lon=${lng0}&format=json&zoom=18&namedetails=1&extratags=1&accept-language=he`,{headers:{'Accept-Language':'he'}}),
+            fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat0}&lon=${lng0}&format=json&zoom=16&namedetails=1&accept-language=he`,{headers:{'Accept-Language':'he'}}),
+          ]);
+          const [d18,d16]=await Promise.all([r18.json(),r16.json()]);
+          const pickName=(d)=>{
+            const isRoad=d.class==='highway'||d.type==='road'||d.type==='residential'||d.type==='service';
+            const poi=d.namedetails?.['name:he']||d.namedetails?.name||(!isRoad?d.name:'')||'';
+            const cat=d.address?.tourism||d.address?.amenity||d.address?.leisure||d.address?.natural||d.address?.historic||d.address?.shop||'';
+            return poi||cat||'';
+          };
+          const n18=pickName(d18), n16=pickName(d16);
+          // מעדיף zoom 18 אם יש שם, אחרת zoom 16
+          const name=n18||n16||null;
+          const parts=[d18.address?.road,d18.address?.city||d18.address?.town||d18.address?.village].filter(Boolean);
+          const address=parts.join(', ')||d18.display_name?.split(',').slice(0,2).join(',')||'';
+          return{name,address};
         }catch{return null;}
       };
 
@@ -607,10 +620,11 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
         }
 
         const photoUrl=basic?.photos?.[0]?.getUrl({maxWidth:300,maxHeight:110})||'';
+        const _noGoogle=!v1&&!basic&&!geo;
         const _dbg=`[v1:${v1?'✓':'✗'} basic:${basic?'✓':'✗'} rich:${rich?'✓':'✗'} geo:${geo?'✓':'✗'}]`;
         console.log('[DEBUG] sources',_dbg,'name=',name,'addr=',address,'details=',details);
         iwPlace.data={name,address,lat,lng,placeId};
-        iw.setContent(buildIwContent({name,address,lat,lng,placeId,photoUrl,...details,_dbg}));
+        iw.setContent(buildIwContent({name,address,lat,lng,placeId,photoUrl,...details,_noGoogle}));
       }catch(err){
         iwPlace.data={name:'מקום',address:'',lat:lat0,lng:lng0,placeId};
         iw.setContent(buildIwContent({name:'מקום',address:'',lat:lat0,lng:lng0,placeId}));
