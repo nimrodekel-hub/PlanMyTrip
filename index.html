@@ -459,6 +459,43 @@ const parseTakeoutFeatures = (data) => {
   }).filter(Boolean);
 };
 
+/* ── Google Takeout CSV parser (תיקיית Saved — לבבות / Want to go / רשימות פרטיות) ──
+   פורמט: Title,Note,URL[,Comment]   (ללא קואורדינטות — ניתן להעשיר אחרי ייבוא עם 🔍)
+*/
+const parseTakeoutCSV = text => {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+  // פרסר CSV פשוט — תומך בשדות עם מרכאות ופסיקים פנימיים
+  const parseRow = line => {
+    const vals = []; let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') {
+        if (inQ && line[i+1] === '"') { cur += '"'; i++; } // escaped quote
+        else inQ = !inQ;
+      } else if (c === ',' && !inQ) { vals.push(cur); cur = ''; }
+      else cur += c;
+    }
+    vals.push(cur);
+    return vals.map(v => v.trim());
+  };
+  const header = parseRow(lines[0]).map(h => h.toLowerCase());
+  const titleIdx  = header.indexOf('title');
+  const noteIdx   = header.indexOf('note');
+  const urlIdx    = header.indexOf('url');
+  if (titleIdx === -1) return []; // לא נראה כקובץ Takeout
+  return lines.slice(1).map(line => {
+    if (!line.trim()) return null;
+    const v = parseRow(line);
+    const name    = (v[titleIdx] || '').trim();
+    const note    = noteIdx  >= 0 ? (v[noteIdx]  || '').trim() : '';
+    const website = urlIdx   >= 0 ? (v[urlIdx]   || '').trim() : '';
+    if (!name) return null;
+    return { id: uid(), name, address: '', lat: null, lng: null, website,
+             notes: note, _noCoords: true }; // _noCoords → tooltip להעשרה
+  }).filter(Boolean);
+};
+
 /* ── מזג אוויר ── */
 const fetchWeather = (lat,lon) => fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,weathercode&current_weather=true&timezone=auto&forecast_days=3`).then(r=>r.json());
 const todayISO = () => new Date().toISOString().slice(0,10);
@@ -1502,6 +1539,7 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
       <div style={{flex:1,minWidth:0,cursor:item.lat?'pointer':'default'}} onClick={focusMap}>
         <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
         {item.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1,lineHeight:1.4}}>{item.placeType}</div>}
+        {item._noCoords&&!item.placeId&&<div style={{fontSize:10,color:'var(--amber)',marginTop:1}}>📍 ללא מיקום — לחץ 🔍 להשלמה מגוגל מפות</div>}
         {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginTop:1}}>{item.address}</div>}
         {item.rating&&<div style={{fontSize:11,color:'var(--amber)',marginTop:2}}>⭐ {item.rating}{item.userRatingsTotal?` (${Number(item.userRatingsTotal).toLocaleString()})`:''}</div>}
         {item.openStatus&&<div style={{fontSize:11,fontWeight:600,marginTop:1,color:item.openStatus==='פתוח עכשיו'?'#22c55e':'#ef4444'}}>{item.openStatus==='פתוח עכשיו'?'✅':'🔴'} {item.openStatus}</div>}
@@ -1721,41 +1759,42 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
     });
   };
 
-  /* ייבוא Google Takeout — תומך במספר קבצים בבת אחת */
+  /* ייבוא Google Takeout — JSON (קואורדינטות) + CSV (לבבות/Want to go/רשימות) */
   const importTakeout=files=>{
     const fileList=Array.from(files);
     if(!fileList.length) return;
-    let totalAdded=0;
-    let totalFiles=0;
-    let errors=0;
     const readOne=(file,done)=>{
       const r=new FileReader();
       r.onload=e=>{
         try{
-          const items=parseTakeoutFeatures(JSON.parse(e.target.result));
-          totalAdded+=items.length;
-          totalFiles++;
-          done(items);
-        }catch(err){errors++;done([]);}
+          const text=e.target.result;
+          const isCSV=file.name.toLowerCase().endsWith('.csv');
+          const items=isCSV
+            ? parseTakeoutCSV(text)
+            : parseTakeoutFeatures(JSON.parse(text));
+          done(items,isCSV);
+        }catch(err){done([],false);}
       };
-      r.onerror=()=>{errors++;done([]);};
-      r.readAsText(file);
+      r.onerror=()=>done([],false);
+      r.readAsText(file,'utf-8');
     };
-    // קרא את כל הקבצים, ואז עדכן state פעם אחת
     const allItems=[];
+    let jsonCount=0,csvCount=0,jsonFiles=0,csvFiles=0;
     let pending=fileList.length;
-    fileList.forEach(file=>readOne(file,items=>{
+    fileList.forEach(file=>readOne(file,(items,isCSV)=>{
       allItems.push(...items);
+      if(isCSV){csvCount+=items.length;if(items.length)csvFiles++;}
+      else{jsonCount+=items.length;if(items.length)jsonFiles++;}
       if(--pending===0){
         if(!allItems.length){
-          toast('לא נמצאו מקומות באף קובץ — ודא שאלה קבצי JSON מגוגל טייקאוט','error');
+          toast('לא נמצאו מקומות — ודא שבחרת קבצי JSON או CSV מגוגל טייקאוט','error');
           return;
         }
         onUpdate({...trip,interestBank:[...trip.interestBank,...allItems]});
-        const msg=fileList.length>1
-          ?`יובאו ${allItems.length} מקומות מ-${totalFiles} קבצים ✓`
-          :`יובאו ${allItems.length} מקומות ✓`;
-        toast(msg,'success');
+        const parts=[];
+        if(jsonCount) parts.push(`${jsonCount} עם GPS (JSON)`);
+        if(csvCount)  parts.push(`${csvCount} ללא GPS (CSV — לחץ 🔍 להשלמה)`);
+        toast(`יובאו ${allItems.length} מקומות: ${parts.join(' + ')} ✓`,'success');
         setShowTakeout(false);
       }
     }));
@@ -1836,37 +1875,67 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
 
     {/* מודל ייבוא Takeout */}
     {showTakeout&&<div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowTakeout(false)}>
-      <div className="modal">
+      <div className="modal" style={{maxWidth:520,width:'95vw'}}>
         <div className="modal-header">
-          <span style={{fontWeight:700}}>⭐ ייבוא מ-Google Takeout</span>
+          <span style={{fontWeight:700}}>📥 ייבוא מקומות מגוגל מפות</span>
           <button className="btn btn-secondary btn-icon btn-sm" onClick={()=>setShowTakeout(false)}>✕</button>
         </div>
-        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:14}}>
-          {/* הוראות */}
-          <div style={{background:'var(--bg3)',borderRadius:10,padding:14,fontSize:13,lineHeight:1.9,color:'var(--text2)'}}>
-            <strong style={{color:'var(--text)'}}>איך מייצאים מגוגל מפות:</strong><br/>
-            1. עבור ל-<a href="https://takeout.google.com" target="_blank" rel="noreferrer" style={{color:'var(--accent)'}}>takeout.google.com</a><br/>
-            2. בחר <strong>"מפות (מקומות שלי)"</strong> בלבד → הורד<br/>
-            3. פתח את ה-ZIP שהורד ← תיקיית <em>Maps</em>
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:12}}>
+
+          {/* שלב 1 — הורדה */}
+          <div style={{background:'var(--bg3)',borderRadius:10,padding:13,fontSize:13,lineHeight:1.9}}>
+            <div style={{fontWeight:700,color:'var(--text)',marginBottom:4}}>שלב 1 — הורד מ-Google Takeout</div>
+            <div style={{color:'var(--text2)'}}>
+              1. עבור ל-<a href="https://takeout.google.com" target="_blank" rel="noreferrer" style={{color:'var(--accent)'}}>takeout.google.com</a>
+              {' '}← לחץ <strong>"בטל בחירת הכל"</strong><br/>
+              2. חפש וסמן ✅ <strong>"Maps (your places)"</strong><br/>
+              3. חפש וסמן ✅ <strong>"Saved"</strong> <span style={{color:'var(--text3)',fontSize:11}}>(ללא זה — לא יהיו לבבות ורשימות פרטיות)</span><br/>
+              4. לחץ <strong>"Next step"</strong> → <strong>"Create export"</strong> → הורד את ה-ZIP
+            </div>
           </div>
-          {/* הסבר הקבצים */}
-          <div style={{background:'var(--bg3)',borderRadius:10,padding:12,fontSize:12,lineHeight:2,color:'var(--text2)'}}>
-            <strong style={{color:'var(--text)',fontSize:13}}>אילו קבצים לבחור?</strong><br/>
-            ❤️ <strong>Liked places.json</strong> — מקומות שסימנת בלב<br/>
-            🏴 <strong>Want to go.json</strong> — מקומות "רוצה לבקר"<br/>
-            🔖 <strong>Saved Places.json</strong> — מקומות שמורים (כוכב / שמירה)<br/>
-            <span style={{color:'var(--text3)',fontSize:11}}>ניתן לבחור מספר קבצים בבת אחת — כולם יצורפו לבנק</span>
+
+          {/* שלב 2 — איפה הקבצים */}
+          <div style={{background:'var(--bg3)',borderRadius:10,padding:13,fontSize:12,lineHeight:1.8}}>
+            <div style={{fontWeight:700,color:'var(--text)',marginBottom:6,fontSize:13}}>שלב 2 — אילו קבצים לפתוח מה-ZIP?</div>
+            {/* JSON עם GPS */}
+            <div style={{marginBottom:8}}>
+              <div style={{fontWeight:600,color:'var(--text)',fontSize:12,marginBottom:3}}>
+                📁 <code style={{background:'var(--bg2)',padding:'1px 5px',borderRadius:4}}>Takeout / Maps (your places) /</code>
+              </div>
+              <div style={{color:'var(--text2)',paddingRight:16,lineHeight:2}}>
+                🔖 <strong>Saved Places.json</strong> — מקומות שמורים, עם GPS ✅<br/>
+              </div>
+            </div>
+            {/* CSV ללא GPS */}
+            <div>
+              <div style={{fontWeight:600,color:'var(--text)',fontSize:12,marginBottom:3}}>
+                📁 <code style={{background:'var(--bg2)',padding:'1px 5px',borderRadius:4}}>Takeout / Saved /</code>
+              </div>
+              <div style={{color:'var(--text2)',paddingRight:16,lineHeight:2}}>
+                ❤️ <strong>Liked places.csv</strong> — מקומות שסימנת בלב<br/>
+                🏴 <strong>Want to go.csv</strong> — "רוצה לבקר"<br/>
+                📋 <strong>[שם הרשימה].csv</strong> — כל רשימה פרטית שיצרת<br/>
+              </div>
+              <div style={{fontSize:11,color:'var(--text3)',marginTop:2,paddingRight:16}}>
+                ⚠️ קבצי CSV ללא קואורדינטות — לאחר ייבוא לחץ 🔍 על כל פריט להשלמת פרטים מגוגל מפות
+              </div>
+            </div>
           </div>
-          {/* אזור גרירה / בחירה */}
-          <div style={{border:'2px dashed var(--border)',borderRadius:10,padding:20,textAlign:'center',cursor:'pointer'}}
-            onClick={()=>takeoutRef.current?.click()}
-            onDragOver={e=>e.preventDefault()}
-            onDrop={e=>{e.preventDefault();if(e.dataTransfer.files.length)importTakeout(e.dataTransfer.files);}}>
-            <div style={{fontSize:28,marginBottom:6}}>📂</div>
-            <div style={{fontSize:13,color:'var(--text2)',fontWeight:600}}>לחץ לבחירה או גרור קבצים לכאן</div>
-            <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>ניתן לבחור כמה קבצים יחד (Ctrl+לחיצה)</div>
+
+          {/* שלב 3 — אזור גרירה */}
+          <div style={{background:'var(--bg3)',borderRadius:10,padding:10}}>
+            <div style={{fontWeight:700,color:'var(--text)',fontSize:13,marginBottom:8}}>שלב 3 — טען את הקבצים</div>
+            <div style={{border:'2px dashed var(--border)',borderRadius:8,padding:18,textAlign:'center',cursor:'pointer'}}
+              onClick={()=>takeoutRef.current?.click()}
+              onDragOver={e=>e.preventDefault()}
+              onDrop={e=>{e.preventDefault();if(e.dataTransfer.files.length)importTakeout(e.dataTransfer.files);}}>
+              <div style={{fontSize:26,marginBottom:5}}>📂</div>
+              <div style={{fontSize:13,color:'var(--text2)',fontWeight:600}}>לחץ לבחירה או גרור קבצים לכאן</div>
+              <div style={{fontSize:11,color:'var(--text3)',marginTop:3}}>ניתן לבחור כמה קבצים יחד — JSON וגם CSV בו-זמנית</div>
+            </div>
           </div>
-          <input ref={takeoutRef} type="file" accept=".json" multiple style={{display:'none'}}
+
+          <input ref={takeoutRef} type="file" accept=".json,.csv" multiple style={{display:'none'}}
             onChange={e=>e.target.files.length&&importTakeout(e.target.files)}/>
         </div>
       </div>
