@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="pragma" content="no-cache" />
-  <title>CaravanControl — מנהל טיולים v8</title>
+  <title>CaravanControl — מנהל טיולים v9</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -454,7 +454,9 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
       const p=iwPlace.data;
       const nameEl=document.getElementById('gm-name-edit');
       const name=nameEl?.value?.trim()||p.name;
-      onAddToBankRef.current({name,address:p.address,lat:p.lat,lng:p.lng});
+      onAddToBankRef.current({name,address:p.address,lat:p.lat,lng:p.lng,placeId:p.placeId,
+        rating:p.rating,userRatingsTotal:p.userRatingsTotal,openStatus:p.openStatus,
+        todayHours:p.todayHours,allHours:p.allHours,phone:p.phone,website:p.website,photoUrl:p.photoUrl});
       iw.close();
       toast(`"${name}" נוסף לבנק האטרקציות`,'success');
     };
@@ -464,7 +466,9 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
       const p=iwPlace.data;
       const nameEl=document.getElementById('gm-name-edit');
       const name=nameEl?.value?.trim()||p.name;
-      onAddToDayRef.current(sel.value,{name,address:p.address,lat:p.lat,lng:p.lng});
+      onAddToDayRef.current(sel.value,{name,address:p.address,lat:p.lat,lng:p.lng,placeId:p.placeId,
+        rating:p.rating,userRatingsTotal:p.userRatingsTotal,openStatus:p.openStatus,
+        todayHours:p.todayHours,allHours:p.allHours,phone:p.phone,website:p.website,photoUrl:p.photoUrl});
       iw.close();
       toast(`"${name}" נוסף ליום`,'success');
     };
@@ -621,9 +625,16 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
 
         const photoUrl=basic?.photos?.[0]?.getUrl({maxWidth:300,maxHeight:110})||'';
         const _noGoogle=!v1&&!basic&&!geo;
-        const _dbg=`[v1:${v1?'✓':'✗'} basic:${basic?'✓':'✗'} rich:${rich?'✓':'✗'} geo:${geo?'✓':'✗'}]`;
-        console.log('[DEBUG] sources',_dbg,'name=',name,'addr=',address,'details=',details);
-        iwPlace.data={name,address,lat,lng,placeId};
+        iwPlace.data={name,address,lat,lng,placeId,photoUrl,
+          rating:details.rating||null,
+          userRatingsTotal:details.userRatingsTotal||null,
+          openStatus:details.openStatus||'',
+          todayHours:details.todayHours||'',
+          allHours:details.allHours||'',
+          phone:details.phone||'',
+          website:details.website||'',
+          reviews:details.reviews||[],
+        };
         iw.setContent(buildIwContent({name,address,lat,lng,placeId,photoUrl,...details,_noGoogle}));
       }catch(err){
         iwPlace.data={name:'מקום',address:'',lat:lat0,lng:lng0,placeId};
@@ -907,13 +918,17 @@ function BlockModal({block,onSave,onClose,onDelete}){
 /* ══════════════════════════════════
    בלוק בציר הזמן
 ══════════════════════════════════ */
-function BlockItem({block,onEdit,onFocusItem}){
+function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem}){
   const end=addMins(block.startTime,block.durationMins);
   const col=BLOCK_COLOR[block.type]||'var(--text3)';
+  const handleClick=()=>{
+    if(block.lat&&onFocusItem) onFocusItem(block.lat,block.lng,block.title);
+    onEdit(block);
+  };
   return <div className="timeline-block">
     <div className="timeline-dot" style={{background:col}}>{BLOCK_EMOJI[block.type]}</div>
     <div style={{flex:1,marginRight:4,display:'flex',gap:4,alignItems:'flex-start'}}>
-      <div className={`card block-${block.type}`} style={{flex:1,cursor:'pointer',opacity:block.isCompleted?.6:1}} onClick={()=>onEdit(block)}>
+      <div className={`card block-${block.type}`} style={{flex:1,cursor:'pointer',opacity:block.isCompleted?.6:1}} onClick={handleClick}>
         <div style={{padding:'10px 14px'}}>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
             <span style={{fontSize:11,fontWeight:700,color:col}}>{block.startTime}–{end}</span>
@@ -925,17 +940,31 @@ function BlockItem({block,onEdit,onFocusItem}){
           <div style={{fontSize:13,fontWeight:600,color:'var(--text)',marginTop:2}}>{block.title||`(${BLOCK_HE[block.type]} ללא שם)`}</div>
           {block.location&&<div style={{fontSize:11,color:'var(--text3)',marginTop:1}}>📍 {block.location}</div>}
           {block.notes&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,fontStyle:'italic',lineHeight:1.5}}>{block.notes}</div>}
+          {block.placeRating&&<div style={{fontSize:11,color:'var(--amber)',marginTop:3}}>⭐ {block.placeRating}{block.placeUserRatings?` (${Number(block.placeUserRatings).toLocaleString()})`:''}</div>}
+          {block.placeOpenStatus&&<div style={{fontSize:11,fontWeight:600,marginTop:2,color:block.placeOpenStatus==='פתוח עכשיו'?'#22c55e':'#ef4444'}}>{block.placeOpenStatus==='פתוח עכשיו'?'✅':'🔴'} {block.placeOpenStatus}</div>}
+          {block.placeTodayHours&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>🕐 {block.placeTodayHours}</div>}
+          {block.placePhone&&<div style={{fontSize:11,color:'var(--accent)',marginTop:2}}>📞 {block.placePhone}</div>}
+          {block.placeWebsite&&<a href={block.placeWebsite} target="_blank" rel="noreferrer" style={{fontSize:11,color:'var(--accent)',display:'block',marginTop:2,wordBreak:'break-all'}} onClick={e=>e.stopPropagation()}>🌐 {block.placeWebsite.replace(/^https?:\/\//,'').split('/')[0]}</a>}
           <div style={{display:'flex',gap:10,marginTop:6,flexWrap:'wrap'}}>
             {block.durationMins>0&&<span style={{fontSize:11,color:'var(--text3)'}}>⏱ {block.durationMins} דקות</span>}
             {block.cost>0&&<span style={{fontSize:11,color:'var(--amber)'}}>💰 ₪{block.cost.toFixed(0)}</span>}
           </div>
         </div>
       </div>
-      {block.lat&&onFocusItem&&(
-        <button className="btn btn-secondary btn-icon btn-sm" title="הצג במפה"
-          style={{flexShrink:0,marginTop:4}}
-          onClick={e=>{e.stopPropagation();onFocusItem(block.lat,block.lng,block.title);}}>📍</button>
-      )}
+      <div style={{display:'flex',flexDirection:'column',gap:4,flexShrink:0,marginTop:4}}>
+        {block.lat&&onFocusItem&&(
+          <button className="btn btn-secondary btn-icon btn-sm" title="הצג במפה"
+            onClick={e=>{e.stopPropagation();onFocusItem(block.lat,block.lng,block.title);}}>📍</button>
+        )}
+        {onMoveToBank&&(
+          <button className="btn btn-secondary btn-icon btn-sm" title="העבר לבנק האטרקציות"
+            onClick={e=>{e.stopPropagation();onMoveToBank(block);}}>⭐</button>
+        )}
+        {onDelete&&(
+          <button className="btn btn-danger btn-icon btn-sm" title="הסר מהיום"
+            onClick={e=>{e.stopPropagation();if(confirm(`להסיר "${block.title||'פעילות'}" מהיום?`))onDelete(block.id);}}>✕</button>
+        )}
+      </div>
     </div>
   </div>;
 }
@@ -943,7 +972,7 @@ function BlockItem({block,onEdit,onFocusItem}){
 /* ══════════════════════════════════
    פאנל יום
 ══════════════════════════════════ */
-function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem}){
+function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank}){
   const[open,setOpen]=useState(true),[editing,setEd]=useState(null);
   const updBlock=upd=>onUpdate({...day,blocks:day.blocks.map(b=>b.id===upd.id?upd:b)});
   const delBlock=id=>onUpdate({...day,blocks:day.blocks.filter(b=>b.id!==id)});
@@ -999,7 +1028,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem}){
 
       <div className="timeline">
         {sorted.length===0&&<div style={{padding:'12px 0',color:'var(--text3)',fontSize:13,textAlign:'center'}}>אין בלוקים עדיין — הוסף בלוק למטה</div>}
-        {sorted.map(bl=><BlockItem key={bl.id} block={bl} onEdit={setEd} onFocusItem={onFocusItem}/>)}
+        {sorted.map(bl=><BlockItem key={bl.id} block={bl} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onFocusItem={onFocusItem}/>)}
       </div>
 
       <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:12}}>
@@ -1031,17 +1060,24 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem}){
 ══════════════════════════════════ */
 function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem}){
   const[selDay,setSelDay]=useState('');
+  const focusMap=()=>{if(item.lat){onLocate?.(item.lat,item.lng);onFocusItem?.(item.lat,item.lng,item.name);}};
   return <div className="interest-item" style={{marginBottom:8,flexDirection:'column',alignItems:'stretch',gap:8}}>
-    <div style={{display:'flex',alignItems:'center',gap:8}}>
-      <div style={{flex:1,minWidth:0}}>
+    <div style={{display:'flex',alignItems:'flex-start',gap:8}}>
+      <div style={{flex:1,minWidth:0,cursor:item.lat?'pointer':'default'}} onClick={focusMap}>
         <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
-        {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.address}</div>}
+        {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginTop:1}}>{item.address}</div>}
+        {item.rating&&<div style={{fontSize:11,color:'var(--amber)',marginTop:2}}>⭐ {item.rating}{item.userRatingsTotal?` (${Number(item.userRatingsTotal).toLocaleString()})`:''}</div>}
+        {item.openStatus&&<div style={{fontSize:11,fontWeight:600,marginTop:1,color:item.openStatus==='פתוח עכשיו'?'#22c55e':'#ef4444'}}>{item.openStatus==='פתוח עכשיו'?'✅':'🔴'} {item.openStatus}</div>}
+        {item.todayHours&&<div style={{fontSize:11,color:'var(--text3)',marginTop:1}}>🕐 {item.todayHours}</div>}
+        {item.phone&&<div style={{fontSize:11,color:'var(--accent)',marginTop:1}}>📞 {item.phone}</div>}
+        {item.website&&<a href={item.website} target="_blank" rel="noreferrer" style={{fontSize:11,color:'var(--accent)',display:'block',marginTop:1,wordBreak:'break-all'}} onClick={e=>e.stopPropagation()}>🌐 {item.website.replace(/^https?:\/\//,'').split('/')[0]}</a>}
       </div>
-      {item.lat&&(onLocate||onFocusItem)&&(
-        <button className="btn btn-secondary btn-icon btn-sm" title="הצג במפה"
-          onClick={()=>{onLocate?.(item.lat,item.lng);onFocusItem?.(item.lat,item.lng,item.name);}}>📍</button>
-      )}
-      <button className="btn btn-danger btn-icon btn-sm" onClick={onDelete} title="הסר">✕</button>
+      <div style={{display:'flex',flexDirection:'column',gap:4,flexShrink:0}}>
+        {item.lat&&(onLocate||onFocusItem)&&(
+          <button className="btn btn-secondary btn-icon btn-sm" title="הצג במפה" onClick={focusMap}>📍</button>
+        )}
+        <button className="btn btn-danger btn-icon btn-sm" onClick={onDelete} title="הסר">✕</button>
+      </div>
     </div>
     <div style={{display:'flex',gap:5}}>
       <select
@@ -1077,6 +1113,18 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem}){
   const delDay=id=>onUpdate({...trip,days:trip.days.filter(d=>d.id!==id)});
   const addToBank=item=>onUpdate({...trip,interestBank:[...trip.interestBank,{...item,id:uid()}]});
   const delBank=id=>onUpdate({...trip,interestBank:trip.interestBank.filter(i=>i.id!==id)});
+  const moveBlockToBank=(block,dayId)=>{
+    const bankItem={id:uid(),name:block.title||'פעילות',address:block.location||'',
+      lat:block.lat,lng:block.lng,placeId:block.placeId,
+      rating:block.placeRating,userRatingsTotal:block.placeUserRatings,
+      openStatus:block.placeOpenStatus,todayHours:block.placeTodayHours,
+      phone:block.placePhone,website:block.placeWebsite,photoUrl:block.placePhotoUrl};
+    onUpdate({...trip,
+      interestBank:[...trip.interestBank,bankItem],
+      days:trip.days.map(d=>d.id===dayId?{...d,blocks:d.blocks.filter(b=>b.id!==block.id)}:d)
+    });
+    toast(`"${bankItem.name}" הועבר לבנק האטרקציות`,'success');
+  };
 
   // הוספת פריט מהבנק ישירות ליום ספציפי
   const addItemToDay=(dayId,item)=>{
@@ -1089,6 +1137,14 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem}){
     newBlock.title=item.name;
     newBlock.location=item.address||'';
     if(item.lat){newBlock.lat=item.lat; newBlock.lng=item.lng;}
+    if(item.placeId) newBlock.placeId=item.placeId;
+    if(item.rating) newBlock.placeRating=item.rating;
+    if(item.userRatingsTotal) newBlock.placeUserRatings=item.userRatingsTotal;
+    if(item.openStatus) newBlock.placeOpenStatus=item.openStatus;
+    if(item.todayHours) newBlock.placeTodayHours=item.todayHours;
+    if(item.phone) newBlock.placePhone=item.phone;
+    if(item.website) newBlock.placeWebsite=item.website;
+    if(item.photoUrl) newBlock.placePhotoUrl=item.photoUrl;
     updDay({...day,blocks:[...day.blocks,newBlock]});
     toast(`"${item.name}" נוסף ליום`,'success');
   };
@@ -1136,7 +1192,8 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem}){
           </div>
         ):trip.days.map((day,i)=>(
           <DayPanel key={day.id} day={day} idx={i} onUpdate={updDay} onDelete={()=>delDay(day.id)}
-            onFocusDay={onFocusDay} onFocusItem={onFocusItem}/>
+            onFocusDay={onFocusDay} onFocusItem={onFocusItem}
+            onMoveToBank={(block)=>moveBlockToBank(block,day.id)}/>
         ))}
       </div>
     </div>
@@ -1677,6 +1734,14 @@ function App(){
     newBlock.title=item.name;
     newBlock.location=item.address||'';
     if(item.lat){newBlock.lat=item.lat; newBlock.lng=item.lng;}
+    if(item.placeId) newBlock.placeId=item.placeId;
+    if(item.rating) newBlock.placeRating=item.rating;
+    if(item.userRatingsTotal) newBlock.placeUserRatings=item.userRatingsTotal;
+    if(item.openStatus) newBlock.placeOpenStatus=item.openStatus;
+    if(item.todayHours) newBlock.placeTodayHours=item.todayHours;
+    if(item.phone) newBlock.placePhone=item.phone;
+    if(item.website) newBlock.placeWebsite=item.website;
+    if(item.photoUrl) newBlock.placePhotoUrl=item.photoUrl;
     const updatedDay={...day,blocks:[...day.blocks,newBlock]};
     updTrip({...trip,days:trip.days.map(d=>d.id===dayId?updatedDay:d)});
   },[trip,updTrip]);
