@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v43';
+const APP_VERSION = 'v44';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -2083,26 +2083,14 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
   /* ─── חילוץ ID רשימה מ-URL ─── */
   const extractListId=url=>url.match(/!11m2[^!]*!2s([^!?&]+)/)?.[1]||null;
 
-  /* ─── בניית רשימת URLs של ה-API לניסיון (גנרי לכל סוגי הרשימות) ─── */
-  const buildListApiCandidates=(html,listId,originalUrl='')=>{
-    const seen=new Set();const urls=[];
-    const add=u=>{if(u&&!seen.has(u)){seen.add(u);urls.push(u);}};
-    const mk=t=>`https://www.google.com/maps/preview/entitylist/getlist?hl=en&pb=${encodeURIComponent(`!1m4!1s${listId}!2e${t}!3m1!1e1!2e${t}!3e${t}!4i2000`)}`;
-    /* 1. סוג 2 — ידוע כעובד לרוב הרשימות */
-    add(mk('2'));
-    /* 2. preload link מדויק מה-HTML */
+  /* ─── בניית URL ה-API (pb סוג 2 עובד לכל סוגי הרשימות: מועדפים/רוצה לבקר/תוכניות) ─── */
+  const buildListApiUrl2=(listId,html)=>{
+    /* preload link מדויק מה-HTML — הכי מהימן */
     const preM=(html||'').match(/<link[^>]+href="(\/maps\/preview\/entitylist\/getlist[^"]+)"[^>]*as="fetch"/i)
               ||(html||'').match(/<link[^>]*as="fetch"[^>]+href="(\/maps\/preview\/entitylist\/getlist[^"]+)"/i);
-    if(preM) add('https://www.google.com'+preM[1].replace(/&amp;/g,'&').replace(/4i\d+/,'4i2000'));
-    /* 3. pb לפי סוג שחולץ מה-URL */
-    const typeM=(originalUrl||'').match(/!2s[^!]+!3e(\d+)/);
-    if(typeM) add(mk(typeM[1]));
-    /* 4. סוג 1 */
-    add(mk('1'));
-    /* 5. pb מינימלי ללא !3m — לפעמים גמיש יותר */
-    const mkMin=t=>`https://www.google.com/maps/preview/entitylist/getlist?hl=en&pb=${encodeURIComponent(`!1m4!1s${listId}!2e${t}!4i2000`)}`;
-    add(mkMin('2'));if(typeM) add(mkMin(typeM[1]));
-    return urls;
+    if(preM) return 'https://www.google.com'+preM[1].replace(/&amp;/g,'&').replace(/4i\d+/,'4i2000');
+    /* pb סוג 2 — ידוע כעובד לכל סוגי הרשימות כולל trips ו-want-to-go */
+    return `https://www.google.com/maps/preview/entitylist/getlist?hl=en&pb=${encodeURIComponent(`!1m4!1s${listId}!2e2!3m1!1e1!2e2!3e2!4i2000`)}`;
   };
 
   /* ─── פרסור תגובת ה-API של רשימת מקומות ─── */
@@ -2137,17 +2125,21 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
     return{listName,places,totalInList};
   };
 
-  /* ─── ייבוא רשימה — כל ה-candidates מופעלים במקביל, לוקחים הראשון שמצליח ─── */
+  /* ─── ייבוא רשימה — /raw ו-/get במקביל לאמינות מקסימלית ─── */
   const importListFromLink=async(listId,html,listSrc,originalUrl='')=>{
-    const candidates=buildListApiCandidates(html||'',listId,originalUrl);
-    /* הפעל את כולם במקביל — Promise.any מחזיר ראשון שמצליח */
-    const tryOne=apiUrl=>fetch(
+    const apiUrl=buildListApiUrl2(listId,html||'');
+    /* הפעל raw + get במקביל — allorigins לפעמים נכשל ב-522/520,
+       /raw מחזיר תגובה מלאה, /get עטוף JSON — שניהם נסיונות במקביל */
+    const tryRaw=fetch(
       `https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`,
-      {signal:AbortSignal.timeout(15000)}
-    ).then(r=>{if(!r.ok) throw new Error('not ok');return r.text();})
-     .then(t=>{if(!t.includes(")]}'")) throw new Error('bad response');return t;});
+      {signal:AbortSignal.timeout(14000)}
+    ).then(r=>{if(!r.ok)throw 0;return r.text();}).then(t=>{if(!t.includes(")]}'"))throw 0;return t;});
+    const tryGet=fetch(
+      `https://api.allorigins.win/get?url=${encodeURIComponent(apiUrl)}`,
+      {signal:AbortSignal.timeout(14000)}
+    ).then(r=>{if(!r.ok)throw 0;return r.json();}).then(d=>{const t=d?.contents||'';if(!t.includes(")]}'"))throw 0;return t;});
     let apiResp='';
-    try{ apiResp=await Promise.any(candidates.map(tryOne)); }catch{}
+    try{ apiResp=await Promise.any([tryRaw,tryGet]); }catch{}
     if(!apiResp) throw new Error('לא ניתן לשלוף את נתוני הרשימה מגוגל (נסה שוב)');
     const{listName,places,totalInList}=parseGmapsListResponse(apiResp);
     if(!places.length) throw new Error('הרשימה ריקה — לא נמצאו מקומות');
