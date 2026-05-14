@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v41';
+const APP_VERSION = 'v42';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -2083,24 +2083,38 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
   /* ─── חילוץ ID רשימה מ-URL ─── */
   const extractListId=url=>url.match(/!11m2[^!]*!2s([^!?&]+)/)?.[1]||null;
 
+  /* ─── שליפת HTML של דף גוגל מפות לחילוץ preload link מדויק ─── */
+  const fetchPageHtml=async(pageUrl,listId)=>{
+    /* נסה /get — מחזיר JSON עם status.url לאימות */
+    try{
+      const r=await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(pageUrl)}`,{signal:AbortSignal.timeout(7000)});
+      if(r.ok){
+        const d=await r.json();
+        const content=d?.contents||'';
+        /* וודא שאכן קיבלנו את הדף הנכון (מכיל את ה-listId) */
+        if(content.includes(listId)) return content;
+      }
+    }catch{}
+    return '';
+  };
+
   /* ─── בניית רשימת URLs של ה-API לניסיון (גנרי לכל סוגי הרשימות) ─── */
-  /* מנסה: 1) preload link מה-HTML  2) pb עם סוג מה-URL  3) pb סוג-2 אוניברסלי */
   const buildListApiCandidates=(html,listId,originalUrl='')=>{
-    const mkUrl=t=>`https://www.google.com/maps/preview/entitylist/getlist?hl=en&pb=${encodeURIComponent(`!1m4!1s${listId}!2e${t}!3m1!1e1!2e${t}!3e${t}!4i2000`)}`;
-    const seen=new Set();
-    const add=(url)=>{if(url&&!seen.has(url)){seen.add(url);urls.push(url);}};
-    const urls=[];
-    /* 1. preload link מדויק מה-HTML (מגיע מ-goo.gl page fetch) */
+    const seen=new Set();const urls=[];
+    const add=u=>{if(u&&!seen.has(u)){seen.add(u);urls.push(u);}};
+    const mkFull=t=>`https://www.google.com/maps/preview/entitylist/getlist?hl=en&pb=${encodeURIComponent(`!1m4!1s${listId}!2e${t}!3m1!1e1!2e${t}!3e${t}!4i2000`)}`;
+    const mkSimple=t=>`https://www.google.com/maps/preview/entitylist/getlist?hl=en&pb=${encodeURIComponent(`!1m4!1s${listId}!2e${t}!4i2000`)}`;
+    /* 1. preload link מדויק מה-HTML */
     const preM=(html||'').match(/<link[^>]+href="(\/maps\/preview\/entitylist\/getlist[^"]+)"[^>]*as="fetch"/i)
               ||(html||'').match(/<link[^>]*as="fetch"[^>]+href="(\/maps\/preview\/entitylist\/getlist[^"]+)"/i);
     if(preM) add('https://www.google.com'+preM[1].replace(/&amp;/g,'&').replace(/4i\d+/,'4i2000'));
-    /* 2. pb לפי סוג שחולץ מה-URL (למשל !3e7 לתוכניות נסיעה) */
+    /* 2. pb לפי סוג מה-URL (!3e7/!3e2/!3e1…) — פורמט מלא + פשוט */
     const typeM=(originalUrl||'').match(/!2s[^!]+!3e(\d+)/);
-    if(typeM) add(mkUrl(typeM[1]));
-    /* 3. fallback אוניברסלי — סוג 2 (עובד לרוב הרשימות) */
-    add(mkUrl('2'));
-    /* 4. fallback נוסף — סוג 1 (מועדפים) */
-    add(mkUrl('1'));
+    if(typeM){add(mkFull(typeM[1]));add(mkSimple(typeM[1]));}
+    /* 3. סוג 2 אוניברסלי — מלא + פשוט */
+    add(mkFull('2'));add(mkSimple('2'));
+    /* 4. סוג 1 */
+    add(mkFull('1'));add(mkSimple('1'));
     return urls;
   };
 
@@ -2136,19 +2150,35 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
     return{listName,places,totalInList};
   };
 
+  /* ─── שליפת תשובת API — מנסה /raw (ללא חיתוך) ואחר כך /get ─── */
+  const fetchApiResp=async(apiUrl)=>{
+    /* /raw מועדף — מחזיר תגובה מלאה ללא חיתוך */
+    try{
+      const r=await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`,{signal:AbortSignal.timeout(18000)});
+      if(r.ok){const t=await r.text();if(t.includes(")]}'")) return t;}
+    }catch{}
+    /* fallback: /get — מחזיר JSON עטוף; Google Maps )<200KB */
+    try{
+      const r=await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(apiUrl)}`,{signal:AbortSignal.timeout(12000)});
+      if(r.ok){const d=await r.json();const t=d?.contents||'';if(t.includes(")]}'")) return t;}
+    }catch{}
+    return '';
+  };
+
   /* ─── ייבוא רשימה שלמה מ-API — ניסיון מספר URLs עד שאחד מצליח ─── */
   const importListFromLink=async(listId,html,listSrc,originalUrl='')=>{
-    const candidates=buildListApiCandidates(html,listId,originalUrl);
-    /* חובה להשתמש ב-/raw — /get חותך תגובות גדולות (154KB+) */
+    /* שלב 1: אם אין HTML — נסה לשלוף את דף גוגל מפות לחילוץ preload link */
+    let pageHtml=html||'';
+    if(!pageHtml&&originalUrl){
+      pageHtml=await fetchPageHtml(originalUrl,listId);
+    }
+    /* שלב 2: בנה רשימת URLs מועמדים */
+    const candidates=buildListApiCandidates(pageHtml,listId,originalUrl);
+    /* שלב 3: נסה כל URL עד שמצליח */
     let apiResp='';
     for(const apiUrl of candidates){
-      try{
-        const r=await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`,{signal:AbortSignal.timeout(20000)});
-        if(r.ok){
-          const text=await r.text();
-          if(text.includes(")]}'")){ apiResp=text; break; }
-        }
-      }catch{}
+      apiResp=await fetchApiResp(apiUrl);
+      if(apiResp) break;
     }
     if(!apiResp||!apiResp.includes(")]}'")) throw new Error('לא ניתן לשלוף את נתוני הרשימה מגוגל (נסה שוב)');
     const{listName,places,totalInList}=parseGmapsListResponse(apiResp);
