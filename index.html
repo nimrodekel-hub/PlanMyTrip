@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v48';
+const APP_VERSION = 'v49';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -2169,7 +2169,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
       const apiUrl=buildListApiUrl2(listId,html||'',attempt>0);
       try{ apiResp=await fetchListViaProxy(apiUrl);break; }catch{}
     }
-    if(!apiResp) throw new Error('שרתי הפרוקסי הציבוריים חסומים כרגע. הגדר פרוקסי אישי בהגדרות ⚙️ (Cloudflare Worker) לייבוא אמין');
+    if(!apiResp) throw new Error('לא ניתן לשלוף את נתוני הרשימה מגוגל — נסה שוב כעוד כמה שניות');
     const{listName,places,totalInList}=parseGmapsListResponse(apiResp);
     if(!places.length) throw new Error('הרשימה ריקה — לא נמצאו מקומות');
     /* שיוך מקור + כפילויות */
@@ -3121,51 +3121,6 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
         <div className="card-body">
           <label className="label">מפתח API של גוגל מפות</label>
           <input className="input" type="password" value={s.googleMapsKey||''} onChange={e=>upd('googleMapsKey',e.target.value)} autoComplete="off"/>
-        </div>
-      </div>
-
-      {/* ── פרוקסי אישי ── */}
-      <div className="card" style={{border:s.proxyUrl?'2px solid var(--green)':'1px solid var(--border)'}}>
-        <div className="card-header">
-          <span style={{fontWeight:700}}>🔌 פרוקסי אישי לייבוא מגוגל מפות</span>
-          {s.proxyUrl
-            ?<span className="chip chip-green" style={{fontSize:10}}>✓ מוגדר</span>
-            :<span className="chip chip-amber" style={{fontSize:10}}>⚠️ לא מוגדר — ייבוא עלול להיכשל</span>}
-        </div>
-        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:12}}>
-          <div style={{background:'rgba(79,142,247,0.08)',border:'1px solid rgba(79,142,247,0.2)',borderRadius:8,padding:'12px 14px',fontSize:12,lineHeight:2}}>
-            <strong style={{color:'var(--accent)',fontSize:13}}>☁️ הגדרת Cloudflare Worker (חינמי — 5 דקות)</strong><br/>
-            <span style={{color:'var(--text2)'}}>
-              1. פתח <a href="https://workers.cloudflare.com" target="_blank" rel="noreferrer" style={{color:'var(--accent)',fontWeight:600}}>workers.cloudflare.com</a> ← הירשם חינמית<br/>
-              2. "Create a Worker" ← מחק את הקוד הקיים ← הדבק את הקוד מטה<br/>
-              3. לחץ "Deploy" ← העתק את כתובת ה-Worker (מסתיימת ב-<code>.workers.dev</code>)<br/>
-              4. הדבק כאן ← שמור הגדרות
-            </span>
-          </div>
-          <details>
-            <summary style={{fontSize:12,color:'var(--text3)',cursor:'pointer',userSelect:'none',fontWeight:600}}>📋 הצג קוד ה-Worker להעתקה</summary>
-            <pre style={{background:'var(--bg3)',borderRadius:8,padding:'12px',fontSize:11,overflowX:'auto',marginTop:8,lineHeight:1.6,userSelect:'all',direction:'ltr'}}>{`export default {
-  async fetch(req) {
-    const target = new URL(req.url).searchParams.get('url');
-    if (!target) return new Response('Missing ?url=', { status: 400 });
-    const r = await fetch(target, {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
-    const h = new Headers(r.headers);
-    h.set('Access-Control-Allow-Origin', '*');
-    return new Response(r.body, { status: r.status, headers: h });
-  }
-};`}</pre>
-          </details>
-          <div>
-            <label className="label">כתובת ה-Worker שלך</label>
-            <input className="input" type="url" value={s.proxyUrl||''} onChange={e=>upd('proxyUrl',e.target.value.trim())}
-              placeholder="https://my-proxy.your-name.workers.dev" style={{direction:'ltr',fontFamily:'monospace',fontSize:12}}/>
-            {s.proxyUrl&&<div style={{fontSize:11,color:'var(--green)',marginTop:4}}>✓ פרוקסי אישי יופעל ראשון בכל ייבוא מגוגל מפות</div>}
-          </div>
-          <button className="btn btn-primary btn-sm" style={{alignSelf:'flex-start'}} onClick={()=>{onSettings(s);toast('ההגדרות נשמרו','success');}}>
-            💾 שמור
-          </button>
         </div>
       </div>
 
