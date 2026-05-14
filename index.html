@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v46';
+const APP_VERSION = 'v47';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -1710,7 +1710,7 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
 
 const DAYS_PER_PAGE=4;
 
-function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=false}){
+function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=false,settings}){
   const[showBank,setShowBank]=useState(!compact);
   const[dayOffset,setDayOffset]=useState(0);
 
@@ -1829,7 +1829,7 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=fals
       }
       {/* עמודת אטרקציות */}
       {showBank&&<div style={{width:270,flexShrink:0,borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
-        <BankPanel trip={trip} onUpdate={onUpdate} onLocate={onLocate} onFocusItem={onFocusItem} onClose={()=>setShowBank(false)}/>
+        <BankPanel trip={trip} onUpdate={onUpdate} onLocate={onLocate} onFocusItem={onFocusItem} onClose={()=>setShowBank(false)} settings={settings}/>
       </div>}
     </div>
   </div>;
@@ -1839,7 +1839,7 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=fals
    פאנל בנק אטרקציות (עמודה עצמאית)
    תכונות: קיבוץ לפי מדינה, בחירה קבוצתית, העשרת פרטים מגוגל מפות
 ══════════════════════════════════ */
-function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
+function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
   const[showTakeout,setShowTakeout]=useState(false);
   const[showLinkImport,setShowLinkImport]=useState(false);
   const[linkUrl,setLinkUrl]=useState('');
@@ -2128,29 +2128,28 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
 
   /* ─── שליחת בקשה דרך פרוקסי: מנסה 3 פרוקסים במקביל עם cache-bust ─── */
   const fetchListViaProxy=async(apiUrl)=>{
-    /* 3 פרוקסים בתשתיות שונות — ראשון שמצליח מנצח.
-       AbortController משותף: ברגע שאחד מצליח, שאר הבקשות מבוטלות מיד
-       כדי לא לתפוס slots ב-allorigins ולמנוע rate-limit בייבוא הבא. */
+    /* AbortController משותף — ברגע שאחד מצליח, שאר הבקשות מבוטלות מיד */
     const ctrl=new AbortController();
-    const deadline=AbortSignal.timeout(12000);
-    const mkSig=()=>{
-      /* AbortSignal.any זמין ב-Chrome 116+ / Firefox 124+.
-         fallback: אם אחד מהם כבר מבוטל, השתמש בו; אחרת AbortSignal.any */
-      if(ctrl.signal.aborted||deadline.aborted) return ctrl.signal.aborted?ctrl.signal:deadline;
-      return typeof AbortSignal.any==='function'
-        ?AbortSignal.any([ctrl.signal,deadline])
-        :deadline;
-    };
+    const deadline=AbortSignal.timeout(15000);
+    const mkSig=()=>typeof AbortSignal.any==='function'
+      ?AbortSignal.any([ctrl.signal,deadline])
+      :deadline;
     const mkReq=(url,isJson)=>fetch(url,{signal:mkSig()})
-      .then(r=>{if(!r.ok)throw 0;return isJson?r.json():r.text();})
-      .then(d=>{const t=isJson?d?.contents||'':d;if(!t.includes(")]}'"))throw 0;return t;});
+      .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return isJson?r.json():r.text();})
+      .then(d=>{const t=isJson?d?.contents||'':d;if(!t.includes(")]}'"))throw new Error('no-data');return t;});
+
+    /* קנדידטים: פרוקסי אישי קודם (אם מוגדר), אחר-כך הציבוריים */
+    const customProxy=(settings?.proxyUrl||'').trim().replace(/\/$/,'');
+    const candidates=[];
+    if(customProxy) candidates.push(mkReq(`${customProxy}?url=${encodeURIComponent(apiUrl)}`,false));
+    candidates.push(
+      mkReq(`https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`,false),
+      mkReq(`https://api.allorigins.win/get?url=${encodeURIComponent(apiUrl)}`,true),
+      mkReq(`https://test.cors.workers.dev/?${apiUrl}`,false),
+    );
     try{
-      const result=await Promise.any([
-        mkReq(`https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`,false),
-        mkReq(`https://api.allorigins.win/get?url=${encodeURIComponent(apiUrl)}`,true),
-        mkReq(`https://test.cors.workers.dev/?${apiUrl}`,false),
-      ]);
-      ctrl.abort('done'); /* בטל את 2 הבקשות שהפסידו */
+      const result=await Promise.any(candidates);
+      ctrl.abort('done');
       return result;
     }catch(e){
       ctrl.abort('failed');
@@ -2167,7 +2166,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
       const apiUrl=buildListApiUrl2(listId,html||'',attempt>0);
       try{ apiResp=await fetchListViaProxy(apiUrl);break; }catch{}
     }
-    if(!apiResp) throw new Error('לא ניתן לשלוף את נתוני הרשימה מגוגל — נסה שוב עוד כמה שניות');
+    if(!apiResp) throw new Error('שרתי הפרוקסי הציבוריים חסומים כרגע. הגדר פרוקסי אישי בהגדרות ⚙️ (Cloudflare Worker) לייבוא אמין');
     const{listName,places,totalInList}=parseGmapsListResponse(apiResp);
     if(!places.length) throw new Error('הרשימה ריקה — לא נמצאו מקומות');
     /* שיוך מקור + כפילויות */
@@ -3122,6 +3121,51 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
         </div>
       </div>
 
+      {/* ── פרוקסי אישי ── */}
+      <div className="card" style={{border:s.proxyUrl?'2px solid var(--green)':'1px solid var(--border)'}}>
+        <div className="card-header">
+          <span style={{fontWeight:700}}>🔌 פרוקסי אישי לייבוא מגוגל מפות</span>
+          {s.proxyUrl
+            ?<span className="chip chip-green" style={{fontSize:10}}>✓ מוגדר</span>
+            :<span className="chip chip-amber" style={{fontSize:10}}>⚠️ לא מוגדר — ייבוא עלול להיכשל</span>}
+        </div>
+        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:12}}>
+          <div style={{background:'rgba(79,142,247,0.08)',border:'1px solid rgba(79,142,247,0.2)',borderRadius:8,padding:'12px 14px',fontSize:12,lineHeight:2}}>
+            <strong style={{color:'var(--accent)',fontSize:13}}>☁️ הגדרת Cloudflare Worker (חינמי — 5 דקות)</strong><br/>
+            <span style={{color:'var(--text2)'}}>
+              1. פתח <a href="https://workers.cloudflare.com" target="_blank" rel="noreferrer" style={{color:'var(--accent)',fontWeight:600}}>workers.cloudflare.com</a> ← הירשם חינמית<br/>
+              2. "Create a Worker" ← מחק את הקוד הקיים ← הדבק את הקוד מטה<br/>
+              3. לחץ "Deploy" ← העתק את כתובת ה-Worker (מסתיימת ב-<code>.workers.dev</code>)<br/>
+              4. הדבק כאן ← שמור הגדרות
+            </span>
+          </div>
+          <details>
+            <summary style={{fontSize:12,color:'var(--text3)',cursor:'pointer',userSelect:'none',fontWeight:600}}>📋 הצג קוד ה-Worker להעתקה</summary>
+            <pre style={{background:'var(--bg3)',borderRadius:8,padding:'12px',fontSize:11,overflowX:'auto',marginTop:8,lineHeight:1.6,userSelect:'all',direction:'ltr'}}>{`export default {
+  async fetch(req) {
+    const target = new URL(req.url).searchParams.get('url');
+    if (!target) return new Response('Missing ?url=', { status: 400 });
+    const r = await fetch(target, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    const h = new Headers(r.headers);
+    h.set('Access-Control-Allow-Origin', '*');
+    return new Response(r.body, { status: r.status, headers: h });
+  }
+};`}</pre>
+          </details>
+          <div>
+            <label className="label">כתובת ה-Worker שלך</label>
+            <input className="input" type="url" value={s.proxyUrl||''} onChange={e=>upd('proxyUrl',e.target.value.trim())}
+              placeholder="https://my-proxy.your-name.workers.dev" style={{direction:'ltr',fontFamily:'monospace',fontSize:12}}/>
+            {s.proxyUrl&&<div style={{fontSize:11,color:'var(--green)',marginTop:4}}>✓ פרוקסי אישי יופעל ראשון בכל ייבוא מגוגל מפות</div>}
+          </div>
+          <button className="btn btn-primary btn-sm" style={{alignSelf:'flex-start'}} onClick={()=>{onSettings(s);toast('ההגדרות נשמרו','success');}}>
+            💾 שמור
+          </button>
+        </div>
+      </div>
+
     </div>
   </div>;
 }
@@ -3761,7 +3805,7 @@ function App(){
   const[settings,setSettings]=useState(()=>{
     const def={githubToken:'',githubUsername:'nimrodekel-hub',githubRepo:'PlanMyTrip',
       googleMapsKey:'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw',theme:'dark',
-      firebaseUrl:FB_URL, syncKey:''};
+      firebaseUrl:FB_URL, syncKey:'', proxyUrl:''};
     const merged={...def,...(saved?.settings||{})};
     // אם אין Firebase URL — הכנס את ברירת המחדל
     // תמיד השתמש בכתובת הנכונה — לא כתובת הקונסול
@@ -3988,6 +4032,7 @@ function App(){
               onLocate={(lat,lng)=>window.__gmFocus?.(lat,lng)}
               onFocusDay={(dayId,dayIndex,blocks)=>setHlDay({dayId,dayIndex,blocks})}
               onFocusItem={(lat,lng,name)=>{setHlItem({lat,lng,name});setHlDay(null);}}
+              settings={settings}
             />:noTrip}
           </div>
           {/* עמודה 3: בנק אטרקציות */}
@@ -3996,6 +4041,7 @@ function App(){
               onLocate={(lat,lng)=>window.__gmFocus?.(lat,lng)}
               onFocusItem={(lat,lng,name)=>{setHlItem({lat,lng,name});setHlDay(null);}}
               onClose={()=>setMobilePanel('map')}
+              settings={settings}
             />:noTrip}
           </div>
         </div>
