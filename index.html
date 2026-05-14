@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v37';
+const APP_VERSION = 'v38';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -2097,8 +2097,13 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
   /* ─── ייבוא רשימה שלמה מ-API ─── */
   const importListFromLink=async(listId,html,listSrc)=>{
     const apiUrl=buildListApiUrl(html,listId);
-    const{html:apiResp}=await fetchViaProxy(apiUrl);
-    if(!apiResp||!apiResp.includes(")]}'")) throw new Error('לא ניתן לשלוף את נתוני הרשימה מגוגל');
+    /* חובה להשתמש ב-/raw — /get חותך תגובות גדולות (154KB+) */
+    let apiResp='';
+    try{
+      const r=await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`,{signal:AbortSignal.timeout(25000)});
+      if(r.ok) apiResp=await r.text();
+    }catch{}
+    if(!apiResp||!apiResp.includes(")]}'")) throw new Error('לא ניתן לשלוף את נתוני הרשימה מגוגל (נסה שוב)');
     const{listName,places,totalInList}=parseGmapsListResponse(apiResp);
     if(!places.length) throw new Error('הרשימה ריקה — לא נמצאו מקומות');
     /* שיוך מקור + כפילויות */
@@ -2147,9 +2152,22 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
       /* ── קישור קצר goo.gl — פתור דרך proxy ── */
       const{finalUrl,html}=await fetchViaProxy(url);
 
+      /* בדוק אם ה-proxy הצליח לפתור את ה-redirect (finalUrl שונה מה-goo.gl המקורי) */
+      const resolvedUrl=finalUrl&&!finalUrl.includes('goo.gl')&&finalUrl!==url?finalUrl:'';
+
+      /* אם הפתרון נכשל — הנח את המשתמש להדביק URL מלא */
+      if(!resolvedUrl&&!html){
+        throw new Error(
+          'לא ניתן לפתוח קישור קצר אוטומטית.\n'+
+          'פתח את הקישור בדפדפן, המתן שהדף יטען, '+
+          'העתק את הכתובת המלאה מסרגל הכתובות (מתחילה ב-google.com/maps) והדבק אותה כאן'
+        );
+      }
+      const effectiveUrl=resolvedUrl||url;
+
       /* רשימה */
-      if(finalUrl&&/!11m2/.test(finalUrl)){
-        const listId=extractListId(finalUrl);
+      if(/!11m2/.test(effectiveUrl)){
+        const listId=extractListId(effectiveUrl);
         if(!listId) throw new Error('לא ניתן לחלץ מזהה רשימה');
         await importListFromLink(listId,html,listSrc);
         setShowLinkImport(false);setLinkUrl('');setLinkImporting(false);return;
@@ -2157,9 +2175,9 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
 
       /* מקום בודד */
       let placeName='',lat=null,lng=null;
-      if(finalUrl){const p=parseMapsUrl(finalUrl);if(p.name)placeName=p.name;if(p.lat){lat=p.lat;lng=p.lng;}}
+      if(resolvedUrl){const p=parseMapsUrl(resolvedUrl);if(p.name)placeName=p.name;if(p.lat){lat=p.lat;lng=p.lng;}}
       if(!placeName&&html) placeName=extractNameFromHtml(html);
-      if(!lat&&(finalUrl||html)){const cM=(finalUrl||html).match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);if(cM){lat=parseFloat(cM[1]);lng=parseFloat(cM[2]);}}
+      if(!lat&&html){const cM=html.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);if(cM){lat=parseFloat(cM[1]);lng=parseFloat(cM[2]);}}
       if(!placeName) throw new Error('לא ניתן לפרש את הקישור — נסה קישור ישיר מגוגל מפות');
       const base={id:uid(),name:placeName,address:'',lat,lng,url,_listSource:listSrc,_noCoords:!lat};
       const enriched=window.google?.maps?.places?await enrichOneAsync(base):null;
@@ -2379,12 +2397,15 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
               type="url"
               value={linkUrl}
               onChange={e=>setLinkUrl(e.target.value)}
-              placeholder="https://maps.app.goo.gl/..."
+              placeholder="https://maps.app.goo.gl/... או google.com/maps/..."
               style={{width:'100%',padding:'8px 10px',borderRadius:8,border:'1px solid var(--border)',
                 background:'var(--bg2)',color:'var(--text)',fontSize:13,direction:'ltr',boxSizing:'border-box'}}
               onKeyDown={e=>e.key==='Enter'&&!linkImporting&&importFromLink(linkUrl,linkSource)}
               autoFocus
             />
+            <div style={{fontSize:11,color:'var(--text3)',marginTop:5,lineHeight:1.5}}>
+              💡 לייבוא רשימה שלמה: פתח את הקישור בדפדפן, המתן לטעינה, העתק את הכתובת המלאה מסרגל הכתובות והדבק כאן
+            </div>
           </div>
 
           {/* סוג הרשימה */}
