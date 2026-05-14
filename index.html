@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v38';
+const APP_VERSION = 'v39';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -2048,7 +2048,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
 
   /* ─── בניית URL של ה-API הפנימי לשליפת רשימה ─── */
   /* גוגל מפות preload-ает את הנתונים עם pb= מלא; נחלץ אותו מה-HTML ─── */
-  const buildListApiUrl=(html,listId)=>{
+  const buildListApiUrl=(html,listId,originalUrl='')=>{
     /* חלץ את ה-link המדויק מה-HTML */
     const m=html.match(/<link[^>]+href="(\/maps\/preview\/entitylist\/getlist[^"]+)"[^>]*as="fetch"/i)
            ||html.match(/<link[^>]*as="fetch"[^>]+href="(\/maps\/preview\/entitylist\/getlist[^"]+)"/i);
@@ -2057,8 +2057,11 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
       const href=m[1].replace(/&amp;/g,'&').replace(/4i\d+/,'4i2000');
       return 'https://www.google.com'+href;
     }
-    /* fallback — pb מינימלי מ-listId */
-    const pb=`!1m4!1s${listId}!2e2!3m1!1e1!2e2!3e2!4i2000`;
+    /* חלץ סוג רשימה מה-URL: !3e1=מועדפים, !3e7=תוכניות נסיעה, !3e2=ברירת מחדל */
+    const typeM=(originalUrl||'').match(/!2s[^!]+!3e(\d+)/);
+    const t=typeM?typeM[1]:'2';
+    /* fallback — pb עם הסוג הנכון */
+    const pb=`!1m4!1s${listId}!2e${t}!3m1!1e1!2e${t}!3e${t}!4i2000`;
     return `https://www.google.com/maps/preview/entitylist/getlist?hl=en&pb=${encodeURIComponent(pb)}`;
   };
 
@@ -2095,8 +2098,16 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
   };
 
   /* ─── ייבוא רשימה שלמה מ-API ─── */
-  const importListFromLink=async(listId,html,listSrc)=>{
-    const apiUrl=buildListApiUrl(html,listId);
+  const importListFromLink=async(listId,html,listSrc,originalUrl='')=>{
+    /* אם אין HTML — ננסה לשלוף את דף גוגל מפות כדי לקבל לינק preload מדויק */
+    let pageHtml=html;
+    if(!pageHtml&&originalUrl){
+      try{
+        const r=await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(originalUrl)}`,{signal:AbortSignal.timeout(8000)});
+        if(r.ok) pageHtml=await r.text();
+      }catch{}
+    }
+    const apiUrl=buildListApiUrl(pageHtml,listId,originalUrl);
     /* חובה להשתמש ב-/raw — /get חותך תגובות גדולות (154KB+) */
     let apiResp='';
     try{
@@ -2131,10 +2142,10 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
       /* ── קישור מלא (לא goo.gl) ── */
       if(!/goo\.gl/.test(url)){
         if(/!11m2/.test(url)){
-          /* רשימה — URL מלא בלי HTML (אין preload); נבנה pb מ-listId */
+          /* רשימה — URL מלא; נעביר את ה-URL לחילוץ סוג הרשימה ולשליפת preload */
           const listId=extractListId(url);
           if(!listId) throw new Error('לא ניתן לחלץ את מזהה הרשימה');
-          await importListFromLink(listId,'',listSrc);
+          await importListFromLink(listId,'',listSrc,url);
           setShowLinkImport(false);setLinkUrl('');setLinkImporting(false);return;
         }
         /* מקום בודד — מלא */
@@ -2169,7 +2180,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
       if(/!11m2/.test(effectiveUrl)){
         const listId=extractListId(effectiveUrl);
         if(!listId) throw new Error('לא ניתן לחלץ מזהה רשימה');
-        await importListFromLink(listId,html,listSrc);
+        await importListFromLink(listId,html,listSrc,effectiveUrl);
         setShowLinkImport(false);setLinkUrl('');setLinkImporting(false);return;
       }
 
