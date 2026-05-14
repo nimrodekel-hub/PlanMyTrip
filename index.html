@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v40';
+const APP_VERSION = 'v41';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -1856,11 +1856,48 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
   useEffect(()=>{tripRef.current=trip;},[trip]);
 
   /* חילוץ שם מדינה מהכתובת — חלק אחרון אחרי פסיק, ללא מיקוד */
+  /* מיפוי אנגלית → עברית לשמות מדינות (לאיחוד קבוצות) */
+  const COUNTRY_HE={
+    'israel':'ישראל','austria':'אוסטריה','belgium':'בלגיה','france':'צרפת',
+    'germany':'גרמניה','italy':'איטליה','spain':'ספרד','switzerland':'שווייץ',
+    'netherlands':'הולנד','holland':'הולנד','czech republic':'צ\'כיה','czechia':'צ\'כיה',
+    'hungary':'הונגריה','poland':'פולין','croatia':'קרואטיה','greece':'יוון',
+    'portugal':'פורטוגל','united kingdom':'בריטניה','england':'בריטניה',
+    'scotland':'בריטניה','wales':'בריטניה','great britain':'בריטניה',
+    'united states':'ארצות הברית','usa':'ארצות הברית','u.s.a.':'ארצות הברית',
+    'turkey':'טורקיה','türkiye':'טורקיה','jordan':'ירדן','egypt':'מצרים',
+    'sweden':'שוודיה','norway':'נורווגיה','denmark':'דנמרק','finland':'פינלנד',
+    'slovakia':'סלובקיה','slovenia':'סלובניה','romania':'רומניה','bulgaria':'בולגריה',
+    'serbia':'סרביה','albania':'אלבניה','north macedonia':'מקדוניה',
+    'bosnia and herzegovina':'בוסניה','bosnia':'בוסניה','montenegro':'מונטנגרו',
+    'luxembourg':'לוקסמבורג','ireland':'אירלנד','iceland':'איסלנד','canada':'קנדה',
+    'australia':'אוסטרליה','japan':'יפן','china':'סין','india':'הודו',
+    'thailand':'תאילנד','morocco':'מרוקו','russia':'רוסיה','ukraine':'אוקראינה',
+    'cyprus':'קפריסין','malta':'מלטה','estonia':'אסטוניה','latvia':'לטביה',
+    'lithuania':'ליטא','georgia':'גיאורגיה','armenia':'ארמניה','peru':'פרו',
+    'brazil':'ברזיל','argentina':'ארגנטינה','mexico':'מקסיקו','south africa':'דרום אפריקה',
+  };
+
+  /* נרמל שם מדינה: אנגלית → עברית, ועיר ישראלית → ישראל */
+  const normalizeCountry=(raw,fullAddr)=>{
+    if(!raw) return 'ללא כתובת';
+    const lo=raw.toLowerCase().trim();
+    /* התאמה ישירה */
+    if(COUNTRY_HE[lo]) return COUNTRY_HE[lo];
+    /* התאמה חלקית (למשל "United States of America") */
+    for(const[en,he] of Object.entries(COUNTRY_HE)){
+      if(lo.includes(en)) return he;
+    }
+    /* אם הכתובת המלאה מכילה Israel/ישראל בכל מקום — מדינה = ישראל */
+    if(/\bisrael\b|\bישראל\b/i.test(fullAddr)) return 'ישראל';
+    return raw;
+  };
+
   const getCountry=item=>{
     const addr=(item.address||'').trim();
     if(!addr) return 'ללא כתובת';
     const parts=addr.split(',').map(s=>s.trim()).filter(Boolean);
-    if(parts.length<2) return parts[0]||'ללא כתובת';
+    if(parts.length<2) return normalizeCountry(parts[0]||'ללא כתובת',addr);
     let last=parts[parts.length-1];
     // הסר מיקוד בתחילה: "1013 הונגריה" → "הונגריה"
     last=last.replace(/^\d[\d\s\-]{0,9}\s+/,'').trim();
@@ -1871,7 +1908,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
       last=parts[parts.length-2]||'';
       last=last.replace(/^\d[\d\s\-]{0,9}\s+/,'').replace(/\s+\d[\d\s\-]{0,9}$/,'').trim();
     }
-    return last||'ללא כתובת';
+    return normalizeCountry(last||'ללא כתובת',addr);
   };
 
   /* קיבוץ לפי מדינה, ממויין אלפביתית */
