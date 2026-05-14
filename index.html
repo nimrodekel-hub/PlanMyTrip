@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v28';
+const APP_VERSION = 'v29';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -303,10 +303,10 @@ const addMins = (t,m) => { const [h,mi]=t.split(':').map(Number),tot=h*60+mi+m; 
 
 const EXPENSE_CATS    = ['דלק','אוכל','קמפינג','אגרות','פעילויות','קניות','תחזוקה','אחר'];
 const CAT_COLORS      = {'דלק':'#ef4444','אוכל':'#f59e0b','קמפינג':'#22c55e','אגרות':'#8b5cf6','פעילויות':'#4f8ef7','קניות':'#ec4899','תחזוקה':'#f97316','אחר':'#6b7280'};
-const BLOCK_TYPES     = ['travel','activity','stop'];
-const BLOCK_HE        = {travel:'נסיעה',activity:'פעילות',stop:'עצירה'};
-const BLOCK_EMOJI     = {travel:'🚗',activity:'🎯',stop:'⏸️'};
-const BLOCK_COLOR     = {travel:'var(--accent)',activity:'var(--green)',stop:'var(--amber)'};
+const BLOCK_TYPES     = ['travel','activity','stop','rest','games','free'];
+const BLOCK_HE        = {travel:'נסיעה',activity:'פעילות',stop:'עצירה',rest:'מנוחה',games:'משחקים',free:'זמן פנוי'};
+const BLOCK_EMOJI     = {travel:'🚗',activity:'🎯',stop:'⏸️',rest:'😴',games:'🎮',free:'🕐'};
+const BLOCK_COLOR     = {travel:'var(--accent)',activity:'var(--green)',stop:'var(--amber)',rest:'#94a3b8',games:'#a855f7',free:'#64748b'};
 const PLACE_TYPE_HE={restaurant:'🍽️ מסעדה',cafe:'☕ קפה',bar:'🍺 בר',food:'🍽️ אוכל',
   lodging:'🏨 מלון',shopping_mall:'🛍️ קניון',store:'🛍️ חנות',supermarket:'🛒 סופרמרקט',
   grocery_or_supermarket:'🛒 סופר',clothing_store:'👗 ביגוד',
@@ -1106,15 +1106,22 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
       });
     });
 
-    // סמני בנק אטרקציות — כוכב קטן זהוב
+    // סמני בנק אטרקציות — צבע וסמל לפי מקור הרשימה
+    const BANK_ICON={
+      liked:   {color:'#ec4899',label:'♥',scale:9},   // ❤️ מועדפים
+      wantToGo:{color:'#22c55e',label:'⚑',scale:9},   // 🏴 רוצה להגיע
+      saved:   {color:'#f59e0b',label:'★',scale:8},   // ⭐ מקומות שמורים
+      list:    {color:'#6366f1',label:'♦',scale:8},   // 📋 רשימה
+    };
     trip.interestBank.forEach(item=>{
       if (!item.lat) return;
+      const ic=BANK_ICON[item._listSource]||BANK_ICON.saved;
       const m=new window.google.maps.Marker({
         position:{lat:item.lat,lng:item.lng},
         map:mapInst.current,
-        title:item.name,
-        label:{text:'★',color:'#fff',fontSize:'10px'},
-        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:8,fillColor:'#f59e0b',fillOpacity:0.9,strokeColor:'#fff',strokeWeight:1.5},
+        title:`${item._listSource==='liked'?'❤️':item._listSource==='wantToGo'?'🏴':'⭐'} ${item.name}`,
+        label:{text:ic.label,color:'#fff',fontSize:'11px',fontWeight:'bold'},
+        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:ic.scale,fillColor:ic.color,fillOpacity:0.95,strokeColor:'#fff',strokeWeight:1.5},
         zIndex:3,
       });
       if (iw&&build&&iwPlace){
@@ -1553,20 +1560,39 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
 
       <Weather coordinates={day.coordinates} location={day.location}/>
 
-      <div className="time-indicator" style={{marginBottom:14}}>
-        <span style={{fontSize:12,color:'var(--text2)'}}>⏰ שעה נוכחית:</span>
-        <input type="time" value={day.currentTime||nowTime()} onChange={e=>onUpdate({...day,currentTime:e.target.value})}
-          style={{background:'transparent',border:'none',color:'var(--accent)',fontWeight:700,fontSize:13,fontFamily:'Heebo,sans-serif',cursor:'pointer'}}/>
-      </div>
-
       <div className="timeline">
         {sorted.length===0&&<div style={{padding:'12px 0',color:'var(--text3)',fontSize:13,textAlign:'center'}}>אין בלוקים עדיין — הוסף בלוק למטה</div>}
-        {sorted.map((bl,si)=><BlockItem key={bl.id} block={bl} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onFocusItem={onFocusItem}
-          dragging={dragOver!==null&&dragIdxRef.current===si} dragOver={dragOver===si}
-          onDragStart={e=>{e.dataTransfer.effectAllowed='move';dragIdxRef.current=si;}}
-          onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move';if(dragOver!==si)setDragOver(si);}}
-          onDrop={e=>{e.preventDefault();handleDrop(si);}}
-          onDragEnd={()=>{dragIdxRef.current=null;setDragOver(null);}}/>)}
+        {(()=>{
+          /* קו "עכשיו" — מחושב לפי השעה הנוכחית ביחס לבלוקים */
+          const toMins=t=>{const[h,m]=(t||'00:00').split(':').map(Number);return h*60+m;};
+          const nowMins=toMins(nowTime());
+          const isToday=!day.date||day.date===todayISO();
+          let nowInsert=-1;
+          if(isToday&&sorted.length>0){
+            const firstMins=toMins(sorted[0].startTime);
+            const lastEnd=toMins(sorted[sorted.length-1].startTime)+(sorted[sorted.length-1].durationMins||60);
+            if(nowMins>=firstMins-5&&nowMins<=lastEnd+30){
+              nowInsert=sorted.findIndex(b=>nowMins<toMins(b.startTime));
+              if(nowInsert===-1) nowInsert=sorted.length;
+            }
+          }
+          const nowLine=<div key="__nowline__" style={{display:'flex',alignItems:'center',gap:6,margin:'2px 0',pointerEvents:'none'}}>
+            <span style={{background:'#ef4444',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:10,flexShrink:0,letterSpacing:'0.02em'}}>
+              ⏱ {nowTime()}
+            </span>
+            <div style={{flex:1,height:2,background:'#ef4444',borderRadius:2,opacity:0.75}}/>
+          </div>;
+          return sorted.map((bl,si)=>[
+            nowInsert===si&&nowLine,
+            <BlockItem key={bl.id} block={bl} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onFocusItem={onFocusItem}
+              dragging={dragOver!==null&&dragIdxRef.current===si} dragOver={dragOver===si}
+              onDragStart={e=>{e.dataTransfer.effectAllowed='move';dragIdxRef.current=si;}}
+              onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move';if(dragOver!==si)setDragOver(si);}}
+              onDrop={e=>{e.preventDefault();handleDrop(si);}}
+              onDragEnd={()=>{dragIdxRef.current=null;setDragOver(null);}}/>,
+            nowInsert===sorted.length&&si===sorted.length-1&&nowLine,
+          ]);
+        })()}
       </div>
 
       <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:12}}>
@@ -1942,6 +1968,13 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
   const importTakeout=files=>{
     const fileList=Array.from(files);
     if(!fileList.length) return;
+    /* זיהוי מקור לפי שם קובץ — לסמן על המפה */
+    const detectSource=name=>{
+      const n=name.toLowerCase();
+      if(n.includes('liked')||n.includes('מועדפים')||n.includes('favorites')) return 'liked';
+      if(n.includes('want')||n.includes('רוצה')) return 'wantToGo';
+      return 'list';
+    };
     const readOne=(file,done)=>{
       const r=new FileReader();
       r.onload=e=>{
@@ -1951,6 +1984,8 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
           const items=isCSV
             ? parseTakeoutCSV(text)
             : parseTakeoutFeatures(JSON.parse(text));
+          const src=isCSV?detectSource(file.name):'saved';
+          items.forEach(i=>{ if(!i._listSource) i._listSource=src; });
           done(items,isCSV);
         }catch(err){done([],false);}
       };
