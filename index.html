@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v45';
+const APP_VERSION = 'v46';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -2128,15 +2128,34 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
 
   /* ─── שליחת בקשה דרך פרוקסי: מנסה 3 פרוקסים במקביל עם cache-bust ─── */
   const fetchListViaProxy=async(apiUrl)=>{
-    /* 3 פרוקסים שונים בתשתיות שונות — ראשון שמצליח מנצח */
-    const mkReq=(url,isJson)=>fetch(url,{signal:AbortSignal.timeout(12000)})
+    /* 3 פרוקסים בתשתיות שונות — ראשון שמצליח מנצח.
+       AbortController משותף: ברגע שאחד מצליח, שאר הבקשות מבוטלות מיד
+       כדי לא לתפוס slots ב-allorigins ולמנוע rate-limit בייבוא הבא. */
+    const ctrl=new AbortController();
+    const deadline=AbortSignal.timeout(12000);
+    const mkSig=()=>{
+      /* AbortSignal.any זמין ב-Chrome 116+ / Firefox 124+.
+         fallback: אם אחד מהם כבר מבוטל, השתמש בו; אחרת AbortSignal.any */
+      if(ctrl.signal.aborted||deadline.aborted) return ctrl.signal.aborted?ctrl.signal:deadline;
+      return typeof AbortSignal.any==='function'
+        ?AbortSignal.any([ctrl.signal,deadline])
+        :deadline;
+    };
+    const mkReq=(url,isJson)=>fetch(url,{signal:mkSig()})
       .then(r=>{if(!r.ok)throw 0;return isJson?r.json():r.text();})
       .then(d=>{const t=isJson?d?.contents||'':d;if(!t.includes(")]}'"))throw 0;return t;});
-    return Promise.any([
-      mkReq(`https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`,false),
-      mkReq(`https://api.allorigins.win/get?url=${encodeURIComponent(apiUrl)}`,true),
-      mkReq(`https://test.cors.workers.dev/?${encodeURIComponent(apiUrl)}`,false),
-    ]);
+    try{
+      const result=await Promise.any([
+        mkReq(`https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`,false),
+        mkReq(`https://api.allorigins.win/get?url=${encodeURIComponent(apiUrl)}`,true),
+        mkReq(`https://test.cors.workers.dev/?${apiUrl}`,false),
+      ]);
+      ctrl.abort('done'); /* בטל את 2 הבקשות שהפסידו */
+      return result;
+    }catch(e){
+      ctrl.abort('failed');
+      throw e;
+    }
   };
 
   /* ─── ייבוא רשימה — עם retry אוטומטי עד 3 פעמים ─── */
