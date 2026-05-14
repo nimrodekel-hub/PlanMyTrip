@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v50';
+const APP_VERSION = 'v51';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -1866,30 +1866,46 @@ const GMAPS_WF_YAML=[
   '          git push',
 ].join('\n');
 
+/* פענוח base64 → טקסט UTF-8 (GitHub API מחזיר base64; atob לבדו שובר עברית/CJK) */
+const b64ToUtf8=b64=>{
+  const bin=atob(b64.replace(/\s/g,''));
+  const bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  return new TextDecoder('utf-8').decode(bytes);
+};
+
 const fetchViaGitHubAction=async(apiUrl,settings,onStatus)=>{
-  const{githubToken:tok,githubUsername:user,githubRepo:repo}=settings||{};
-  if(!tok||!user||!repo) throw new Error('github-not-configured');
+  const tok=settings?.githubToken||'';
+  const user=settings?.githubUsername||'nimrodekel-hub';
+  const repo=settings?.githubRepo||'PlanMyTrip';
+  if(!tok) throw new Error('חסר GitHub token — הוסף בהגדרות ⚙️');
   const hdr={'Authorization':'token '+tok,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'};
   const repoBase=`https://api.github.com/repos/${user}/${repo}`;
 
-  /* ודא שקובץ ה-workflow קיים ב-repo — צור אם לא */
+  /* ודא שקובץ ה-workflow קיים — צור אוטומטית אם לא */
   const wfUrl=`${repoBase}/contents/.github/workflows/fetch-gmaps.yml`;
   const wfChk=await fetch(wfUrl,{headers:hdr});
   if(!wfChk.ok){
-    /* btoa מקודד לbase64 — YAML הוא ASCII טהור, אין בעיה */
+    onStatus?.('⚙️ מגדיר GitHub Action (פעם ראשונה בלבד)...');
     const r=await fetch(wfUrl,{method:'PUT',headers:hdr,
       body:JSON.stringify({message:'Add Google Maps fetch workflow',content:btoa(GMAPS_WF_YAML)})});
-    if(!r.ok) throw new Error('cannot-create-workflow: '+r.status);
-    await new Promise(res=>setTimeout(res,2500)); /* המתן שגיטהאב יעבד את הקובץ */
+    if(!r.ok){
+      const err=await r.json().catch(()=>({message:r.status}));
+      throw new Error('יצירת workflow נכשלה: '+(err.message||r.status));
+    }
+    await new Promise(res=>setTimeout(res,3000));
   }
 
   /* שלח repository_dispatch */
   const reqId='gmaps_'+Date.now();
   const dispR=await fetch(`${repoBase}/dispatches`,{method:'POST',headers:hdr,
     body:JSON.stringify({event_type:'fetch-gmaps',client_payload:{api_url:apiUrl,req_id:reqId}})});
-  if(!dispR.ok) throw new Error('dispatch-failed: '+dispR.status);
+  if(!dispR.ok){
+    const err=await dispR.json().catch(()=>({message:dispR.status}));
+    throw new Error('שליחת בקשה נכשלה: '+(err.message||dispR.status));
+  }
 
-  onStatus?.('⏳ שולף מגוגל דרך GitHub... (עד 90 שניות)');
+  onStatus?.('⏳ GitHub שולף מגוגל... (עד 90 שניות)');
 
   /* סקור כל 4 שניות עד 90 שניות */
   const idUrl =`${repoBase}/contents/_cache/gmaps_id.txt`;
@@ -1900,18 +1916,21 @@ const fetchViaGitHubAction=async(apiUrl,settings,onStatus)=>{
       const idR=await fetch(idUrl+'?t='+Date.now(),{headers:hdr});
       if(!idR.ok) continue;
       const idJ=await idR.json();
-      const savedId=atob(idJ.content.replace(/\s/g,'')).trim();
+      const savedId=b64ToUtf8(idJ.content).trim();
       if(savedId!==reqId) continue;
-      /* ה-Action סיים — קרא את התשובה */
+      /* ה-Action סיים — קרא את תוכן התשובה */
       const rR=await fetch(respUrl+'?t='+Date.now(),{headers:hdr});
-      if(!rR.ok) throw new Error('no-response-file');
+      if(!rR.ok) throw new Error('קובץ תשובה לא נמצא');
       const rJ=await rR.json();
-      const text=atob(rJ.content.replace(/\s/g,''));
-      if(!text.includes(")]}'")) throw new Error('invalid-data');
+      const text=b64ToUtf8(rJ.content);
+      if(!text.includes(")]}'")) throw new Error('תוכן לא תקין');
       return text;
-    }catch(e){if(e.message==='no-response-file'||e.message==='invalid-data') throw e;}
+    }catch(e){
+      if(e.message==='קובץ תשובה לא נמצא'||e.message==='תוכן לא תקין') throw e;
+      /* continue polling */
+    }
   }
-  throw new Error('timeout — נסה שוב');
+  throw new Error('timeout — ה-Action לא הסתיים בזמן, נסה שוב');
 };
 
 /* ══════════════════════════════════
@@ -2206,15 +2225,11 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
     return{listName,places,totalInList};
   };
 
-  /* ─── שליחת בקשה דרך פרוקסי: מנסה פרוקסים אחד-אחד (סדרתי!) ─── */
+  /* ─── שליחת בקשה דרך פרוקסי: סדרתי, timeout קצר ─── */
   const fetchListViaProxy=async(apiUrl)=>{
-    /* חשוב: סדרתי, לא מקבילי!
-       מקבילי = 2–3 בקשות בו-זמנית לאותו proxy → גוגל עושה rate-limit ל-IP של ה-proxy
-       → כל הייבואים הבאים נכשלים עד שה-rate-limit מתאפס (~דקה).
-       סדרתי = בקשה אחת בכל פעם; אם הצליח נעצור, אם נכשל עוברים לבא. */
     const tryOne=async(url,isJson)=>{
       const ctrl=new AbortController();
-      const t=setTimeout(()=>ctrl.abort('timeout'),7000);
+      const t=setTimeout(()=>ctrl.abort(),4000); /* 4 שניות — נכשל מהר, עובר לבא */
       try{
         const r=await fetch(url,{signal:ctrl.signal});
         if(!r.ok) throw new Error('HTTP '+r.status);
@@ -2224,51 +2239,47 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
         return text;
       }finally{clearTimeout(t);}
     };
-
     const enc=encodeURIComponent(apiUrl);
-    const customProxy=(settings?.proxyUrl||'').trim().replace(/\/$/,'');
     const list=[
-      ...(customProxy?[{u:`${customProxy}?url=${enc}`,j:false}]:[]),
       {u:`https://api.allorigins.win/raw?url=${enc}`,j:false},
       {u:`https://api.allorigins.win/get?url=${enc}`,j:true},
       {u:`https://test.cors.workers.dev/?${apiUrl}`,j:false},
     ];
-
     for(const{u,j} of list){
       try{return await tryOne(u,j);}catch{}
     }
     throw new Error('all proxies failed');
   };
 
-  /* ─── ייבוא רשימה: פרוקסי ציבורי → fallback GitHub Action ─── */
+  /* ─── ייבוא רשימה: פרוקסי ציבורי (מהיר) → GitHub Action (אמין) ─── */
   const importListFromLink=async(listId,html,listSrc,originalUrl='')=>{
     const baseApiUrl=buildListApiUrl2(listId,html||'',false);
     let apiResp='';
 
-    /* שלב 1: נסה פרוקסים ציבוריים (מהיר, ~2–5 שניות) */
-    for(let attempt=0;attempt<3;attempt++){
-      if(attempt>0) await new Promise(r=>setTimeout(r,1500));
-      const apiUrl=buildListApiUrl2(listId,html||'',attempt>0);
-      try{ apiResp=await fetchListViaProxy(apiUrl);break; }catch{}
-    }
+    /* שלב 1: ניסיון אחד מהיר דרך פרוקסים (~12 שניות מקסימום) */
+    try{ apiResp=await fetchListViaProxy(baseApiUrl); }catch{}
 
-    /* שלב 2: fallback — GitHub Action (אמין, ~30–60 שניות) */
+    /* שלב 2: fallback — GitHub Action */
     if(!apiResp){
-      const hasGh=!!(settings?.githubToken&&settings?.githubUsername&&settings?.githubRepo);
-      if(hasGh){
-        try{
-          apiResp=await fetchViaGitHubAction(baseApiUrl,settings,setLinkStatus);
-        }catch(e){
-          setLinkStatus('');
-          /* אם GitHub נכשל — זרוק הודעה מתאימה */
-          throw new Error('לא ניתן לשלוף את הרשימה — '+e.message);
-        }
-        setLinkStatus('');
-      }else{
-        throw new Error('הפרוקסים הציבוריים לא זמינים כרגע — הגדר חיבור GitHub בהגדרות לשליפה אמינה');
+      const tok=settings?.githubToken||'';
+      const user=settings?.githubUsername||'';
+      const repo=settings?.githubRepo||'';
+      if(!tok){
+        /* אין token — הסבר ברור */
+        throw new Error(
+          'הפרוקסים חסומים כרגע. להוסיף GitHub Personal Access Token בהגדרות ⚙️ → יאפשר ייבוא אמין דרך GitHub'
+        );
       }
+      setLinkStatus('⏳ GitHub שולף מגוגל... (עד 90 שניות)');
+      try{
+        apiResp=await fetchViaGitHubAction(baseApiUrl,settings,msg=>setLinkStatus(msg));
+      }catch(e){
+        setLinkStatus('');
+        throw new Error('GitHub נכשל: '+e.message);
+      }
+      setLinkStatus('');
     }
-    if(!apiResp) throw new Error('לא ניתן לשלוף את נתוני הרשימה מגוגל — נסה שוב כעוד כמה שניות');
+    if(!apiResp) throw new Error('לא ניתן לשלוף את נתוני הרשימה מגוגל — נסה שוב');
     const{listName,places,totalInList}=parseGmapsListResponse(apiResp);
     if(!places.length) throw new Error('הרשימה ריקה — לא נמצאו מקומות');
     /* שיוך מקור + כפילויות */
