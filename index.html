@@ -1895,6 +1895,18 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
   };
 
   /* ייבוא Google Takeout — JSON (קואורדינטות) + CSV (לבבות/Want to go/רשימות) */
+  /* בדיקת כפילות — שם זהה / קואורדינטות קרובות / URL זהה */
+  const isTakeoutDup=(newItem,existing)=>{
+    const norm=s=>(s||'').toLowerCase().trim().replace(/\s+/g,' ');
+    const n=norm(newItem.name);
+    if(n&&n!=='מקום ללא שם'&&n===norm(existing.name)) return true;
+    if(newItem.lat!=null&&existing.lat!=null){
+      if(Math.abs(newItem.lat-existing.lat)<0.0005&&Math.abs(newItem.lng-existing.lng)<0.0005) return true;
+    }
+    if(newItem.website&&existing.website&&newItem.website===existing.website) return true;
+    return false;
+  };
+
   const importTakeout=files=>{
     const fileList=Array.from(files);
     if(!fileList.length) return;
@@ -1914,22 +1926,35 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
       r.readAsText(file,'utf-8');
     };
     const allItems=[];
-    let jsonCount=0,csvCount=0,jsonFiles=0,csvFiles=0;
+    let jsonCount=0,csvCount=0;
     let pending=fileList.length;
     fileList.forEach(file=>readOne(file,(items,isCSV)=>{
       allItems.push(...items);
-      if(isCSV){csvCount+=items.length;if(items.length)csvFiles++;}
-      else{jsonCount+=items.length;if(items.length)jsonFiles++;}
+      if(isCSV) csvCount+=items.length; else jsonCount+=items.length;
       if(--pending===0){
         if(!allItems.length){
           toast('לא נמצאו מקומות — ודא שבחרת קבצי JSON או CSV מגוגל טייקאוט','error');
           return;
         }
-        onUpdate({...trip,interestBank:[...trip.interestBank,...allItems]});
+        /* סינון כפילויות — כנגד הבנק הקיים וגם בתוך הקובץ החדש */
+        const existing=trip.interestBank;
+        const unique=[];
+        for(const item of allItems){
+          const dupInExisting=existing.some(e=>isTakeoutDup(item,e));
+          const dupInNew=unique.some(e=>isTakeoutDup(item,e));
+          if(!dupInExisting&&!dupInNew) unique.push(item);
+        }
+        const dupCount=allItems.length-unique.length;
+        if(!unique.length){
+          toast(`כל ${allItems.length} המקומות כבר קיימים בבנק — אין חדשים להוסיף`,'error');
+          return;
+        }
+        onUpdate({...trip,interestBank:[...existing,...unique]});
         const parts=[];
-        if(jsonCount) parts.push(`${jsonCount} עם GPS (JSON)`);
-        if(csvCount)  parts.push(`${csvCount} ללא GPS (CSV — לחץ 🔍 להשלמה)`);
-        toast(`יובאו ${allItems.length} מקומות: ${parts.join(' + ')} ✓`,'success');
+        if(jsonCount) parts.push(`${unique.filter(i=>!i._noCoords).length} עם GPS`);
+        if(csvCount)  parts.push(`${unique.filter(i=>i._noCoords).length} ללא GPS (לחץ 🔍)`);
+        const dupMsg=dupCount>0?` (${dupCount} כפילויות דולגו)`:'';
+        toast(`יובאו ${unique.length} מקומות${dupMsg} ✓`,'success');
         setShowTakeout(false);
       }
     }));
