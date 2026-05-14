@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v32';
+const APP_VERSION = 'v33';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -1107,22 +1107,28 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
     });
 
     // סמני בנק אטרקציות — צבע וסמל לפי מקור הרשימה
+    // נתיב SVG של מזוודה: גוף + ידית עליונה + רצועה אמצעית
+    const SUITCASE_PATH='M-7,-2 L-7,7 L7,7 L7,-2 Z M-3,-2 L-3,-7 L3,-7 L3,-2 Z M-5,2 L5,2';
     const BANK_ICON={
       liked:    {color:'#ec4899',label:'♥',scale:9},   // ❤️ מועדפים
       wantToGo: {color:'#22c55e',label:'⚑',scale:9},   // 🏴 רוצה להגיע
       saved:    {color:'#f59e0b',label:'★',scale:8},   // ⭐ מקומות שמורים
       list:     {color:'#6366f1',label:'♦',scale:8},   // 📋 רשימה
-      itinerary:{color:'#0ea5e9',label:'✈',scale:8},   // 🧳 תוכנית נסיעה
+      itinerary:{color:'#16a34a',label:'',  scale:1, svgPath:SUITCASE_PATH}, // 🧳 תוכנית נסיעה — ירוק + מזוודה
     };
+    const TITLE_EMOJI={liked:'❤️',wantToGo:'🏴',saved:'⭐',list:'📋',itinerary:'🧳'};
     trip.interestBank.forEach(item=>{
       if (!item.lat) return;
       const ic=BANK_ICON[item._listSource]||BANK_ICON.saved;
+      const iconSpec=ic.svgPath
+        ? {path:ic.svgPath,fillColor:ic.color,fillOpacity:0.95,strokeColor:'#fff',strokeWeight:1.5,scale:1}
+        : {path:window.google.maps.SymbolPath.CIRCLE,scale:ic.scale,fillColor:ic.color,fillOpacity:0.95,strokeColor:'#fff',strokeWeight:1.5};
       const m=new window.google.maps.Marker({
         position:{lat:item.lat,lng:item.lng},
         map:mapInst.current,
-        title:`${item._listSource==='liked'?'❤️':item._listSource==='wantToGo'?'🏴':'⭐'} ${item.name}`,
-        label:{text:ic.label,color:'#fff',fontSize:'11px',fontWeight:'bold'},
-        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:ic.scale,fillColor:ic.color,fillOpacity:0.95,strokeColor:'#fff',strokeWeight:1.5},
+        title:`${TITLE_EMOJI[item._listSource]||'📍'} ${item.name}`,
+        ...(ic.label?{label:{text:ic.label,color:'#fff',fontSize:'11px',fontWeight:'bold'}}:{}),
+        icon:iconSpec,
         zIndex:3,
       });
       if (iw&&build&&iwPlace){
@@ -1167,7 +1173,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
     }
   },[highlightDay]);
 
-  // הדגשת פריט בודד — סמן מנפנף
+  // הדגשת פריט בודד — סיכה אדומה רגילה מנפנפת
   useEffect(()=>{
     if (hlItemMarker.current){hlItemMarker.current.setMap(null);hlItemMarker.current=null;}
     if (!highlightItem||!mapInst.current||!window.google?.maps) return;
@@ -1175,7 +1181,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
       position:{lat:highlightItem.lat,lng:highlightItem.lng},
       map:mapInst.current,
       title:highlightItem.name||'',
-      icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:20,fillColor:'#fff',fillOpacity:0.95,strokeColor:'#4f8ef7',strokeWeight:4},
+      // ללא icon מותאם = סיכה אדומה ברירת מחדל של גוגל מפות
       animation:window.google.maps.Animation.BOUNCE,
       zIndex:200,
     });
