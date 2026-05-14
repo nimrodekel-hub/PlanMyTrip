@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v34';
+const APP_VERSION = 'v35';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -2054,6 +2054,11 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
 
       /* ─── שלב 1: קישור מלא — חלץ ישירות ─── */
       if(!(/goo\.gl/.test(url))){
+        /* בדוק אם זו רשימה (data=!11m2) */
+        if(/!11m2/.test(url)){
+          toast('🗂️ זהו קישור לרשימת מקומות — לא ניתן לייבא רשימות דרך קישור. השתמש ב-Google Takeout לייבוא מרובה ⬅️','error');
+          setLinkImporting(false); return;
+        }
         const p=parseMapsUrl(url);
         placeName=p.name; lat=p.lat; lng=p.lng;
       }
@@ -2061,16 +2066,20 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
       /* ─── שלב 2: קישור קצר (goo.gl) — פתרון דרך proxy ─── */
       if(!placeName&&!lat){
         const{finalUrl,html}=await fetchViaProxy(url);
+        /* בדוק אם ה-URL הסופי הוא רשימה */
+        if(finalUrl&&/!11m2/.test(finalUrl)){
+          toast('🗂️ זהו קישור לרשימת מקומות — לא ניתן לייבא רשימות דרך קישור.\nלייבוא עשרות מקומות בבת-אחת השתמש ב-⭐ ייבא מ-Google Takeout','error');
+          setLinkImporting(false); return;
+        }
         /* נסה לחלץ מה-URL הסופי */
         if(finalUrl){const p=parseMapsUrl(finalUrl);if(p.name)placeName=p.name;if(p.lat){lat=p.lat;lng=p.lng;}}
         /* נסה לחלץ שם מה-HTML */
         if(!placeName&&html) placeName=extractNameFromHtml(html);
-        /* נסה קואורדינטות מה-HTML עצמו (לפעמים מופיעות ב-meta) */
+        /* נסה קואורדינטות מה-HTML עצמו */
         if(!lat&&html){const cM=(finalUrl||html).match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);if(cM){lat=parseFloat(cM[1]);lng=parseFloat(cM[2]);}}
       }
 
-      /* ─── שלב 3: אם אין שם בכלל — בדוק Google Places לפי URL ─── */
-      /* גם URL קצר שלא פוענח — עדיין נוסיף עם שם זמני ונעשיר */
+      /* ─── שלב 3: אם אין שם בכלל ─── */
       if(!placeName){
         toast('לא ניתן לפרש את הקישור — נסה להדביק קישור ישיר (לחץ ״שתף״ בגוגל מפות ← ״העתק קישור״)','error');
         setLinkImporting(false); return;
@@ -2288,11 +2297,17 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
 
           {/* הסבר */}
           <div style={{background:'var(--bg3)',borderRadius:10,padding:12,fontSize:12,lineHeight:1.9,color:'var(--text2)'}}>
-            <div style={{fontWeight:700,color:'var(--text)',marginBottom:4,fontSize:13}}>איך לשתף מקום מגוגל מפות?</div>
-            1. פתח את גוגל מפות וחפש מקום<br/>
-            2. לחץ <strong>שתף</strong> (↗ Share) → <strong>העתק קישור</strong><br/>
+            <div style={{fontWeight:700,color:'var(--text)',marginBottom:4,fontSize:13}}>✅ מתאים ל — מקום בודד</div>
+            1. פתח גוגל מפות וחפש מקום ספציפי<br/>
+            2. לחץ <strong>שתף</strong> (↗) → <strong>העתק קישור</strong><br/>
             3. הדבק את הקישור למטה<br/>
-            <span style={{color:'var(--text3)',fontSize:11}}>✅ תומך גם בקישורים קצרים (maps.app.goo.gl) וגם מלאים</span>
+            <div style={{marginTop:8,padding:'7px 10px',background:'#fef3c7',borderRadius:7,border:'1px solid #fbbf24'}}>
+              <span style={{fontWeight:700,color:'#92400e'}}>❌ לא עובד — רשימות מקומות</span><br/>
+              <span style={{color:'#78350f',fontSize:11}}>
+                שיתוף של "מועדפים" / "Want to go" / רשימה → הנתונים נטענים ב-JavaScript של גוגל ולא נגישים.<br/>
+                <strong>לייבוא רשימות שלמות: השתמש ב-⭐ ייבא מ-Google Takeout</strong>
+              </span>
+            </div>
           </div>
 
           {/* שדה URL */}
