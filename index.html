@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v35';
+const APP_VERSION = 'v36';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -1999,9 +1999,12 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
     toast(`הושלמו ${successCount} פריטים${skipped?` (${skipped} לא נמצאו)`:''}  ✓`,'success');
   };
 
-  /* ייבוא מקישור שיתוף של גוגל מפות (maps.app.goo.gl או maps.google.com) */
+  /* ══════════════════════════════════
+     ייבוא מקישור שיתוף של גוגל מפות
+     תומך: מקום בודד + רשימת מועדפים/רוצה לבקר/רשימה מותאמת
+  ══════════════════════════════════ */
 
-  /* ─── חילוץ שם + קואורדינטות מ-URL מלא ─── */
+  /* ─── חילוץ שם + קואורדינטות מ-URL מלא של מקום בודד ─── */
   const parseMapsUrl=urlStr=>{
     let name='',lat=null,lng=null;
     const nameM=urlStr.match(/\/maps\/place\/([^/@?&#]+)/);
@@ -2013,26 +2016,22 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
     return{name,lat,lng};
   };
 
-  /* ─── שליפת HTML + URL הסופי דרך proxy ─── */
+  /* ─── שליפת תוכן + URL הסופי דרך proxy (allorigins → corsproxy.io) ─── */
   const fetchViaProxy=async(targetUrl)=>{
-    /* מנסה allorigins, ואם נכשל — corsproxy.io */
     const proxies=[
       async()=>{
-        const r=await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,{signal:AbortSignal.timeout(8000)});
+        const r=await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,{signal:AbortSignal.timeout(10000)});
         const d=await r.json();
         return{finalUrl:d?.status?.url||'',html:d?.contents||''};
       },
       async()=>{
-        const r=await fetch(`https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,{signal:AbortSignal.timeout(8000)});
+        const r=await fetch(`https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,{signal:AbortSignal.timeout(10000)});
         const html=await r.text();
-        /* corsproxy מחזיר HTML ישירות; URL הסופי מה-header לא נגיש — מנסה לחלץ מה-HTML */
         const canonM=html.match(/<link[^>]+rel="canonical"[^>]+href="([^"]+)"/i);
         return{finalUrl:canonM?.[1]||'',html};
       },
     ];
-    for(const tryProxy of proxies){
-      try{return await tryProxy();}catch{}
-    }
+    for(const tryProxy of proxies){try{return await tryProxy();}catch{}}
     return{finalUrl:'',html:''};
   };
 
@@ -2044,70 +2043,127 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
     return og.replace(/^Google Maps\s*[-–|·]?\s*/i,'').replace(/\s*[-–|·]?\s*Google Maps$/i,'').trim();
   };
 
+  /* ─── חילוץ ID רשימה מ-URL ─── */
+  const extractListId=url=>url.match(/!11m2[^!]*!2s([^!?&]+)/)?.[1]||null;
+
+  /* ─── בניית URL של ה-API הפנימי לשליפת רשימה ─── */
+  /* גוגל מפות preload-ает את הנתונים עם pb= מלא; נחלץ אותו מה-HTML ─── */
+  const buildListApiUrl=(html,listId)=>{
+    /* חלץ את ה-link המדויק מה-HTML */
+    const m=html.match(/<link[^>]+href="(\/maps\/preview\/entitylist\/getlist[^"]+)"[^>]*as="fetch"/i)
+           ||html.match(/<link[^>]*as="fetch"[^>]+href="(\/maps\/preview\/entitylist\/getlist[^"]+)"/i);
+    if(m){
+      const href=m[1].replace(/&amp;/g,'&');
+      /* שנה 4i500 אם לא קיים — מבטיח עד 500 פריטים */
+      return 'https://www.google.com'+href;
+    }
+    /* fallback — pb מינימלי מ-listId */
+    const pb=`!1m4!1s${listId}!2e2!3m1!1e1!2e2!3e2!4i500`;
+    return `https://www.google.com/maps/preview/entitylist/getlist?hl=en&pb=${encodeURIComponent(pb)}`;
+  };
+
+  /* ─── פרסור תגובת ה-API של רשימת מקומות ─── */
+  /* מבנה: data[0][4]=שם הרשימה, data[0][8]=מערך מקומות                  */
+  /* כל מקום: p[2]=שם, p[1][2]=כתובת מלאה, p[1][5]=[null,null,lat,lng]  */
+  const parseGmapsListResponse=text=>{
+    const cleaned=text.replace(/^\)\]\}'\n?/,'').trim();
+    const data=JSON.parse(cleaned);
+    const listData=data[0];
+    const listName=listData[4]||'רשימה';
+    const placeEntries=listData[8]||[];
+    const places=[];
+    for(const p of placeEntries){
+      try{
+        const name=(p[2]||'').trim();
+        if(!name) continue;
+        const loc=p[1]||[];
+        const address=loc[2]||'';
+        const coords=loc[5];
+        const lat=coords?.[2]??null;
+        const lng=coords?.[3]??null;
+        const googlePath=loc[7]||'';
+        places.push({
+          id:uid(),name,address,lat,lng,
+          _noCoords:!lat,
+          url:googlePath?`https://www.google.com${googlePath}`:'',
+        });
+      }catch{}
+    }
+    return{listName,places};
+  };
+
+  /* ─── ייבוא רשימה שלמה מ-API ─── */
+  const importListFromLink=async(listId,html,listSrc)=>{
+    const apiUrl=buildListApiUrl(html,listId);
+    const{html:apiResp}=await fetchViaProxy(apiUrl);
+    if(!apiResp||!apiResp.includes(")]}'")) throw new Error('לא ניתן לשלוף את נתוני הרשימה מגוגל');
+    const{listName,places}=parseGmapsListResponse(apiResp);
+    if(!places.length) throw new Error('הרשימה ריקה — לא נמצאו מקומות');
+    /* שיוך מקור + כפילויות */
+    places.forEach(p=>p._listSource=listSrc);
+    const existing=tripRef.current.interestBank;
+    const newPlaces=places.filter(p=>!existing.some(ex=>isTakeoutDup(p,ex)));
+    const dupCount=places.length-newPlaces.length;
+    if(newPlaces.length>0){
+      onUpdate({...tripRef.current,interestBank:[...existing,...newPlaces]});
+    }
+    const msg=`✓ יובאו ${newPlaces.length} מקומות מ"${listName}"${dupCount?` (${dupCount} כפילויות דולגו)`:''}`;
+    toast(msg,'success');
+  };
+
+  /* ─── כניסה ראשית: מקום בודד או רשימה ─── */
   const importFromLink=async(rawUrl,listSrc)=>{
     const url=(rawUrl||'').trim();
     if(!url){toast('הזן קישור לגוגל מפות','error');return;}
     setLinkImporting(true);
     try{
-      let placeName='';
-      let lat=null,lng=null;
-
-      /* ─── שלב 1: קישור מלא — חלץ ישירות ─── */
-      if(!(/goo\.gl/.test(url))){
-        /* בדוק אם זו רשימה (data=!11m2) */
+      /* ── קישור מלא (לא goo.gl) ── */
+      if(!/goo\.gl/.test(url)){
         if(/!11m2/.test(url)){
-          toast('🗂️ זהו קישור לרשימת מקומות — לא ניתן לייבא רשימות דרך קישור. השתמש ב-Google Takeout לייבוא מרובה ⬅️','error');
-          setLinkImporting(false); return;
+          /* רשימה — URL מלא בלי HTML (אין preload); נבנה pb מ-listId */
+          const listId=extractListId(url);
+          if(!listId) throw new Error('לא ניתן לחלץ את מזהה הרשימה');
+          await importListFromLink(listId,'',listSrc);
+          setShowLinkImport(false);setLinkUrl('');setLinkImporting(false);return;
         }
-        const p=parseMapsUrl(url);
-        placeName=p.name; lat=p.lat; lng=p.lng;
+        /* מקום בודד — מלא */
+        const{name,lat,lng}=parseMapsUrl(url);
+        if(!name&&!lat) throw new Error('לא ניתן לפרש את הקישור');
+        const base={id:uid(),name:name||'מקום מגוגל מפות',address:'',lat,lng,url,_listSource:listSrc,_noCoords:!lat};
+        const enriched=window.google?.maps?.places?await enrichOneAsync(base):null;
+        const fi=enriched?{...enriched,_listSource:listSrc,url}:base;
+        if(tripRef.current.interestBank.some(ex=>isTakeoutDup(fi,ex))){toast(`"${fi.name}" כבר קיים`,'error');setLinkImporting(false);return;}
+        onUpdate({...tripRef.current,interestBank:[...tripRef.current.interestBank,fi]});
+        toast(`✓ "${fi.name}" נוסף לאטרקציות`,'success');
+        setShowLinkImport(false);setLinkUrl('');setLinkImporting(false);return;
       }
 
-      /* ─── שלב 2: קישור קצר (goo.gl) — פתרון דרך proxy ─── */
-      if(!placeName&&!lat){
-        const{finalUrl,html}=await fetchViaProxy(url);
-        /* בדוק אם ה-URL הסופי הוא רשימה */
-        if(finalUrl&&/!11m2/.test(finalUrl)){
-          toast('🗂️ זהו קישור לרשימת מקומות — לא ניתן לייבא רשימות דרך קישור.\nלייבוא עשרות מקומות בבת-אחת השתמש ב-⭐ ייבא מ-Google Takeout','error');
-          setLinkImporting(false); return;
-        }
-        /* נסה לחלץ מה-URL הסופי */
-        if(finalUrl){const p=parseMapsUrl(finalUrl);if(p.name)placeName=p.name;if(p.lat){lat=p.lat;lng=p.lng;}}
-        /* נסה לחלץ שם מה-HTML */
-        if(!placeName&&html) placeName=extractNameFromHtml(html);
-        /* נסה קואורדינטות מה-HTML עצמו */
-        if(!lat&&html){const cM=(finalUrl||html).match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);if(cM){lat=parseFloat(cM[1]);lng=parseFloat(cM[2]);}}
+      /* ── קישור קצר goo.gl — פתור דרך proxy ── */
+      const{finalUrl,html}=await fetchViaProxy(url);
+
+      /* רשימה */
+      if(finalUrl&&/!11m2/.test(finalUrl)){
+        const listId=extractListId(finalUrl);
+        if(!listId) throw new Error('לא ניתן לחלץ מזהה רשימה');
+        await importListFromLink(listId,html,listSrc);
+        setShowLinkImport(false);setLinkUrl('');setLinkImporting(false);return;
       }
 
-      /* ─── שלב 3: אם אין שם בכלל ─── */
-      if(!placeName){
-        toast('לא ניתן לפרש את הקישור — נסה להדביק קישור ישיר (לחץ ״שתף״ בגוגל מפות ← ״העתק קישור״)','error');
-        setLinkImporting(false); return;
-      }
-
-      /* ─── שלב 4: בניית פריט בסיסי ─── */
-      const baseItem={id:uid(),name:placeName,address:'',lat,lng,url,_listSource:listSrc,_noCoords:!lat};
-
-      /* ─── שלב 5: העשרה מגוגל מפות (Places API) ─── */
-      let finalItem=baseItem;
-      if(window.google?.maps?.places){
-        const enriched=await enrichOneAsync(baseItem);
-        if(enriched) finalItem={...enriched,_listSource:listSrc,url};
-      }else{
-        toast('💡 גוגל מפות אינו זמין — הפריט נוסף ללא פרטים מלאים','info');
-      }
-
-      /* ─── שלב 6: בדיקת כפילות ─── */
-      const isDup=tripRef.current.interestBank.some(ex=>isTakeoutDup(finalItem,ex));
-      if(isDup){toast(`"${finalItem.name}" כבר קיים ברשימת האטרקציות`,'error');setLinkImporting(false);return;}
-
-      /* ─── שלב 7: הוסף לבנק ─── */
-      onUpdate({...tripRef.current,interestBank:[...tripRef.current.interestBank,finalItem]});
-      toast(`✓ "${finalItem.name}" נוסף לאטרקציות`,'success');
-      setShowLinkImport(false);
-      setLinkUrl('');
+      /* מקום בודד */
+      let placeName='',lat=null,lng=null;
+      if(finalUrl){const p=parseMapsUrl(finalUrl);if(p.name)placeName=p.name;if(p.lat){lat=p.lat;lng=p.lng;}}
+      if(!placeName&&html) placeName=extractNameFromHtml(html);
+      if(!lat&&(finalUrl||html)){const cM=(finalUrl||html).match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);if(cM){lat=parseFloat(cM[1]);lng=parseFloat(cM[2]);}}
+      if(!placeName) throw new Error('לא ניתן לפרש את הקישור — נסה קישור ישיר מגוגל מפות');
+      const base={id:uid(),name:placeName,address:'',lat,lng,url,_listSource:listSrc,_noCoords:!lat};
+      const enriched=window.google?.maps?.places?await enrichOneAsync(base):null;
+      const fi=enriched?{...enriched,_listSource:listSrc,url}:base;
+      if(tripRef.current.interestBank.some(ex=>isTakeoutDup(fi,ex))){toast(`"${fi.name}" כבר קיים`,'error');setLinkImporting(false);return;}
+      onUpdate({...tripRef.current,interestBank:[...tripRef.current.interestBank,fi]});
+      toast(`✓ "${fi.name}" נוסף לאטרקציות`,'success');
+      setShowLinkImport(false);setLinkUrl('');
     }catch(e){
-      toast('שגיאה בטעינת הקישור: '+e.message,'error');
+      toast('שגיאה: '+e.message,'error');
     }
     setLinkImporting(false);
   };
@@ -2297,16 +2353,14 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
 
           {/* הסבר */}
           <div style={{background:'var(--bg3)',borderRadius:10,padding:12,fontSize:12,lineHeight:1.9,color:'var(--text2)'}}>
-            <div style={{fontWeight:700,color:'var(--text)',marginBottom:4,fontSize:13}}>✅ מתאים ל — מקום בודד</div>
-            1. פתח גוגל מפות וחפש מקום ספציפי<br/>
-            2. לחץ <strong>שתף</strong> (↗) → <strong>העתק קישור</strong><br/>
-            3. הדבק את הקישור למטה<br/>
-            <div style={{marginTop:8,padding:'7px 10px',background:'#fef3c7',borderRadius:7,border:'1px solid #fbbf24'}}>
-              <span style={{fontWeight:700,color:'#92400e'}}>❌ לא עובד — רשימות מקומות</span><br/>
-              <span style={{color:'#78350f',fontSize:11}}>
-                שיתוף של "מועדפים" / "Want to go" / רשימה → הנתונים נטענים ב-JavaScript של גוגל ולא נגישים.<br/>
-                <strong>לייבוא רשימות שלמות: השתמש ב-⭐ ייבא מ-Google Takeout</strong>
-              </span>
+            <div style={{fontWeight:700,color:'var(--text)',marginBottom:6,fontSize:13}}>תומך בשני סוגי קישורים:</div>
+            <div style={{marginBottom:6}}>
+              <span style={{fontWeight:700,color:'var(--green)'}}>📍 מקום בודד</span> — שתף מקום ספציפי בגוגל מפות<br/>
+              <span style={{color:'var(--text3)',fontSize:11}}>לחץ על מקום ← ↗ שתף ← העתק קישור</span>
+            </div>
+            <div>
+              <span style={{fontWeight:700,color:'var(--green)'}}>🗂️ רשימה שלמה</span> — שתף רשימת מועדפים / רוצה לבקר / רשימה מותאמת<br/>
+              <span style={{color:'var(--text3)',fontSize:11}}>תפריט ☰ ← Saved ← בחר רשימה ← שתף (↗) ← העתק קישור</span>
             </div>
           </div>
 
