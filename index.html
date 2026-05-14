@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v26';
+const APP_VERSION = 'v27';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -482,20 +482,23 @@ const parseTakeoutCSV = text => {
     vals.push(cur);
     return vals.map(v => v.trim());
   };
-  const header = parseRow(lines[0]).map(h => h.toLowerCase());
-  const titleIdx  = header.indexOf('title');
-  const noteIdx   = header.indexOf('note');
-  const urlIdx    = header.indexOf('url');
+  const header = parseRow(lines[0]).map(h => h.toLowerCase().trim());
+  // מיפוי כותרות — תמיכה בעברית ובאנגלית
+  const findCol = (...names) => { for(const n of names){ const i=header.indexOf(n); if(i>=0) return i; } return -1; };
+  const titleIdx = findCol('title','כותרת','שם','name');
+  const noteIdx  = findCol('note','הערה','notes','תגובה','comment');
+  const urlIdx   = findCol('url','כתובת אתר','website','link','קישור','google maps url');
   if (titleIdx === -1) return []; // לא נראה כקובץ Takeout
+  // דלג על שורות ריקות לחלוטין (שורה 2 בקובצי גוגל בדרך כלל ריקה)
   return lines.slice(1).map(line => {
-    if (!line.trim()) return null;
+    if (!line.trim()||line.split(',').every(c=>!c.trim())) return null;
     const v = parseRow(line);
     const name    = (v[titleIdx] || '').trim();
     const note    = noteIdx  >= 0 ? (v[noteIdx]  || '').trim() : '';
     const website = urlIdx   >= 0 ? (v[urlIdx]   || '').trim() : '';
     if (!name) return null;
     return { id: uid(), name, address: '', lat: null, lng: null, website,
-             notes: note, _noCoords: true }; // _noCoords → tooltip להעשרה
+             notes: note, _noCoords: true };
   }).filter(Boolean);
 };
 
