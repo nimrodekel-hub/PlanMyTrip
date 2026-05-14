@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v31';
+const APP_VERSION = 'v32';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -1108,10 +1108,11 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
 
     // סמני בנק אטרקציות — צבע וסמל לפי מקור הרשימה
     const BANK_ICON={
-      liked:   {color:'#ec4899',label:'♥',scale:9},   // ❤️ מועדפים
-      wantToGo:{color:'#22c55e',label:'⚑',scale:9},   // 🏴 רוצה להגיע
-      saved:   {color:'#f59e0b',label:'★',scale:8},   // ⭐ מקומות שמורים
-      list:    {color:'#6366f1',label:'♦',scale:8},   // 📋 רשימה
+      liked:    {color:'#ec4899',label:'♥',scale:9},   // ❤️ מועדפים
+      wantToGo: {color:'#22c55e',label:'⚑',scale:9},   // 🏴 רוצה להגיע
+      saved:    {color:'#f59e0b',label:'★',scale:8},   // ⭐ מקומות שמורים
+      list:     {color:'#6366f1',label:'♦',scale:8},   // 📋 רשימה
+      itinerary:{color:'#0ea5e9',label:'✈',scale:8},   // 🧳 תוכנית נסיעה
     };
     trip.interestBank.forEach(item=>{
       if (!item.lat) return;
@@ -2299,10 +2300,11 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
             </label>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
               {[
-                {val:'liked',   emoji:'❤️', label:'מועדפים (לב)',    color:'#ec4899'},
-                {val:'wantToGo',emoji:'🏴', label:'רוצה לבקר (דגל)',color:'#22c55e'},
-                {val:'saved',   emoji:'⭐', label:'שמור (כוכב)',     color:'#f59e0b'},
-                {val:'list',    emoji:'📋', label:'רשימה (יהלום)',   color:'#6366f1'},
+                {val:'liked',     emoji:'❤️', label:'מועדפים (לב)',       color:'#ec4899'},
+                {val:'wantToGo',  emoji:'🏴', label:'רוצה לבקר (דגל)',   color:'#22c55e'},
+                {val:'saved',     emoji:'⭐', label:'שמור (כוכב)',        color:'#f59e0b'},
+                {val:'list',      emoji:'📋', label:'רשימה (יהלום)',      color:'#6366f1'},
+                {val:'itinerary', emoji:'🧳', label:'תוכנית נסיעה (מטוס)',color:'#0ea5e9'},
               ].map(opt=>(
                 <div key={opt.val}
                   onClick={()=>setLinkSource(opt.val)}
