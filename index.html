@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v36';
+const APP_VERSION = 'v37';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -2053,12 +2053,12 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
     const m=html.match(/<link[^>]+href="(\/maps\/preview\/entitylist\/getlist[^"]+)"[^>]*as="fetch"/i)
            ||html.match(/<link[^>]*as="fetch"[^>]+href="(\/maps\/preview\/entitylist\/getlist[^"]+)"/i);
     if(m){
-      const href=m[1].replace(/&amp;/g,'&');
-      /* שנה 4i500 אם לא קיים — מבטיח עד 500 פריטים */
+      /* הגדל את המגבלה ל-2000 פריטים (גוגל ברירת מחדל: 500) */
+      const href=m[1].replace(/&amp;/g,'&').replace(/4i\d+/,'4i2000');
       return 'https://www.google.com'+href;
     }
     /* fallback — pb מינימלי מ-listId */
-    const pb=`!1m4!1s${listId}!2e2!3m1!1e1!2e2!3e2!4i500`;
+    const pb=`!1m4!1s${listId}!2e2!3m1!1e1!2e2!3e2!4i2000`;
     return `https://www.google.com/maps/preview/entitylist/getlist?hl=en&pb=${encodeURIComponent(pb)}`;
   };
 
@@ -2071,6 +2071,8 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
     const listData=data[0];
     const listName=listData[4]||'רשימה';
     const placeEntries=listData[8]||[];
+    /* total count מה-metadata (ייתכן שרשימה גדולה חוזרת חלקית) */
+    const totalInList=typeof listData[12]==='number'?listData[12]:placeEntries.length;
     const places=[];
     for(const p of placeEntries){
       try{
@@ -2089,7 +2091,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
         });
       }catch{}
     }
-    return{listName,places};
+    return{listName,places,totalInList};
   };
 
   /* ─── ייבוא רשימה שלמה מ-API ─── */
@@ -2097,7 +2099,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
     const apiUrl=buildListApiUrl(html,listId);
     const{html:apiResp}=await fetchViaProxy(apiUrl);
     if(!apiResp||!apiResp.includes(")]}'")) throw new Error('לא ניתן לשלוף את נתוני הרשימה מגוגל');
-    const{listName,places}=parseGmapsListResponse(apiResp);
+    const{listName,places,totalInList}=parseGmapsListResponse(apiResp);
     if(!places.length) throw new Error('הרשימה ריקה — לא נמצאו מקומות');
     /* שיוך מקור + כפילויות */
     places.forEach(p=>p._listSource=listSrc);
@@ -2107,8 +2109,12 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
     if(newPlaces.length>0){
       onUpdate({...tripRef.current,interestBank:[...existing,...newPlaces]});
     }
-    const msg=`✓ יובאו ${newPlaces.length} מקומות מ"${listName}"${dupCount?` (${dupCount} כפילויות דולגו)`:''}`;
-    toast(msg,'success');
+    /* אם קיבלנו פחות מהסה"כ — הצג אזהרה */
+    const partial=totalInList>places.length;
+    const msg=`✓ יובאו ${newPlaces.length} מקומות מ"${listName}"`
+      +(dupCount?` (${dupCount} כפילויות דולגו)`:'')
+      +(partial?` ⚠️ הרשימה מכילה ${totalInList} — ייתכן שחלק לא יובא, נסה שוב`:'');
+    toast(msg,partial?'error':'success');
   };
 
   /* ─── כניסה ראשית: מקום בודד או רשימה ─── */
