@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v47';
+const APP_VERSION = 'v48';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -2126,35 +2126,38 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
     return{listName,places,totalInList};
   };
 
-  /* ─── שליחת בקשה דרך פרוקסי: מנסה 3 פרוקסים במקביל עם cache-bust ─── */
+  /* ─── שליחת בקשה דרך פרוקסי: מנסה פרוקסים אחד-אחד (סדרתי!) ─── */
   const fetchListViaProxy=async(apiUrl)=>{
-    /* AbortController משותף — ברגע שאחד מצליח, שאר הבקשות מבוטלות מיד */
-    const ctrl=new AbortController();
-    const deadline=AbortSignal.timeout(15000);
-    const mkSig=()=>typeof AbortSignal.any==='function'
-      ?AbortSignal.any([ctrl.signal,deadline])
-      :deadline;
-    const mkReq=(url,isJson)=>fetch(url,{signal:mkSig()})
-      .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return isJson?r.json():r.text();})
-      .then(d=>{const t=isJson?d?.contents||'':d;if(!t.includes(")]}'"))throw new Error('no-data');return t;});
+    /* חשוב: סדרתי, לא מקבילי!
+       מקבילי = 2–3 בקשות בו-זמנית לאותו proxy → גוגל עושה rate-limit ל-IP של ה-proxy
+       → כל הייבואים הבאים נכשלים עד שה-rate-limit מתאפס (~דקה).
+       סדרתי = בקשה אחת בכל פעם; אם הצליח נעצור, אם נכשל עוברים לבא. */
+    const tryOne=async(url,isJson)=>{
+      const ctrl=new AbortController();
+      const t=setTimeout(()=>ctrl.abort('timeout'),7000);
+      try{
+        const r=await fetch(url,{signal:ctrl.signal});
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        const d=isJson?await r.json():await r.text();
+        const text=isJson?d?.contents||'':d;
+        if(!text.includes(")]}'")) throw new Error('no-data');
+        return text;
+      }finally{clearTimeout(t);}
+    };
 
-    /* קנדידטים: פרוקסי אישי קודם (אם מוגדר), אחר-כך הציבוריים */
+    const enc=encodeURIComponent(apiUrl);
     const customProxy=(settings?.proxyUrl||'').trim().replace(/\/$/,'');
-    const candidates=[];
-    if(customProxy) candidates.push(mkReq(`${customProxy}?url=${encodeURIComponent(apiUrl)}`,false));
-    candidates.push(
-      mkReq(`https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`,false),
-      mkReq(`https://api.allorigins.win/get?url=${encodeURIComponent(apiUrl)}`,true),
-      mkReq(`https://test.cors.workers.dev/?${apiUrl}`,false),
-    );
-    try{
-      const result=await Promise.any(candidates);
-      ctrl.abort('done');
-      return result;
-    }catch(e){
-      ctrl.abort('failed');
-      throw e;
+    const list=[
+      ...(customProxy?[{u:`${customProxy}?url=${enc}`,j:false}]:[]),
+      {u:`https://api.allorigins.win/raw?url=${enc}`,j:false},
+      {u:`https://api.allorigins.win/get?url=${enc}`,j:true},
+      {u:`https://test.cors.workers.dev/?${apiUrl}`,j:false},
+    ];
+
+    for(const{u,j} of list){
+      try{return await tryOne(u,j);}catch{}
     }
+    throw new Error('all proxies failed');
   };
 
   /* ─── ייבוא רשימה — עם retry אוטומטי עד 3 פעמים ─── */
