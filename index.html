@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v29';
+const APP_VERSION = 'v31';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -1379,7 +1379,7 @@ function BlockModal({block,onSave,onClose,onDelete}){
 /* ══════════════════════════════════
    בלוק בציר הזמן
 ══════════════════════════════════ */
-function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem,dragging,dragOver,onDragStart,onDragOver,onDrop,onDragEnd}){
+function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem,dragging,dragOver,onDragStart,onDragOver,onDrop,onDragEnd,nowProgress}){
   const end=addMins(block.startTime,block.durationMins);
   const col=BLOCK_COLOR[block.type]||'var(--text3)';
   const btnStyle={background:'none',border:'none',cursor:'pointer',padding:'2px 5px',borderRadius:4,fontSize:15,lineHeight:1,flexShrink:0};
@@ -1387,7 +1387,7 @@ function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem,dragging,drag
     onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd}
     style={{opacity:dragging?0.35:1,transition:'opacity .15s',borderTop:dragOver?'2px solid var(--accent)':'2px solid transparent'}}>
     <div className="timeline-dot" style={{background:col,cursor:'grab'}}>☰</div>
-    <div className={`card block-${block.type}`} style={{flex:1,marginRight:4,opacity:block.isCompleted?0.6:1}}>
+    <div className={`card block-${block.type}`} style={{flex:1,marginRight:4,opacity:block.isCompleted?0.6:1,position:'relative',overflow:'hidden'}}>
       <div style={{padding:'8px 12px'}}>
         {/* שורת כותרת: שעה + כפתורי פעולה */}
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:6,marginBottom:4}}>
@@ -1429,6 +1429,20 @@ function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem,dragging,drag
           {block.cost>0&&<span style={{fontSize:11,color:'var(--amber)'}}>💰 ₪{block.cost.toFixed(0)}</span>}
         </div>
       </div>
+      {/* קו "עכשיו" בתוך הבלוק — מופיע כשהשעה הנוכחית תוך כדי פעילות זו */}
+      {nowProgress!=null&&<div style={{
+        position:'absolute',left:0,right:0,
+        top:`${Math.max(2,Math.min(96,nowProgress*100))}%`,
+        display:'flex',alignItems:'center',gap:0,
+        pointerEvents:'none',zIndex:10,
+      }}>
+        <span style={{background:'#ef4444',color:'#fff',fontSize:9,fontWeight:700,
+          padding:'1px 6px',borderRadius:'0 6px 6px 0',
+          flexShrink:0,letterSpacing:'0.02em',boxShadow:'0 1px 3px #0004'}}>
+          ⏱ {nowTime()}
+        </span>
+        <div style={{flex:1,height:2,background:'#ef4444',opacity:0.85,borderRadius:1}}/>
+      </div>}
     </div>
   </div>;
 }
@@ -1567,25 +1581,47 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
           const toMins=t=>{const[h,m]=(t||'00:00').split(':').map(Number);return h*60+m;};
           const nowMins=toMins(nowTime());
           const isToday=!day.date||day.date===todayISO();
+
+          /* מצא בלוק פעיל — כשהשעה הנוכחית בתוך משך הבלוק */
+          let activeIdx=-1;
+          let nowBlockProgress=null;
+          /* מצא נקודת הוספה בין בלוקים (כאשר אין בלוק פעיל) */
           let nowInsert=-1;
+
           if(isToday&&sorted.length>0){
             const firstMins=toMins(sorted[0].startTime);
             const lastEnd=toMins(sorted[sorted.length-1].startTime)+(sorted[sorted.length-1].durationMins||60);
             if(nowMins>=firstMins-5&&nowMins<=lastEnd+30){
-              nowInsert=sorted.findIndex(b=>nowMins<toMins(b.startTime));
-              if(nowInsert===-1) nowInsert=sorted.length;
+              /* בדוק האם השעה בתוך בלוק כלשהו */
+              activeIdx=sorted.findIndex(b=>{
+                const s=toMins(b.startTime);
+                return nowMins>=s&&nowMins<s+(b.durationMins||60);
+              });
+              if(activeIdx>=0){
+                /* חשב התקדמות יחסית בתוך הבלוק (0–1) */
+                const s=toMins(sorted[activeIdx].startTime);
+                nowBlockProgress=(nowMins-s)/(sorted[activeIdx].durationMins||60);
+              } else {
+                /* בין בלוקים — חשב מיקום הוספה */
+                nowInsert=sorted.findIndex(b=>nowMins<toMins(b.startTime));
+                if(nowInsert===-1) nowInsert=sorted.length;
+              }
             }
           }
+
+          /* קו בין-בלוקים */
           const nowLine=<div key="__nowline__" style={{display:'flex',alignItems:'center',gap:6,margin:'2px 0',pointerEvents:'none'}}>
             <span style={{background:'#ef4444',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:10,flexShrink:0,letterSpacing:'0.02em'}}>
               ⏱ {nowTime()}
             </span>
             <div style={{flex:1,height:2,background:'#ef4444',borderRadius:2,opacity:0.75}}/>
           </div>;
+
           return sorted.map((bl,si)=>[
             nowInsert===si&&nowLine,
             <BlockItem key={bl.id} block={bl} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onFocusItem={onFocusItem}
               dragging={dragOver!==null&&dragIdxRef.current===si} dragOver={dragOver===si}
+              nowProgress={activeIdx===si?nowBlockProgress:null}
               onDragStart={e=>{e.dataTransfer.effectAllowed='move';dragIdxRef.current=si;}}
               onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move';if(dragOver!==si)setDragOver(si);}}
               onDrop={e=>{e.preventDefault();handleDrop(si);}}
@@ -1798,6 +1834,10 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=fals
 ══════════════════════════════════ */
 function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
   const[showTakeout,setShowTakeout]=useState(false);
+  const[showLinkImport,setShowLinkImport]=useState(false);
+  const[linkUrl,setLinkUrl]=useState('');
+  const[linkSource,setLinkSource]=useState('saved'); // liked|wantToGo|saved|list
+  const[linkImporting,setLinkImporting]=useState(false);
   const[selected,setSelected]=useState(()=>new Set());
   const[enrichingId,setEnrichingId]=useState(null);
   const[batchProgress,setBatchProgress]=useState(null); // null | {done,total,name}
@@ -1950,6 +1990,97 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
     setBatchProgress(null);
     const skipped=toEnrich.length-successCount;
     toast(`הושלמו ${successCount} פריטים${skipped?` (${skipped} לא נמצאו)`:''}  ✓`,'success');
+  };
+
+  /* ייבוא מקישור שיתוף של גוגל מפות (maps.app.goo.gl או maps.google.com) */
+  const importFromLink=async(rawUrl,listSrc)=>{
+    const url=(rawUrl||'').trim();
+    if(!url){toast('הזן קישור לגוגל מפות','error');return;}
+    setLinkImporting(true);
+    try{
+      let finalUrl=url;
+      let placeName='';
+      let lat=null,lng=null;
+
+      /* ─── שלב 1: פתרון קישור קצר דרך allorigins.win ─── */
+      if(/goo\.gl|maps\.app\.goo\.gl/.test(url)){
+        try{
+          const proxyRes=await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+          const proxyData=await proxyRes.json();
+          /* URL הסופי לאחר redirect */
+          if(proxyData?.status?.url) finalUrl=proxyData.status.url;
+          /* שם מ-OG title */
+          const html=proxyData?.contents||'';
+          const ogTitle=html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i)?.[1]
+                      ||html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:title"/i)?.[1]
+                      ||html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
+          if(ogTitle) placeName=ogTitle.replace(/\s*[-–|]?\s*Google Maps$/i,'').trim();
+          /* קואורדינטות מה-URL הסופי */
+          const coordMatch=(proxyData?.status?.url||'').match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+          if(coordMatch){lat=parseFloat(coordMatch[1]);lng=parseFloat(coordMatch[2]);}
+        }catch(e){/* allorigins נכשל — ממשיכים עם מה שיש */}
+      }
+
+      /* ─── שלב 2: חילוץ מ-URL מלא ─── */
+      if(!placeName){
+        const nameMatch=finalUrl.match(/\/maps\/place\/([^/@?&#]+)/);
+        if(nameMatch) placeName=decodeURIComponent(nameMatch[1].replace(/\+/g,' '));
+        /* נסה גם q= param */
+        if(!placeName){
+          const qMatch=finalUrl.match(/[?&]q=([^&]+)/);
+          if(qMatch) placeName=decodeURIComponent(qMatch[1].replace(/\+/g,' '));
+        }
+      }
+      if(!lat){
+        const coordMatch=finalUrl.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+        if(coordMatch){lat=parseFloat(coordMatch[1]);lng=parseFloat(coordMatch[2]);}
+        /* נסה גם !3d / !4d */
+        if(!lat){
+          const d3=finalUrl.match(/!3d(-?\d+\.?\d*)/);
+          const d4=finalUrl.match(/!4d(-?\d+\.?\d*)/);
+          if(d3&&d4){lat=parseFloat(d3[1]);lng=parseFloat(d4[1]);}
+        }
+      }
+
+      if(!placeName&&!lat){
+        toast('לא ניתן לפרש את הקישור — נסה להעתיק קישור ישיר מגוגל מפות','error');
+        setLinkImporting(false); return;
+      }
+
+      /* ─── שלב 3: בניית פריט בסיסי ─── */
+      const baseItem={
+        id:uid(),
+        name:placeName||'מקום מגוגל מפות',
+        address:'',
+        lat,lng,
+        url,
+        _listSource:listSrc,
+        _noCoords:!lat,
+      };
+
+      /* ─── שלב 4: העשרה מגוגל מפות ─── */
+      let finalItem=baseItem;
+      if(window.google?.maps?.places){
+        const enriched=await enrichOneAsync(baseItem);
+        if(enriched) finalItem={...enriched,_listSource:listSrc,url};
+      }
+
+      /* ─── שלב 5: בדיקת כפילות ─── */
+      const isDup=tripRef.current.interestBank.some(ex=>isTakeoutDup(finalItem,ex));
+      if(isDup){
+        toast(`"${finalItem.name}" כבר קיים ברשימת האטרקציות`,'error');
+        setLinkImporting(false); return;
+      }
+
+      /* ─── שלב 6: הוסף לבנק אטרקציות ─── */
+      onUpdate({...tripRef.current,interestBank:[...tripRef.current.interestBank,finalItem]});
+      toast(`✓ "${finalItem.name}" נוסף לאטרקציות`,'success');
+      setShowLinkImport(false);
+      setLinkUrl('');
+    }catch(e){
+      toast('שגיאה בטעינת הקישור: '+e.message,'error');
+    }
+    setLinkImporting(false);
   };
 
   /* ייבוא Google Takeout — JSON (קואורדינטות) + CSV (לבבות/Want to go/רשימות) */
@@ -2117,10 +2248,92 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
         onClick={()=>{const n=prompt('שם המקום:');if(n)addToBank({name:n,address:'',id:uid()});}}>
         + הוסף ידנית
       </button>
+      <button className="btn btn-secondary btn-sm" style={{width:'100%',background:'var(--bg3)',border:'1px solid var(--border)'}}
+        onClick={()=>setShowLinkImport(true)}>
+        🔗 ייבא מקישור גוגל מפות
+      </button>
       <button className="btn btn-amber btn-sm" style={{width:'100%'}} onClick={()=>setShowTakeout(true)}>
         ⭐ ייבא מ-Google Takeout
       </button>
     </div>
+
+    {/* מודל ייבוא מקישור גוגל מפות */}
+    {showLinkImport&&<div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowLinkImport(false)}>
+      <div className="modal" style={{maxWidth:480,width:'95vw'}}>
+        <div className="modal-header">
+          <span style={{fontWeight:700}}>🔗 ייבוא מקישור גוגל מפות</span>
+          <button className="btn btn-secondary btn-icon btn-sm" onClick={()=>setShowLinkImport(false)}>✕</button>
+        </div>
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+
+          {/* הסבר */}
+          <div style={{background:'var(--bg3)',borderRadius:10,padding:12,fontSize:12,lineHeight:1.9,color:'var(--text2)'}}>
+            <div style={{fontWeight:700,color:'var(--text)',marginBottom:4,fontSize:13}}>איך לשתף מקום מגוגל מפות?</div>
+            1. פתח את גוגל מפות וחפש מקום<br/>
+            2. לחץ <strong>שתף</strong> (↗ Share) → <strong>העתק קישור</strong><br/>
+            3. הדבק את הקישור למטה<br/>
+            <span style={{color:'var(--text3)',fontSize:11}}>✅ תומך גם בקישורים קצרים (maps.app.goo.gl) וגם מלאים</span>
+          </div>
+
+          {/* שדה URL */}
+          <div>
+            <label style={{fontSize:12,fontWeight:600,color:'var(--text2)',display:'block',marginBottom:5}}>
+              קישור גוגל מפות
+            </label>
+            <input
+              type="url"
+              value={linkUrl}
+              onChange={e=>setLinkUrl(e.target.value)}
+              placeholder="https://maps.app.goo.gl/..."
+              style={{width:'100%',padding:'8px 10px',borderRadius:8,border:'1px solid var(--border)',
+                background:'var(--bg2)',color:'var(--text)',fontSize:13,direction:'ltr',boxSizing:'border-box'}}
+              onKeyDown={e=>e.key==='Enter'&&!linkImporting&&importFromLink(linkUrl,linkSource)}
+              autoFocus
+            />
+          </div>
+
+          {/* סוג הרשימה */}
+          <div>
+            <label style={{fontSize:12,fontWeight:600,color:'var(--text2)',display:'block',marginBottom:8}}>
+              סוג הסימון במפה
+            </label>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+              {[
+                {val:'liked',   emoji:'❤️', label:'מועדפים (לב)',    color:'#ec4899'},
+                {val:'wantToGo',emoji:'🏴', label:'רוצה לבקר (דגל)',color:'#22c55e'},
+                {val:'saved',   emoji:'⭐', label:'שמור (כוכב)',     color:'#f59e0b'},
+                {val:'list',    emoji:'📋', label:'רשימה (יהלום)',   color:'#6366f1'},
+              ].map(opt=>(
+                <div key={opt.val}
+                  onClick={()=>setLinkSource(opt.val)}
+                  style={{
+                    padding:'9px 12px',borderRadius:9,cursor:'pointer',fontSize:13,fontWeight:600,
+                    display:'flex',alignItems:'center',gap:8,
+                    border:`2px solid ${linkSource===opt.val?opt.color:'var(--border)'}`,
+                    background:linkSource===opt.val?opt.color+'22':'var(--bg3)',
+                    color:linkSource===opt.val?opt.color:'var(--text2)',
+                    transition:'all 0.15s',
+                  }}>
+                  <span style={{fontSize:16}}>{opt.emoji}</span>
+                  <span>{opt.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* כפתור ייבוא */}
+          <button
+            className="btn btn-primary"
+            style={{width:'100%',justifyContent:'center',gap:8,fontSize:14,fontWeight:700,padding:'10px 0'}}
+            disabled={linkImporting||!linkUrl.trim()}
+            onClick={()=>importFromLink(linkUrl,linkSource)}>
+            {linkImporting
+              ? <><span style={{display:'inline-block',animation:'spin 1s linear infinite'}}>⏳</span> מייבא...</>
+              : '🔗 ייבא מקום'}
+          </button>
+        </div>
+      </div>
+    </div>}
 
     {/* מודל ייבוא Takeout */}
     {showTakeout&&<div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowTakeout(false)}>
