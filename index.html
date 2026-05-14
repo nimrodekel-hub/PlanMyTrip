@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v33';
+const APP_VERSION = 'v34';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -2000,86 +2000,99 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
   };
 
   /* ייבוא מקישור שיתוף של גוגל מפות (maps.app.goo.gl או maps.google.com) */
+
+  /* ─── חילוץ שם + קואורדינטות מ-URL מלא ─── */
+  const parseMapsUrl=urlStr=>{
+    let name='',lat=null,lng=null;
+    const nameM=urlStr.match(/\/maps\/place\/([^/@?&#]+)/);
+    if(nameM) name=decodeURIComponent(nameM[1].replace(/\+/g,' '));
+    if(!name){const qM=urlStr.match(/[?&]q=([^&#]+)/);if(qM) name=decodeURIComponent(qM[1].replace(/\+/g,' '));}
+    const cM=urlStr.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if(cM){lat=parseFloat(cM[1]);lng=parseFloat(cM[2]);}
+    if(!lat){const d3=urlStr.match(/!3d(-?\d+\.\d+)/),d4=urlStr.match(/!4d(-?\d+\.\d+)/);if(d3&&d4){lat=parseFloat(d3[1]);lng=parseFloat(d4[1]);}}
+    return{name,lat,lng};
+  };
+
+  /* ─── שליפת HTML + URL הסופי דרך proxy ─── */
+  const fetchViaProxy=async(targetUrl)=>{
+    /* מנסה allorigins, ואם נכשל — corsproxy.io */
+    const proxies=[
+      async()=>{
+        const r=await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,{signal:AbortSignal.timeout(8000)});
+        const d=await r.json();
+        return{finalUrl:d?.status?.url||'',html:d?.contents||''};
+      },
+      async()=>{
+        const r=await fetch(`https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,{signal:AbortSignal.timeout(8000)});
+        const html=await r.text();
+        /* corsproxy מחזיר HTML ישירות; URL הסופי מה-header לא נגיש — מנסה לחלץ מה-HTML */
+        const canonM=html.match(/<link[^>]+rel="canonical"[^>]+href="([^"]+)"/i);
+        return{finalUrl:canonM?.[1]||'',html};
+      },
+    ];
+    for(const tryProxy of proxies){
+      try{return await tryProxy();}catch{}
+    }
+    return{finalUrl:'',html:''};
+  };
+
+  /* ─── חילוץ שם מ-HTML (OG title / title tag) ─── */
+  const extractNameFromHtml=html=>{
+    const og=html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i)?.[1]
+             ||html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:title"/i)?.[1]
+             ||html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]||'';
+    return og.replace(/^Google Maps\s*[-–|·]?\s*/i,'').replace(/\s*[-–|·]?\s*Google Maps$/i,'').trim();
+  };
+
   const importFromLink=async(rawUrl,listSrc)=>{
     const url=(rawUrl||'').trim();
     if(!url){toast('הזן קישור לגוגל מפות','error');return;}
     setLinkImporting(true);
     try{
-      let finalUrl=url;
       let placeName='';
       let lat=null,lng=null;
 
-      /* ─── שלב 1: פתרון קישור קצר דרך allorigins.win ─── */
-      if(/goo\.gl|maps\.app\.goo\.gl/.test(url)){
-        try{
-          const proxyRes=await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
-          const proxyData=await proxyRes.json();
-          /* URL הסופי לאחר redirect */
-          if(proxyData?.status?.url) finalUrl=proxyData.status.url;
-          /* שם מ-OG title */
-          const html=proxyData?.contents||'';
-          const ogTitle=html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i)?.[1]
-                      ||html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:title"/i)?.[1]
-                      ||html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
-          if(ogTitle) placeName=ogTitle.replace(/\s*[-–|]?\s*Google Maps$/i,'').trim();
-          /* קואורדינטות מה-URL הסופי */
-          const coordMatch=(proxyData?.status?.url||'').match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-          if(coordMatch){lat=parseFloat(coordMatch[1]);lng=parseFloat(coordMatch[2]);}
-        }catch(e){/* allorigins נכשל — ממשיכים עם מה שיש */}
+      /* ─── שלב 1: קישור מלא — חלץ ישירות ─── */
+      if(!(/goo\.gl/.test(url))){
+        const p=parseMapsUrl(url);
+        placeName=p.name; lat=p.lat; lng=p.lng;
       }
 
-      /* ─── שלב 2: חילוץ מ-URL מלא ─── */
-      if(!placeName){
-        const nameMatch=finalUrl.match(/\/maps\/place\/([^/@?&#]+)/);
-        if(nameMatch) placeName=decodeURIComponent(nameMatch[1].replace(/\+/g,' '));
-        /* נסה גם q= param */
-        if(!placeName){
-          const qMatch=finalUrl.match(/[?&]q=([^&]+)/);
-          if(qMatch) placeName=decodeURIComponent(qMatch[1].replace(/\+/g,' '));
-        }
-      }
-      if(!lat){
-        const coordMatch=finalUrl.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-        if(coordMatch){lat=parseFloat(coordMatch[1]);lng=parseFloat(coordMatch[2]);}
-        /* נסה גם !3d / !4d */
-        if(!lat){
-          const d3=finalUrl.match(/!3d(-?\d+\.?\d*)/);
-          const d4=finalUrl.match(/!4d(-?\d+\.?\d*)/);
-          if(d3&&d4){lat=parseFloat(d3[1]);lng=parseFloat(d4[1]);}
-        }
-      }
-
+      /* ─── שלב 2: קישור קצר (goo.gl) — פתרון דרך proxy ─── */
       if(!placeName&&!lat){
-        toast('לא ניתן לפרש את הקישור — נסה להעתיק קישור ישיר מגוגל מפות','error');
+        const{finalUrl,html}=await fetchViaProxy(url);
+        /* נסה לחלץ מה-URL הסופי */
+        if(finalUrl){const p=parseMapsUrl(finalUrl);if(p.name)placeName=p.name;if(p.lat){lat=p.lat;lng=p.lng;}}
+        /* נסה לחלץ שם מה-HTML */
+        if(!placeName&&html) placeName=extractNameFromHtml(html);
+        /* נסה קואורדינטות מה-HTML עצמו (לפעמים מופיעות ב-meta) */
+        if(!lat&&html){const cM=(finalUrl||html).match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);if(cM){lat=parseFloat(cM[1]);lng=parseFloat(cM[2]);}}
+      }
+
+      /* ─── שלב 3: אם אין שם בכלל — בדוק Google Places לפי URL ─── */
+      /* גם URL קצר שלא פוענח — עדיין נוסיף עם שם זמני ונעשיר */
+      if(!placeName){
+        toast('לא ניתן לפרש את הקישור — נסה להדביק קישור ישיר (לחץ ״שתף״ בגוגל מפות ← ״העתק קישור״)','error');
         setLinkImporting(false); return;
       }
 
-      /* ─── שלב 3: בניית פריט בסיסי ─── */
-      const baseItem={
-        id:uid(),
-        name:placeName||'מקום מגוגל מפות',
-        address:'',
-        lat,lng,
-        url,
-        _listSource:listSrc,
-        _noCoords:!lat,
-      };
+      /* ─── שלב 4: בניית פריט בסיסי ─── */
+      const baseItem={id:uid(),name:placeName,address:'',lat,lng,url,_listSource:listSrc,_noCoords:!lat};
 
-      /* ─── שלב 4: העשרה מגוגל מפות ─── */
+      /* ─── שלב 5: העשרה מגוגל מפות (Places API) ─── */
       let finalItem=baseItem;
       if(window.google?.maps?.places){
         const enriched=await enrichOneAsync(baseItem);
         if(enriched) finalItem={...enriched,_listSource:listSrc,url};
+      }else{
+        toast('💡 גוגל מפות אינו זמין — הפריט נוסף ללא פרטים מלאים','info');
       }
 
-      /* ─── שלב 5: בדיקת כפילות ─── */
+      /* ─── שלב 6: בדיקת כפילות ─── */
       const isDup=tripRef.current.interestBank.some(ex=>isTakeoutDup(finalItem,ex));
-      if(isDup){
-        toast(`"${finalItem.name}" כבר קיים ברשימת האטרקציות`,'error');
-        setLinkImporting(false); return;
-      }
+      if(isDup){toast(`"${finalItem.name}" כבר קיים ברשימת האטרקציות`,'error');setLinkImporting(false);return;}
 
-      /* ─── שלב 6: הוסף לבנק אטרקציות ─── */
+      /* ─── שלב 7: הוסף לבנק ─── */
       onUpdate({...tripRef.current,interestBank:[...tripRef.current.interestBank,finalItem]});
       toast(`✓ "${finalItem.name}" נוסף לאטרקציות`,'success');
       setShowLinkImport(false);
@@ -2310,7 +2323,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
                 {val:'wantToGo',  emoji:'🏴', label:'רוצה לבקר (דגל)',   color:'#22c55e'},
                 {val:'saved',     emoji:'⭐', label:'שמור (כוכב)',        color:'#f59e0b'},
                 {val:'list',      emoji:'📋', label:'רשימה (יהלום)',      color:'#6366f1'},
-                {val:'itinerary', emoji:'🧳', label:'תוכנית נסיעה (מטוס)',color:'#0ea5e9'},
+                {val:'itinerary', emoji:'🧳', label:'תוכנית נסיעה (לינה)',color:'#16a34a'},
               ].map(opt=>(
                 <div key={opt.val}
                   onClick={()=>setLinkSource(opt.val)}
