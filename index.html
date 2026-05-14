@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v39';
+const APP_VERSION = 'v40';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -2046,23 +2046,25 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
   /* ─── חילוץ ID רשימה מ-URL ─── */
   const extractListId=url=>url.match(/!11m2[^!]*!2s([^!?&]+)/)?.[1]||null;
 
-  /* ─── בניית URL של ה-API הפנימי לשליפת רשימה ─── */
-  /* גוגל מפות preload-ает את הנתונים עם pb= מלא; נחלץ אותו מה-HTML ─── */
-  const buildListApiUrl=(html,listId,originalUrl='')=>{
-    /* חלץ את ה-link המדויק מה-HTML */
-    const m=html.match(/<link[^>]+href="(\/maps\/preview\/entitylist\/getlist[^"]+)"[^>]*as="fetch"/i)
-           ||html.match(/<link[^>]*as="fetch"[^>]+href="(\/maps\/preview\/entitylist\/getlist[^"]+)"/i);
-    if(m){
-      /* הגדל את המגבלה ל-2000 פריטים (גוגל ברירת מחדל: 500) */
-      const href=m[1].replace(/&amp;/g,'&').replace(/4i\d+/,'4i2000');
-      return 'https://www.google.com'+href;
-    }
-    /* חלץ סוג רשימה מה-URL: !3e1=מועדפים, !3e7=תוכניות נסיעה, !3e2=ברירת מחדל */
+  /* ─── בניית רשימת URLs של ה-API לניסיון (גנרי לכל סוגי הרשימות) ─── */
+  /* מנסה: 1) preload link מה-HTML  2) pb עם סוג מה-URL  3) pb סוג-2 אוניברסלי */
+  const buildListApiCandidates=(html,listId,originalUrl='')=>{
+    const mkUrl=t=>`https://www.google.com/maps/preview/entitylist/getlist?hl=en&pb=${encodeURIComponent(`!1m4!1s${listId}!2e${t}!3m1!1e1!2e${t}!3e${t}!4i2000`)}`;
+    const seen=new Set();
+    const add=(url)=>{if(url&&!seen.has(url)){seen.add(url);urls.push(url);}};
+    const urls=[];
+    /* 1. preload link מדויק מה-HTML (מגיע מ-goo.gl page fetch) */
+    const preM=(html||'').match(/<link[^>]+href="(\/maps\/preview\/entitylist\/getlist[^"]+)"[^>]*as="fetch"/i)
+              ||(html||'').match(/<link[^>]*as="fetch"[^>]+href="(\/maps\/preview\/entitylist\/getlist[^"]+)"/i);
+    if(preM) add('https://www.google.com'+preM[1].replace(/&amp;/g,'&').replace(/4i\d+/,'4i2000'));
+    /* 2. pb לפי סוג שחולץ מה-URL (למשל !3e7 לתוכניות נסיעה) */
     const typeM=(originalUrl||'').match(/!2s[^!]+!3e(\d+)/);
-    const t=typeM?typeM[1]:'2';
-    /* fallback — pb עם הסוג הנכון */
-    const pb=`!1m4!1s${listId}!2e${t}!3m1!1e1!2e${t}!3e${t}!4i2000`;
-    return `https://www.google.com/maps/preview/entitylist/getlist?hl=en&pb=${encodeURIComponent(pb)}`;
+    if(typeM) add(mkUrl(typeM[1]));
+    /* 3. fallback אוניברסלי — סוג 2 (עובד לרוב הרשימות) */
+    add(mkUrl('2'));
+    /* 4. fallback נוסף — סוג 1 (מועדפים) */
+    add(mkUrl('1'));
+    return urls;
   };
 
   /* ─── פרסור תגובת ה-API של רשימת מקומות ─── */
@@ -2097,23 +2099,20 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
     return{listName,places,totalInList};
   };
 
-  /* ─── ייבוא רשימה שלמה מ-API ─── */
+  /* ─── ייבוא רשימה שלמה מ-API — ניסיון מספר URLs עד שאחד מצליח ─── */
   const importListFromLink=async(listId,html,listSrc,originalUrl='')=>{
-    /* אם אין HTML — ננסה לשלוף את דף גוגל מפות כדי לקבל לינק preload מדויק */
-    let pageHtml=html;
-    if(!pageHtml&&originalUrl){
-      try{
-        const r=await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(originalUrl)}`,{signal:AbortSignal.timeout(8000)});
-        if(r.ok) pageHtml=await r.text();
-      }catch{}
-    }
-    const apiUrl=buildListApiUrl(pageHtml,listId,originalUrl);
+    const candidates=buildListApiCandidates(html,listId,originalUrl);
     /* חובה להשתמש ב-/raw — /get חותך תגובות גדולות (154KB+) */
     let apiResp='';
-    try{
-      const r=await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`,{signal:AbortSignal.timeout(25000)});
-      if(r.ok) apiResp=await r.text();
-    }catch{}
+    for(const apiUrl of candidates){
+      try{
+        const r=await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`,{signal:AbortSignal.timeout(20000)});
+        if(r.ok){
+          const text=await r.text();
+          if(text.includes(")]}'")){ apiResp=text; break; }
+        }
+      }catch{}
+    }
     if(!apiResp||!apiResp.includes(")]}'")) throw new Error('לא ניתן לשלוף את נתוני הרשימה מגוגל (נסה שוב)');
     const{listName,places,totalInList}=parseGmapsListResponse(apiResp);
     if(!places.length) throw new Error('הרשימה ריקה — לא נמצאו מקומות');
