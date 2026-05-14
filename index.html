@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v27';
+const APP_VERSION = 'v28';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -1774,9 +1774,13 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
   const[showTakeout,setShowTakeout]=useState(false);
   const[selected,setSelected]=useState(()=>new Set());
   const[enrichingId,setEnrichingId]=useState(null);
+  const[batchProgress,setBatchProgress]=useState(null); // null | {done,total,name}
   // expanded = קבוצות פתוחות; ברירת מחדל: ריק = כולן סגורות
   const[expanded,setExpanded]=useState(()=>new Set());
   const takeoutRef=useRef(null);
+  // ref לטיול — מונע stale-closure בלולאות async
+  const tripRef=useRef(trip);
+  useEffect(()=>{tripRef.current=trip;},[trip]);
 
   /* חילוץ שם מדינה מהכתובת — חלק אחרון אחרי פסיק, ללא מיקוד */
   const getCountry=item=>{
@@ -1851,35 +1855,27 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
     toast(`"${item.name}" נוסף ליום`,'success');
   };
 
-  /* העשרת פריט מגוגל מפות (PlacesService) */
-  const enrichItem=item=>{
-    if(!window.google?.maps?.places){toast('Google Maps אינו זמין — יש לפתוח את האפליקציה עם מפה פעילה','error');return;}
-    if(enrichingId){toast('המתן לסיום ההעשרה הנוכחית','error');return;}
-    setEnrichingId(item.id);
+  /* ── ליבת ה-enrichment — Promise-based, ללא תלות ב-state ── */
+  const enrichOneAsync=item=>new Promise(resolve=>{
+    if(!window.google?.maps?.places){resolve(null);return;}
     const svc=new window.google.maps.places.PlacesService(document.createElement('div'));
     const query=item.name+(item.address?' '+item.address:'');
     svc.textSearch({query},(results,status)=>{
       const PS=window.google.maps.places.PlacesServiceStatus;
-      if(status!==PS.OK||!results?.length){
-        toast('לא נמצאו תוצאות בגוגל מפות','error');
-        setEnrichingId(null);return;
-      }
-      const r=results[0];
+      if(status!==PS.OK||!results?.length){resolve(null);return;}
       svc.getDetails({
-        placeId:r.place_id,
+        placeId:results[0].place_id,
         fields:['name','formatted_address','geometry','rating','user_ratings_total',
                 'opening_hours','formatted_phone_number','website','types','photos','place_id']
       },(pl,st)=>{
-        setEnrichingId(null);
-        if(st!==PS.OK||!pl){toast('שגיאה בקבלת פרטי המקום','error');return;}
+        if(st!==PS.OK||!pl){resolve(null);return;}
         const oh=pl.opening_hours;
         const isOpenNow=oh?.isOpen?.();
-        const todayIdx=new Date().getDay();
-        const todayLine=oh?.weekday_text?.[todayIdx]||'';
-        const updated={...item,
+        const todayLine=oh?.weekday_text?.[new Date().getDay()]||'';
+        resolve({...item,
           placeId:pl.place_id||item.placeId,
           name:pl.name||item.name,
-          address:pl.formatted_address||item.address,
+          address:pl.formatted_address||item.address,   // ← תמיד מעדכן כתובת
           lat:pl.geometry?.location?.lat()??item.lat,
           lng:pl.geometry?.location?.lng()??item.lng,
           rating:pl.rating||item.rating||null,
@@ -1890,11 +1886,44 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
           todayHours:todayLine||item.todayHours||'',
           placeType:getPlaceTypeLabel(pl.types)||item.placeType||'',
           photoUrl:pl.photos?.[0]?.getUrl({maxWidth:400})||item.photoUrl||'',
-        };
-        onUpdate({...trip,interestBank:trip.interestBank.map(i=>i.id===item.id?updated:i)});
-        toast(`✓ "${pl.name}" עודכן מגוגל מפות`,'success');
+          _noCoords:false,  // מסיר את הדגל אחרי עדכון מוצלח
+        });
       });
     });
+  });
+
+  /* העשרת פריט בודד (כפתור 🔍) */
+  const enrichItem=async item=>{
+    if(!window.google?.maps?.places){toast('Google Maps אינו זמין — יש לוודא שהמפה טעונה','error');return;}
+    if(enrichingId||batchProgress){toast('המתן לסיום ההעשרה הנוכחית','error');return;}
+    setEnrichingId(item.id);
+    const updated=await enrichOneAsync(item);
+    setEnrichingId(null);
+    if(!updated){toast('לא נמצאו תוצאות בגוגל מפות','error');return;}
+    onUpdate({...tripRef.current,interestBank:tripRef.current.interestBank.map(i=>i.id===item.id?updated:i)});
+    toast(`✓ "${updated.name}" עודכן — ${updated.address||'ללא כתובת'}`,'success');
+  };
+
+  /* העשרה קבוצתית — כל הפריטים ללא כתובת, אחד אחרי השני */
+  const batchEnrichMissing=async()=>{
+    if(!window.google?.maps?.places){toast('Google Maps אינו זמין — יש לוודא שהמפה טעונה','error');return;}
+    const toEnrich=tripRef.current.interestBank.filter(i=>!i.address||i._noCoords);
+    if(!toEnrich.length){toast('כל הפריטים כבר מכילים כתובת ✓','success');return;}
+    let currentBank=[...tripRef.current.interestBank];
+    let successCount=0;
+    for(let idx=0;idx<toEnrich.length;idx++){
+      setBatchProgress({done:idx,total:toEnrich.length,name:toEnrich[idx].name});
+      const updated=await enrichOneAsync(toEnrich[idx]);
+      if(updated){
+        currentBank=currentBank.map(b=>b.id===toEnrich[idx].id?updated:b);
+        onUpdate({...tripRef.current,interestBank:currentBank});
+        successCount++;
+      }
+      await new Promise(r=>setTimeout(r,400)); // הגבלת קצב בקשות API
+    }
+    setBatchProgress(null);
+    const skipped=toEnrich.length-successCount;
+    toast(`הושלמו ${successCount} פריטים${skipped?` (${skipped} לא נמצאו)`:''}  ✓`,'success');
   };
 
   /* ייבוא Google Takeout — JSON (קואורדינטות) + CSV (לבבות/Want to go/רשימות) */
@@ -1974,7 +2003,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
         🗑 מחק {selected.size}
       </button>}
       <div style={{flex:1}}/>
-      {enrichingId&&<span style={{fontSize:10,color:'var(--amber)',animation:'pulse 1s infinite'}}>⏳ מעשיר...</span>}
+      {(enrichingId||batchProgress)&&<span style={{fontSize:10,color:'var(--amber)'}}>⏳{batchProgress?` ${batchProgress.done}/${batchProgress.total}`:' מעשיר...'}</span>}
       {onClose&&<button onClick={onClose} style={{background:'none',border:'none',color:'var(--text3)',fontSize:20,cursor:'pointer',lineHeight:1,padding:'0 2px'}}>✕</button>}
     </div>
 
@@ -2027,6 +2056,28 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose}){
 
     {/* כפתורי תחתית */}
     <div style={{padding:'10px 12px',borderTop:'1px solid var(--border)',display:'flex',flexDirection:'column',gap:6,flexShrink:0}}>
+      {/* סרגל התקדמות העשרה קבוצתית */}
+      {batchProgress&&<div style={{background:'var(--bg3)',borderRadius:8,padding:'8px 10px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--text2)',marginBottom:5}}>
+          <span>🔍 מאתר כתובות...</span>
+          <span style={{color:'var(--amber)',fontWeight:700}}>{batchProgress.done}/{batchProgress.total}</span>
+        </div>
+        <div style={{background:'var(--border)',borderRadius:4,height:5,overflow:'hidden'}}>
+          <div style={{background:'var(--amber)',height:'100%',borderRadius:4,
+            width:`${Math.round(batchProgress.done/batchProgress.total*100)}%`,
+            transition:'width 0.3s'}}/>
+        </div>
+        {batchProgress.name&&<div style={{fontSize:10,color:'var(--text3)',marginTop:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+          ⏳ {batchProgress.name}
+        </div>}
+      </div>}
+      {/* כפתור השלמת כתובות קבוצתית — מופיע רק כשיש פריטים ללא כתובת */}
+      {!batchProgress&&trip.interestBank.some(i=>!i.address||i._noCoords)&&(
+        <button className="btn btn-amber btn-sm" style={{width:'100%'}}
+          disabled={!!enrichingId} onClick={batchEnrichMissing}>
+          🔍 השלם כתובות לכל הפריטים ({trip.interestBank.filter(i=>!i.address||i._noCoords).length})
+        </button>
+      )}
       <button className="btn btn-secondary btn-sm" style={{width:'100%'}}
         onClick={()=>{const n=prompt('שם המקום:');if(n)addToBank({name:n,address:'',id:uid()});}}>
         + הוסף ידנית
