@@ -9,30 +9,40 @@ permissions:
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Fetch from Google
+      - name: Fetch from Google and save via API
         env:
           GMAPS_URL: ${{ github.event.client_payload.api_url }}
           REQ_ID: ${{ github.event.client_payload.req_id }}
+          REPO: ${{ github.repository }}
         run: |
-          mkdir -p _cache
-          HTTP_CODE=$(curl -s -o _cache/gmaps_response.txt -w "%{http_code}" \
-            --max-time 30 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "$GMAPS_URL")
-          echo "HTTP status: $HTTP_CODE"
-          # אם curl נכשל או HTTP לא 200 — כתוב קובץ שגיאה ברור
-          if [ "$HTTP_CODE" != "200" ] || ! grep -q ")]}'}" _cache/gmaps_response.txt 2>/dev/null; then
-            echo "FETCH_FAILED:$HTTP_CODE" > _cache/gmaps_response.txt
-          fi
-          # כתוב את ה-id רק אחרי שהתוכן מוכן
-          printf '%s' "$REQ_ID" > _cache/gmaps_id.txt
+          # שליפה מגוגל
+          curl -sf --max-time 30 -A "Mozilla/5.0" "$GMAPS_URL" -o /tmp/resp.txt || true
 
-      - name: Commit and push
-        run: |
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-          git add _cache/
-          git diff --staged --quiet || git commit -m "cache: gmaps [skip ci]"
-          git pull --rebase origin main
-          git push
+          # בדיקת תקינות: תשובת גוגל מפות תמיד מתחילה ב-")"
+          if [ -s /tmp/resp.txt ] && [ "$(head -c1 /tmp/resp.txt)" = ")" ]; then
+            echo "Valid response: $(wc -c < /tmp/resp.txt) bytes"
+          else
+            printf 'FETCH_FAILED' > /tmp/resp.txt
+          fi
+
+          # פונקציה: העלאת קובץ ישירות ל-GitHub API (ללא git checkout/push)
+          gh_upload() {
+            local API_PATH="$1" CONTENT="$2"
+            local SHA BODY
+            SHA=$(gh api "repos/$REPO/contents/$API_PATH" --jq '.sha' 2>/dev/null || true)
+            BODY="{\"message\":\"cache [skip ci]\",\"content\":\"$CONTENT\""
+            [ -n "$SHA" ] && BODY="$BODY,\"sha\":\"$SHA\""
+            BODY="$BODY}"
+            gh api "repos/$REPO/contents/$API_PATH" -X PUT --input - <<< "$BODY"
+          }
+
+          RESP_B64=$(base64 -w0 /tmp/resp.txt)
+          ID_B64=$(printf '%s' "$REQ_ID" | base64 -w0)
+
+          # חשוב: response קודם, id אחרון (id מסמן לאפליקציה שהתוצאה מוכנה)
+          gh_upload "_cache/gmaps_response.txt" "$RESP_B64"
+          gh_upload "_cache/gmaps_id.txt" "$ID_B64"
+          echo "Done - reqId: $REQ_ID"
