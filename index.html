@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v65';
+const APP_VERSION = 'v66';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -859,23 +859,26 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
     if (input){
       const doSearch=async()=>{
         const q=input.value.trim(); if(!q) return;
-        // נקה מרקרי חיפוש קודמים
+        // נקה מרקרי חיפוש קודמים — המפה לא זזה
         window.__gmClearSearch?.();
-        // Places textSearch עם location+radius bias לפי מרכז המפה הנוכחי
-        const zoom=map.getZoom()||12;
-        const radius=Math.min(50000,Math.round(40000/Math.pow(2,Math.max(0,zoom-10))));
+        const vpBounds=map.getBounds(); // תחום ה-viewport הנוכחי
         const PS=window.google.maps.places.PlacesServiceStatus;
+        // Places textSearch — bias לפי bounds הנוכחי (לא משנה זום/מרכז!)
         const placeResults=await new Promise(res=>{
-          searchSvc.textSearch({query:q,language:'he',location:map.getCenter(),radius},(r,st)=>{
-            res(st===PS.OK&&r?.length?r:[]);
-          });
+          const opts={query:q,language:'he'};
+          if(vpBounds) opts.bounds=vpBounds; else opts.location=map.getCenter();
+          searchSvc.textSearch(opts,(r,st)=>res(st===PS.OK&&r?.length?r:[]));
         });
         if(placeResults.length){
-          const bnds=new window.google.maps.LatLngBounds();
-          placeResults.forEach((r,i)=>{
+          // סנן רק תוצאות בתוך ה-viewport הנוכחי
+          const inView=vpBounds
+            ?placeResults.filter(r=>r.geometry?.location&&vpBounds.contains(r.geometry.location))
+            :placeResults;
+          const toShow=inView.length?inView:placeResults;
+          let placed=0;
+          toShow.forEach(r=>{
             const loc=r.geometry?.location; if(!loc) return;
             const lat=loc.lat(),lng=loc.lng();
-            bnds.extend({lat,lng});
             const m=new window.google.maps.Marker({
               position:{lat,lng},map,
               title:r.name||'',
@@ -884,30 +887,22 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
             });
             m.addListener('click',()=>showPlaceById(r.place_id,lat,lng));
             window.__gmSearchMarkers?.push(m);
+            placed++;
           });
-          if(placeResults.length===1){
-            const loc=placeResults[0].geometry.location;
-            map.setCenter({lat:loc.lat(),lng:loc.lng()}); map.setZoom(17);
-            showPlaceById(placeResults[0].place_id,loc.lat(),loc.lng());
-          } else {
-            map.fitBounds(bnds,{top:60,right:60,bottom:60,left:60});
+          // אם תוצאה בודדת — פתח InfoWindow בלבד (אין שינוי zoom/מרכז)
+          if(toShow.length===1&&toShow[0].place_id){
+            const loc=toShow[0].geometry.location;
+            showPlaceById(toShow[0].place_id,loc.lat(),loc.lng());
           }
+          const outside=placeResults.length-inView.length;
+          if(outside>0&&inView.length===0)
+            toast(`נמצאו ${outside} תוצאות מחוץ לתצוגה — גרור את המפה לאזור הרצוי`,'info');
+          else if(outside>0)
+            toast(`${placed} תוצאות בתצוגה (${outside} נוספות מחוץ לטווח)`,'info');
           return;
         }
-        // Nominatim fallback — מוצא ערים, פארקים, חופים
-        try{
-          const ctr=map.getCenter();
-          const vb=`${ctr.lng()-3},${ctr.lat()+3},${ctr.lng()+3},${ctr.lat()-3}`;
-          const nUrl=`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=4&viewbox=${vb}&bounded=0&accept-language=he`;
-          const nr=await fetch(nUrl,{headers:{'Accept-Language':'he'}});
-          const nRes=await nr.json();
-          if(panToNominatim(nRes)) return;
-        }catch{}
-        // Geocoder fallback — כתובות
-        geocoder.geocode({address:q,language:'he'},(gr,gs)=>{
-          if(gs==='OK'&&gr[0]){const loc=gr[0].geometry;if(loc.viewport)map.fitBounds(loc.viewport);else{map.setCenter(loc.location);map.setZoom(15);}}
-          else{toast('מקום לא נמצא — נסה שם ספציפי יותר','error');}
-        });
+        // אין תוצאות כלל
+        toast('לא נמצאו תוצאות בתחום המפה הנוכחי','error');
       };
       input.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();doSearch();} });
       window.__gmSearch=doSearch;
