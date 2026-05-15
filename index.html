@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v61';
+const APP_VERSION = 'v62';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -799,39 +799,56 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
 
     if (input){
       const doSearch=async()=>{
-        const q=input.value.trim(); if (!q) return;
-        // 1. Places textSearch — location bias לפי מרכז המפה הנוכחי (לא מגביל, רק מעדיף)
-        const placesOk=await new Promise(res=>{
-          searchSvc.textSearch({query:q,language:'he',location:map.getCenter()},(results,status)=>{
-            if (status===window.google.maps.places.PlacesServiceStatus.OK&&results?.length){
-              const bounds=new window.google.maps.LatLngBounds();
-              results.slice(0,6).forEach(p=>{
-                if (p.geometry?.viewport) bounds.union(p.geometry.viewport);
-                else if (p.geometry?.location) bounds.extend(p.geometry.location);
-              });
-              map.fitBounds(bounds);
-              if (results.length===1) map.setZoom(17);
-              res(true);
-            } else { res(false); }
+        const q=input.value.trim(); if(!q) return;
+        // נקה מרקרי חיפוש קודמים
+        window.__gmClearSearch?.();
+        // Places textSearch עם location+radius bias לפי מרכז המפה הנוכחי
+        const zoom=map.getZoom()||12;
+        const radius=Math.min(50000,Math.round(40000/Math.pow(2,Math.max(0,zoom-10))));
+        const PS=window.google.maps.places.PlacesServiceStatus;
+        const placeResults=await new Promise(res=>{
+          searchSvc.textSearch({query:q,language:'he',location:map.getCenter(),radius},(r,st)=>{
+            res(st===PS.OK&&r?.length?r:[]);
           });
         });
-        if (placesOk) return;
-        // 2. Nominatim — מוצא חופים, פארקים, מסעדות, ערים — עם bias לפי מרכז המפה
+        if(placeResults.length){
+          const bnds=new window.google.maps.LatLngBounds();
+          placeResults.forEach((r,i)=>{
+            const loc=r.geometry?.location; if(!loc) return;
+            const lat=loc.lat(),lng=loc.lng();
+            bnds.extend({lat,lng});
+            const m=new window.google.maps.Marker({
+              position:{lat,lng},map,
+              title:r.name||'',
+              label:{text:String(i+1),color:'#fff',fontSize:'10px',fontWeight:'bold'},
+              icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:11,fillColor:'#1a73e8',fillOpacity:1,strokeColor:'#fff',strokeWeight:2},
+              zIndex:20,
+            });
+            m.addListener('click',()=>showPlaceById(r.place_id,lat,lng));
+            window.__gmSearchMarkers?.push(m);
+          });
+          if(placeResults.length===1){
+            const loc=placeResults[0].geometry.location;
+            map.setCenter({lat:loc.lat(),lng:loc.lng()}); map.setZoom(17);
+            showPlaceById(placeResults[0].place_id,loc.lat(),loc.lng());
+          } else {
+            map.fitBounds(bnds,{top:60,right:60,bottom:60,left:60});
+          }
+          return;
+        }
+        // Nominatim fallback — מוצא ערים, פארקים, חופים
         try{
           const ctr=map.getCenter();
           const vb=`${ctr.lng()-3},${ctr.lat()+3},${ctr.lng()+3},${ctr.lat()-3}`;
           const nUrl=`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=4&viewbox=${vb}&bounded=0&accept-language=he`;
           const nr=await fetch(nUrl,{headers:{'Accept-Language':'he'}});
           const nRes=await nr.json();
-          if (panToNominatim(nRes)) return;
+          if(panToNominatim(nRes)) return;
         }catch{}
-        // 3. Google Geocoder — כתובות
+        // Geocoder fallback — כתובות
         geocoder.geocode({address:q,language:'he'},(gr,gs)=>{
-          if (gs==='OK'&&gr[0]){
-            const loc=gr[0].geometry;
-            if (loc.viewport) map.fitBounds(loc.viewport);
-            else { map.setCenter(loc.location); map.setZoom(15); }
-          } else { toast('מקום לא נמצא — נסה שם ספציפי יותר','error'); }
+          if(gs==='OK'&&gr[0]){const loc=gr[0].geometry;if(loc.viewport)map.fitBounds(loc.viewport);else{map.setCenter(loc.location);map.setZoom(15);}}
+          else{toast('מקום לא נמצא — נסה שם ספציפי יותר','error');}
         });
       };
       input.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();doSearch();} });
@@ -900,6 +917,48 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
     window.__gmIwPlace=iwPlace;
     window.__gmBuild=buildIwContent;
 
+    // ── מרקרי תוצאות חיפוש — מנוהלים בנפרד מסמני הטיול ──
+    const searchMarkersArr=[];
+    window.__gmSearchMarkers=searchMarkersArr;
+    window.__gmClearSearch=()=>{ searchMarkersArr.forEach(m=>m.setMap(null)); searchMarkersArr.length=0; iw.close(); };
+
+    // ── Helper: טוען פרטי מקום מגוגל ומציג InfoWindow ──
+    const showPlaceById=async(placeId,lat0,lng0)=>{
+      iwPlace.data={name:'טוען...',address:'',lat:lat0,lng:lng0,placeId};
+      iw.setContent('<div style="padding:16px;font-family:Heebo,sans-serif;direction:rtl;font-size:13px;color:#555">⏳ טוען פרטי מקום...</div>');
+      iw.setPosition({lat:lat0,lng:lng0});
+      iw.open(map);
+      const svc=new window.google.maps.places.PlacesService(map);
+      const OK_ST=window.google.maps.places.PlacesServiceStatus.OK;
+      const dow=new Date().getDay(),wdIdx=dow===0?6:dow-1;
+      const legacyBasic=()=>new Promise(res=>{svc.getDetails({placeId,fields:['name','formatted_address','geometry','photos','place_id','types']},(p,st)=>{res(st===OK_ST&&p?p:null);});});
+      const legacyRich=(geo)=>new Promise(res=>{svc.getDetails({placeId,fields:['rating','opening_hours','reviews','website','formatted_phone_number','user_ratings_total','price_level']},(p,st)=>{res(st===OK_ST&&p?{...p,geometry:geo}:null);});});
+      const geocoderLookup=()=>new Promise(res=>{geocoder.geocode({placeId,language:'he'},(results,status)=>{if(status!=='OK'||!results?.[0]){res(null);return;}const comps=results[0].address_components||[];const addr=results[0].formatted_address||'';const loc=results[0].geometry?.location;const poiTypes=['establishment','point_of_interest','natural_feature','tourist_attraction','park','airport','premise','colloquial_area','shopping_mall','restaurant','food','store','lodging','transit_station','zoo','amusement_park','aquarium','stadium','museum','school','university'];const poiComp=comps.find(c=>c.types.some(t=>poiTypes.includes(t)));const firstIsStreet=comps[0]?.types.some(t=>['route','street_address','intersection'].includes(t));const hasStreetNum=comps.some(c=>c.types.includes('street_number'));const fromAddr=(!firstIsStreet&&!hasStreetNum)?addr.split(',')[0]?.trim():'';const name=poiComp?.long_name||fromAddr||'';res({name,address:addr,lat:loc?.lat()||lat0,lng:loc?.lng()||lng0});});});
+      const placesV1=async()=>{const key=mapsKeyRef.current;if(!key)return null;try{const r=await fetch(`https://places.googleapis.com/v1/places/${placeId}?languageCode=he&key=${key}`,{headers:{'X-Goog-FieldMask':'displayName,formattedAddress,rating,currentOpeningHours,regularOpeningHours,websiteUri,nationalPhoneNumber,userRatingCount,priceLevel,reviews,types','Accept-Language':'he'}});if(!r.ok)return null;const d=await r.json();const lvl={'PRICE_LEVEL_INEXPENSIVE':1,'PRICE_LEVEL_MODERATE':2,'PRICE_LEVEL_EXPENSIVE':3,'PRICE_LEVEL_VERY_EXPENSIVE':4};const ohArr=d.currentOpeningHours?.weekdayDescriptions||d.regularOpeningHours?.weekdayDescriptions||[];return{name:d.displayName?.text||null,address:d.formattedAddress||null,rating:d.rating||null,userRatingsTotal:d.userRatingCount||null,openStatus:d.currentOpeningHours?.openNow===true?'פתוח עכשיו':d.currentOpeningHours?.openNow===false?'סגור עכשיו':'',todayHours:ohArr[wdIdx]?.replace(/^[^:]+:\s*/,'')||'',allHours:ohArr.join('<br/>'),priceLevel:lvl[d.priceLevel]??null,phone:d.nationalPhoneNumber||'',website:d.websiteUri||'',reviews:(d.reviews||[]).slice(0,2).map(rv=>({author_name:rv.authorAttribution?.displayName||'',rating:rv.rating||0,text:rv.text?.text||''})),types:d.types||[]};}catch{return null;}};
+      const nominatimLookup=async()=>{try{const[r18,r16]=await Promise.all([fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat0}&lon=${lng0}&format=json&zoom=18&namedetails=1&extratags=1&accept-language=he`,{headers:{'Accept-Language':'he'}}),fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat0}&lon=${lng0}&format=json&zoom=16&namedetails=1&accept-language=he`,{headers:{'Accept-Language':'he'}})]);const[d18,d16]=await Promise.all([r18.json(),r16.json()]);const pickName=(d)=>{const isRoad=d.class==='highway'||d.type==='road'||d.type==='residential'||d.type==='service';const poi=d.namedetails?.['name:he']||d.namedetails?.name||(!isRoad?d.name:'')||'';const cat=d.address?.tourism||d.address?.amenity||d.address?.leisure||d.address?.natural||d.address?.historic||d.address?.shop||'';return poi||cat||'';};const n18=pickName(d18),n16=pickName(d16);const name=n18||n16||null;const parts=[d18.address?.road,d18.address?.city||d18.address?.town||d18.address?.village].filter(Boolean);const address=parts.join(', ')||d18.display_name?.split(',').slice(0,2).join(',')||'';return{name,address};}catch{return null;}};
+      const isStreetAddr=s=>/^\d|.*\s\d+$|^דרך\s|^רחוב\s|^שדרות\s|^הרחוב\s|^St\s|^Rd\s|^Ave\s/i.test(s?.trim()||'');
+      try{
+        const[basic,geo,v1]=await Promise.all([legacyBasic(),geocoderLookup(),placesV1()]);
+        const rich=basic?await legacyRich(basic.geometry):null;
+        let name=v1?.name||basic?.name||geo?.name||'';
+        let address=v1?.address||basic?.formatted_address||geo?.address||'';
+        let lat=basic?.geometry?.location?.lat()||geo?.lat||lat0;
+        let lng=basic?.geometry?.location?.lng()||geo?.lng||lng0;
+        if(!name){const fromAddr=(address||'').split(',')[0]?.trim()||'';if(fromAddr&&!isStreetAddr(fromAddr)){name=fromAddr;}else{const nom=await nominatimLookup();const nomName=nom?.name||'';if(nom?.address&&!address)address=nom.address;const nomFromAddr=(nom?.address||address||'').split(',')[0]?.trim()||'';name=nomName&&!isStreetAddr(nomName)?nomName:fromAddr&&!isStreetAddr(fromAddr)?fromAddr:nomFromAddr?nomFromAddr:'מקום';}}
+        let details={};
+        if(v1){details={rating:v1.rating,userRatingsTotal:v1.userRatingsTotal,openStatus:v1.openStatus,todayHours:v1.todayHours,allHours:v1.allHours,priceLevel:v1.priceLevel,phone:v1.phone,website:v1.website,reviews:v1.reviews};}
+        else if(rich){let openStatus='';try{openStatus=rich.opening_hours?.isOpen()?'פתוח עכשיו':'סגור עכשיו';}catch{}details={rating:rich.rating,userRatingsTotal:rich.user_ratings_total,openStatus,todayHours:rich.opening_hours?.weekday_text?.[wdIdx]?.replace(/^[^:]+:\s*/,'')||'',allHours:(rich.opening_hours?.weekday_text||[]).join('<br/>'),priceLevel:rich.price_level,phone:rich.formatted_phone_number||'',website:rich.website||'',reviews:rich.reviews||[]};}
+        const photoUrl=basic?.photos?.[0]?.getUrl({maxWidth:300,maxHeight:110})||'';
+        const _noGoogle=!v1&&!basic&&!geo;
+        const placeType=getPlaceTypeLabel(v1?.types||basic?.types||[]);
+        iwPlace.data={name,address,lat,lng,placeId,photoUrl,placeType,rating:details.rating||null,userRatingsTotal:details.userRatingsTotal||null,openStatus:details.openStatus||'',todayHours:details.todayHours||'',allHours:details.allHours||'',phone:details.phone||'',website:details.website||'',reviews:details.reviews||[]};
+        iw.setContent(buildIwContent({name,address,lat,lng,placeId,photoUrl,...details,_noGoogle}));
+      }catch(err){
+        iwPlace.data={name:'מקום',address:'',lat:lat0,lng:lng0,placeId};
+        iw.setContent(buildIwContent({name:'מקום',address:'',lat:lat0,lng:lng0,placeId}));
+      }
+    };
+
     window.__gmBank=()=>{
       if (!iwPlace.data) return;
       const p=iwPlace.data;
@@ -925,174 +984,9 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
     };
 
     map.addListener('click',async e=>{
-      if (!e.placeId) return;
+      if(!e.placeId) return;
       e.stop();
-      const placeId=e.placeId;
-      const lat0=e.latLng.lat(), lng0=e.latLng.lng();
-      iwPlace.data={name:'טוען...',address:'',lat:lat0,lng:lng0,placeId};
-      iw.setContent('<div style="padding:16px;font-family:Heebo,sans-serif;direction:rtl;font-size:13px;color:#555">⏳ טוען פרטי מקום...</div>');
-      iw.setPosition(e.latLng);
-      iw.open(map);
-
-      const svc=new window.google.maps.places.PlacesService(map);
-      const OK_ST=window.google.maps.places.PlacesServiceStatus.OK;
-      const dow=new Date().getDay(), wdIdx=dow===0?6:dow-1;
-
-      /* ── מקור 1: Legacy Places API שדות בסיסיים ── */
-      const legacyBasic=()=>new Promise(res=>{
-        svc.getDetails({placeId,fields:['name','formatted_address','geometry','photos','place_id','types']},
-          (p,st)=>{console.log('[DEBUG] legacyBasic:',st,p?.name);res(st===OK_ST&&p?p:null);});
-      });
-
-      /* ── מקור 2: Legacy Places API שדות בתשלום ── */
-      const legacyRich=(geo)=>new Promise(res=>{
-        svc.getDetails({placeId,fields:['rating','opening_hours','reviews','website','formatted_phone_number','user_ratings_total','price_level']},
-          (p,st)=>{console.log('[DEBUG] legacyRich:',st,'rating=',p?.rating,'hours=',!!p?.opening_hours);res(st===OK_ST&&p?{...p,geometry:geo}:null);});
-      });
-
-      /* ── מקור 3: Google Geocoder עם placeId (חינמי, מזהה מדויק) ── */
-      const geocoderLookup=()=>new Promise(res=>{
-        geocoder.geocode({placeId,language:'he'},(results,status)=>{
-          console.log('[DEBUG] geocoder status:',status,results?.[0]?.formatted_address||'no addr');
-          if(status!=='OK'||!results?.[0]){res(null);return;}
-          const comps=results[0].address_components||[];
-          const addr=results[0].formatted_address||'';
-          const loc=results[0].geometry?.location;
-          // point_of_interest הוא הסוג הנפוץ ביותר ל-POI בגוגל
-          const poiTypes=['establishment','point_of_interest','natural_feature',
-            'tourist_attraction','park','airport','premise','colloquial_area',
-            'shopping_mall','restaurant','food','store','lodging','transit_station',
-            'zoo','amusement_park','aquarium','stadium','museum','school','university'];
-          const poiComp=comps.find(c=>c.types.some(t=>poiTypes.includes(t)));
-          // אם הרכיב הראשון הוא רחוב/כתובת → formatted_address מתחיל בכתובת, לא בשם
-          const firstIsStreet=comps[0]?.types.some(t=>['route','street_address','intersection'].includes(t));
-          const hasStreetNum=comps.some(c=>c.types.includes('street_number'));
-          const fromAddr=(!firstIsStreet&&!hasStreetNum)?addr.split(',')[0]?.trim():'';
-          const name=poiComp?.long_name||fromAddr||'';
-          res({name,address:addr,lat:loc?.lat()||lat0,lng:loc?.lng()||lng0});
-        });
-      });
-
-      /* ── מקור 4: Places API v1 (New REST) — שם + פרטים מלאים ── */
-      const placesV1=async()=>{
-        const key=mapsKeyRef.current; if(!key) return null;
-        try{
-          const r=await fetch(
-            `https://places.googleapis.com/v1/places/${placeId}?languageCode=he&key=${key}`,
-            {headers:{'X-Goog-FieldMask':'displayName,formattedAddress,rating,currentOpeningHours,regularOpeningHours,websiteUri,nationalPhoneNumber,userRatingCount,priceLevel,reviews,types','Accept-Language':'he'}}
-          );
-          if(!r.ok){const e=await r.json().catch(()=>({}));console.error('[DEBUG] placesV1 failed',r.status,e?.error?.message||e);return null;}
-          const d=await r.json();
-          const lvl={'PRICE_LEVEL_INEXPENSIVE':1,'PRICE_LEVEL_MODERATE':2,'PRICE_LEVEL_EXPENSIVE':3,'PRICE_LEVEL_VERY_EXPENSIVE':4};
-          const ohArr=d.currentOpeningHours?.weekdayDescriptions||d.regularOpeningHours?.weekdayDescriptions||[];
-          return{
-            name:d.displayName?.text||null,
-            address:d.formattedAddress||null,
-            rating:d.rating||null,
-            userRatingsTotal:d.userRatingCount||null,
-            openStatus:d.currentOpeningHours?.openNow===true?'פתוח עכשיו':d.currentOpeningHours?.openNow===false?'סגור עכשיו':'',
-            todayHours:ohArr[wdIdx]?.replace(/^[^:]+:\s*/,'')||'',
-            allHours:ohArr.join('<br/>'),
-            priceLevel:lvl[d.priceLevel]??null,
-            phone:d.nationalPhoneNumber||'',
-            website:d.websiteUri||'',
-            reviews:(d.reviews||[]).slice(0,2).map(rv=>({author_name:rv.authorAttribution?.displayName||'',rating:rv.rating||0,text:rv.text?.text||''})),
-            types:d.types||[],
-          };
-        }catch{return null;}
-      };
-
-      /* ── מקור 5: Nominatim — גיבוי אחרון לשם בלבד ── */
-      const nominatimLookup=async()=>{
-        try{
-          // מנסה שני zoom: 18 לבניין/עסק ספציפי, 16 לאזור/POI גדול (נמל, קניון, פארק)
-          const [r18,r16]=await Promise.all([
-            fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat0}&lon=${lng0}&format=json&zoom=18&namedetails=1&extratags=1&accept-language=he`,{headers:{'Accept-Language':'he'}}),
-            fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat0}&lon=${lng0}&format=json&zoom=16&namedetails=1&accept-language=he`,{headers:{'Accept-Language':'he'}}),
-          ]);
-          const [d18,d16]=await Promise.all([r18.json(),r16.json()]);
-          const pickName=(d)=>{
-            const isRoad=d.class==='highway'||d.type==='road'||d.type==='residential'||d.type==='service';
-            const poi=d.namedetails?.['name:he']||d.namedetails?.name||(!isRoad?d.name:'')||'';
-            const cat=d.address?.tourism||d.address?.amenity||d.address?.leisure||d.address?.natural||d.address?.historic||d.address?.shop||'';
-            return poi||cat||'';
-          };
-          const n18=pickName(d18), n16=pickName(d16);
-          // מעדיף zoom 18 אם יש שם, אחרת zoom 16
-          const name=n18||n16||null;
-          const parts=[d18.address?.road,d18.address?.city||d18.address?.town||d18.address?.village].filter(Boolean);
-          const address=parts.join(', ')||d18.display_name?.split(',').slice(0,2).join(',')||'';
-          return{name,address};
-        }catch{return null;}
-      };
-
-      // בודק אם מחרוזת נראית כמו כתובת רחוב (ולא שם מקום)
-      const isStreetAddr=s=>/^\d|.*\s\d+$|^דרך\s|^רחוב\s|^שדרות\s|^הרחוב\s|^St\s|^Rd\s|^Ave\s/i.test(s?.trim()||'');
-
-      try{
-        // מריץ מקורות מבוססי placeId במקביל (Overpass הוסר — מחזיר מקומות ליד ולא את המקום המדויק)
-        const [basic, geo, v1]=await Promise.all([legacyBasic(), geocoderLookup(), placesV1()]);
-
-        // שדות בתשלום של Legacy (רק אם basic הצליח)
-        const rich=basic?await legacyRich(basic.geometry):null;
-
-        // ── בוחר שם: v1 > legacy > geocoder(poi/fromAddr) ──
-        let name=v1?.name||basic?.name||geo?.name||'';
-        let address=v1?.address||basic?.formatted_address||geo?.address||'';
-        let lat=basic?.geometry?.location?.lat()||geo?.lat||lat0;
-        let lng=basic?.geometry?.location?.lng()||geo?.lng||lng0;
-
-        if(!name){
-          const fromAddr=(address||'').split(',')[0]?.trim()||'';
-          if(fromAddr&&!isStreetAddr(fromAddr)){
-            name=fromAddr;
-          } else {
-            const nom=await nominatimLookup();
-            const nomName=nom?.name||'';
-            if(nom?.address&&!address) address=nom.address;
-            // גם אם אין שם POI — ניסה להשתמש בחלק הראשון של הכתובת מ-Nominatim
-            const nomFromAddr=(nom?.address||address||'').split(',')[0]?.trim()||'';
-            name=nomName&&!isStreetAddr(nomName)?nomName
-                :fromAddr&&!isStreetAddr(fromAddr)?fromAddr
-                :nomFromAddr?nomFromAddr
-                :'מקום';
-          }
-        }
-
-        // ── בוחר פרטים: v1 > rich legacy ──
-        let details={};
-        if(v1){
-          details={rating:v1.rating,userRatingsTotal:v1.userRatingsTotal,openStatus:v1.openStatus,todayHours:v1.todayHours,allHours:v1.allHours,priceLevel:v1.priceLevel,phone:v1.phone,website:v1.website,reviews:v1.reviews};
-        } else if(rich){
-          let openStatus='';
-          try{openStatus=rich.opening_hours?.isOpen()?'פתוח עכשיו':'סגור עכשיו';}catch{}
-          details={
-            rating:rich.rating,userRatingsTotal:rich.user_ratings_total,openStatus,
-            todayHours:rich.opening_hours?.weekday_text?.[wdIdx]?.replace(/^[^:]+:\s*/,'')||'',
-            allHours:(rich.opening_hours?.weekday_text||[]).join('<br/>'),
-            priceLevel:rich.price_level,phone:rich.formatted_phone_number||'',
-            website:rich.website||'',reviews:rich.reviews||[],
-          };
-        }
-
-        const photoUrl=basic?.photos?.[0]?.getUrl({maxWidth:300,maxHeight:110})||'';
-        const _noGoogle=!v1&&!basic&&!geo;
-        const placeType=getPlaceTypeLabel(v1?.types||basic?.types||[]);
-        iwPlace.data={name,address,lat,lng,placeId,photoUrl,placeType,
-          rating:details.rating||null,
-          userRatingsTotal:details.userRatingsTotal||null,
-          openStatus:details.openStatus||'',
-          todayHours:details.todayHours||'',
-          allHours:details.allHours||'',
-          phone:details.phone||'',
-          website:details.website||'',
-          reviews:details.reviews||[],
-        };
-        iw.setContent(buildIwContent({name,address,lat,lng,placeId,photoUrl,...details,_noGoogle}));
-      }catch(err){
-        iwPlace.data={name:'מקום',address:'',lat:lat0,lng:lng0,placeId};
-        iw.setContent(buildIwContent({name:'מקום',address:'',lat:lat0,lng:lng0,placeId}));
-      }
+      showPlaceById(e.placeId,e.latLng.lat(),e.latLng.lng());
     });
   },[ready]);
 
@@ -1253,6 +1147,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
     <div style={{padding:'8px',background:'var(--bg2)',borderBottom:'1px solid var(--border)',display:'flex',gap:6,alignItems:'center'}}>
       <input id="map-search-input" className="input" placeholder="🔍 חפש מקום, עיר, מלון, אטרקציה… (Enter)" style={{fontSize:13,flex:1}}/>
       <button className="btn btn-secondary btn-sm" onClick={()=>window.__gmSearch?.()}>חפש</button>
+      <button className="btn btn-secondary btn-sm" title="נקה תוצאות חיפוש" onClick={()=>window.__gmClearSearch?.()}>✕</button>
       <button className="btn btn-secondary btn-sm" title="מיקום נוכחי" onClick={()=>window.__gmCurrentLoc?.()}>📍</button>
       <button className="btn btn-secondary btn-sm" title="מזג אוויר" onClick={()=>setWxOpen(o=>!o)}
         style={{background:wxOpen?'var(--accent)':undefined,color:wxOpen?'#fff':undefined}}>🌤️</button>
