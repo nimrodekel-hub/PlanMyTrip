@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v68';
+const APP_VERSION = 'v69';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -328,27 +328,55 @@ const BLOCK_TYPES     = ['travel','activity','stop','rest','games','free'];
 const BLOCK_HE        = {travel:'נסיעה',activity:'פעילות',stop:'עצירה',rest:'מנוחה',games:'משחקים',free:'זמן פנוי'};
 const BLOCK_EMOJI     = {travel:'🚗',activity:'🎯',stop:'⏸️',rest:'😴',games:'🎮',free:'🕐'};
 const BLOCK_COLOR     = {travel:'var(--accent)',activity:'var(--green)',stop:'var(--amber)',rest:'#94a3b8',games:'#a855f7',free:'#64748b'};
-const PLACE_TYPE_HE={restaurant:'🍽️ מסעדה',cafe:'☕ קפה',bar:'🍺 בר',food:'🍽️ אוכל',
-  lodging:'🏨 מלון',shopping_mall:'🛍️ קניון',store:'🛍️ חנות',supermarket:'🛒 סופרמרקט',
-  grocery_or_supermarket:'🛒 סופר',clothing_store:'👗 ביגוד',
-  winery:'🍷 יקב',
-  tourist_attraction:'🎯 אטרקציה',museum:'🏛️ מוזיאון',park:'🌳 פארק',
-  natural_feature:'🏔️ טבע',campground:'⛺ אתר קמפינג',rv_park:'🏕️ חניון קרוואנים',
-  beach:'🏖️ חוף ים',
+const PLACE_TYPE_HE={
+  // לינה / קמפינג
+  campground:'⛺ אתר קמפינג',rv_park:'🏕️ חניון קרוואנים',lodging:'🏨 מלון',
+  // אוכל ושתייה — ספציפי לפני כללי
+  bakery:'🥐 מאפייה',winery:'🍷 יקב',cafe:'☕ קפה',bar:'🍺 בר',
+  restaurant:'🍽️ מסעדה',food:'🍽️ אוכל',
+  // קניות
+  supermarket:'🛒 סופרמרקט',grocery_or_supermarket:'🛒 סופר',
+  clothing_store:'👗 ביגוד',shopping_mall:'🛍️ קניון',store:'🛍️ חנות',
+  // אטרקציות ופנאי
+  zoo:'🦁 גן חיות',aquarium:'🐠 אקווריום',museum:'🏛️ מוזיאון',
   amusement_park:'🎢 פארק שעשועים',playground:'🎠 אטרקציות לילדים',
-  zoo:'🦁 גן חיות',aquarium:'🐠 אקווריום',
-  movie_theater:'🎬 קולנוע',gym:'💪 ספורט',stadium:'🏟️ אצטדיון',
+  tourist_attraction:'🎯 אטרקציה',
+  // טבע ופארקים
+  park:'🌳 פארק',beach:'🏖️ חוף ים',natural_feature:'🏔️ טבע',
+  // בילוי ופעילות
+  movie_theater:'🎬 קולנוע',gym:'💪 ספורט',stadium:'🏟️ אצטדיון',spa:'💆 ספא',
+  // תחבורה
   airport:'✈️ שדה תעופה',train_station:'🚂 רכבת',bus_station:'🚌 אוטובוס',
-  gas_station:'⛽ תחנת דלק',hospital:'🏥 בית חולים',pharmacy:'💊 בית מרקחת',
+  gas_station:'⛽ תחנת דלק',
+  // שירותים
+  hospital:'🏥 בית חולים',pharmacy:'💊 בית מרקחת',bank:'🏦 בנק',atm:'🏧 כספומט',
+  // דת
   synagogue:'🕍 בית כנסת',church:'⛪ כנסייה',mosque:'🕌 מסגד',
-  spa:'💆 ספא',bank:'🏦 בנק',atm:'🏧 כספומט',
-  point_of_interest:'📍 אטרקציה',establishment:'🏢 עסק'};
-const PLACE_TYPE_PRIORITY=['restaurant','cafe','bar','winery','lodging','shopping_mall','supermarket',
-  'grocery_or_supermarket','clothing_store','store','museum','zoo','aquarium',
-  'playground','amusement_park','campground','rv_park',
+  // כללי
+  point_of_interest:'📍 אטרקציה',establishment:'🏢 עסק',
+};
+// עדיפות: הכי ספציפי קודם — מניעת override של campground/bakery ע"י restaurant/store/food
+const PLACE_TYPE_PRIORITY=[
+  // לינה וקמפינג — ניצחון מוחלט על restaurant שעשויה להיות בשטח
+  'campground','rv_park',
+  // אוכל ספציפי לפני כללי
+  'bakery','winery','cafe','bar',
+  // לינה לפני מסעדה (מלון עם מסעדה → מלון)
+  'lodging',
+  // מסעדה רק אחרי כל האחרים
+  'restaurant',
+  // קניות ספציפי לפני store
+  'shopping_mall','supermarket','grocery_or_supermarket','clothing_store','store',
+  // אטרקציות — ספציפי לפני tourist_attraction
+  'zoo','aquarium','museum','amusement_park','playground',
   'park','beach','movie_theater','tourist_attraction','gym','stadium',
-  'airport','train_station','bus_station','gas_station','hospital','pharmacy','spa','bank','atm',
-  'synagogue','church','mosque','natural_feature','food','point_of_interest','establishment'];
+  // תחבורה ושירותים
+  'airport','train_station','bus_station','gas_station',
+  'hospital','pharmacy','spa','bank','atm',
+  'synagogue','church','mosque',
+  // כללי — תמיד אחרון
+  'natural_feature','food','point_of_interest','establishment',
+];
 const getPlaceTypeLabel=types=>{
   if(!types?.length) return '';
   for(const t of PLACE_TYPE_PRIORITY){ if(types.includes(t)) return PLACE_TYPE_HE[t]||''; }
@@ -702,11 +730,15 @@ const DAY_COLORS=['#ef4444','#3b82f6','#22c55e','#f97316','#a855f7','#ec4899','#
 
 /* ── אייקוני מרקר חיפוש לפי קטגוריה (כמו גוגל מפות) ── */
 const SEARCH_ICON_MAP=[
-  ['restaurant',               '🍽', '#e65100'],
+  ['campground',               '⛺', '#33691e'],  // אתר קמפינג — ראשון! מונע override ע"י restaurant
+  ['rv_park',                  '🏕', '#2e7d32'],  // חניון קרוואנים
+  ['bakery',                   '🥐', '#bf8a30'],  // מאפייה
+  ['winery',                   '🍷', '#7b1c2e'],  // יקב
   ['cafe',                     '☕', '#5d4037'],
   ['bar',                      '🍺', '#4e342e'],
-  ['winery',                   '🍷', '#7b1c2e'],  // יקב
   ['night_club',               '🎵', '#4a148c'],
+  ['lodging',                  '🛏', '#1565c0'],
+  ['restaurant',               '🍽', '#e65100'],
   ['lodging',                  '🛏', '#1565c0'],
   ['shopping_mall',            '🛍', '#00695c'],
   ['supermarket',              '🛒', '#00838f'],
@@ -720,8 +752,6 @@ const SEARCH_ICON_MAP=[
   ['aquarium',                 '🐠', '#0277bd'],
   ['tourist_attraction',       '🎯', '#6a1b9a'],  // אטרקציה
   ['park',                     '🌳', '#2e7d32'],
-  ['campground',               '⛺', '#33691e'],  // אתר קמפינג
-  ['rv_park',                  '🏕', '#2e7d32'],  // חניון קרוואנים
   ['beach',                    '🏖', '#f57f17'],
   ['natural_feature',          '🏔', '#388e3c'],
   ['gym',                      '💪', '#ef6c00'],
