@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v62';
+const APP_VERSION = 'v63';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -1615,6 +1615,9 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
         <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
         {item.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1,lineHeight:1.4}}>{item.placeType}</div>}
         {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginTop:1}}>{item.address}</div>}
+        {item._notFound&&<div style={{fontSize:10,color:'#9ca3af',display:'inline-flex',alignItems:'center',gap:3,marginTop:2,background:'var(--bg2)',borderRadius:4,padding:'1px 6px',border:'1px solid var(--border)'}}>
+          ⚠️ לא נמצא בגוגל — לחץ 🔍 לנסות שוב
+        </div>}
         {item.rating&&<div style={{fontSize:11,color:'var(--amber)',marginTop:2}}>⭐ {item.rating}{item.userRatingsTotal?` (${Number(item.userRatingsTotal).toLocaleString()})`:''}</div>}
         {item.openStatus&&<div style={{fontSize:11,fontWeight:600,marginTop:1,color:item.openStatus==='פתוח עכשיו'?'#22c55e':'#ef4444'}}>{item.openStatus==='פתוח עכשיו'?'✅':'🔴'} {item.openStatus}</div>}
         {item.todayHours&&<div style={{fontSize:11,color:'var(--text3)',marginTop:1}}>🕐 {item.todayHours}</div>}
@@ -1632,9 +1635,9 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
           <button className="btn btn-secondary btn-icon btn-sm" title="הצג במפה" onClick={focusMap}>📍</button>
         )}
         {onEnrich&&<button className="btn btn-secondary btn-icon btn-sm"
-          title={item.placeId?'רענן דירוג/שעות/תמונה מגוגל':'השלם דירוג, שעות ופרטים מגוגל'}
+          title={item._notFound?'נסה שוב לחפש בגוגל':item.placeId?'רענן דירוג/שעות/תמונה מגוגל':'חפש וקשר לגוגל מפות'}
           onClick={()=>onEnrich(item)} disabled={!!enriching}
-          style={{fontSize:enriching?12:11,opacity:enriching?0.6:1}}>{enriching?'⏳':'🔍'}</button>}
+          style={{fontSize:enriching?12:11,opacity:item._notFound?0.45:enriching?0.6:1}}>{enriching?'⏳':'🔍'}</button>}
         <button className="btn btn-danger btn-icon btn-sm" onClick={onDelete} title="הסר">✕</button>
       </div>
     </div>
@@ -1886,6 +1889,40 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
   const tripRef=useRef(trip);
   useEffect(()=>{tripRef.current=trip;},[trip]);
 
+  // ── קישור אוטומטי לגוגל מיד כשהמפה טעונה ויש אטרקציות ללא placeId ──
+  const autoEnrichRunning=useRef(false);
+  useEffect(()=>{
+    if(autoEnrichRunning.current) return;
+    let cancelled=false;
+    const tryStart=()=>{
+      if(cancelled) return;
+      if(!window.google?.maps?.places){setTimeout(tryStart,2000);return;}
+      const need=tripRef.current.interestBank.filter(i=>!i.placeId&&!i._notFound);
+      if(!need.length) return;
+      autoEnrichRunning.current=true;
+      (async()=>{
+        let bank=[...tripRef.current.interestBank];
+        for(let idx=0;idx<need.length;idx++){
+          if(cancelled) break;
+          const cur=tripRef.current.interestBank.find(i=>i.id===need[idx].id);
+          if(!cur||cur.placeId||cur._notFound) continue; // כבר טופל
+          setBatchProgress({done:idx,total:need.length,name:need[idx].name});
+          const updated=await enrichOneAsync(need[idx]);
+          if(updated){
+            bank=bank.map(b=>b.id===need[idx].id?updated:b);
+            onUpdate({...tripRef.current,interestBank:bank});
+          }
+          await new Promise(r=>setTimeout(r,500));
+        }
+        if(!cancelled) setBatchProgress(null);
+        autoEnrichRunning.current=false;
+      })();
+    };
+    setTimeout(tryStart,800);
+    return()=>{cancelled=true;};
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[trip.id]); // מופעל מחדש כשמחליפים טיול
+
   /* חילוץ שם מדינה מהכתובת — חלק אחרון אחרי פסיק, ללא מיקוד */
   /* מיפוי אנגלית → עברית לשמות מדינות (לאיחוד קבוצות) */
   const COUNTRY_HE={
@@ -2047,7 +2084,11 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
     const query=item.name+(item.address?' '+item.address:'');
     svc.textSearch({query},(results,status)=>{
       const PS=window.google.maps.places.PlacesServiceStatus;
-      if(status!==PS.OK||!results?.length){resolve(null);return;}
+      if(status!==PS.OK||!results?.length){
+        // ZERO_RESULTS → לא נמצא בגוגל; שגיאות אחרות (rate limit, deny) → null (ניסה שוב מאוחר)
+        resolve(status===PS.ZERO_RESULTS?{...item,_notFound:true}:null);
+        return;
+      }
       svc.getDetails({
         placeId:results[0].place_id,
         fields:['name','formatted_address','geometry','rating','user_ratings_total',
@@ -2084,31 +2125,31 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
     setEnrichingId(item.id);
     const updated=await enrichOneAsync(item);
     setEnrichingId(null);
-    if(!updated){toast('לא נמצאו תוצאות בגוגל מפות','error');return;}
+    if(!updated){toast('שגיאת API — נסה שוב מאוחר יותר','error');return;}
     onUpdate({...tripRef.current,interestBank:tripRef.current.interestBank.map(i=>i.id===item.id?updated:i)});
-    toast(`✓ "${updated.name}" עודכן — ${updated.address||'ללא כתובת'}`,'success');
+    if(updated._notFound){toast(`"${item.name}" לא נמצא בגוגל מפות`,'error');}
+    else{toast(`✓ "${updated.name}" קושר לגוגל — ${updated.address||'ללא כתובת'}`,'success');}
   };
 
   /* העשרה קבוצתית — כל הפריטים ללא כתובת, אחד אחרי השני */
   const batchEnrichMissing=async()=>{
     if(!window.google?.maps?.places){toast('Google Maps אינו זמין — יש לוודא שהמפה טעונה','error');return;}
-    const toEnrich=tripRef.current.interestBank.filter(i=>!i.address||i._noCoords);
-    if(!toEnrich.length){toast('כל הפריטים כבר מכילים כתובת ✓','success');return;}
+    const toEnrich=tripRef.current.interestBank.filter(i=>!i.placeId&&!i._notFound);
+    if(!toEnrich.length){toast('כל האטרקציות כבר מקושרות לגוגל ✓','success');return;}
     let currentBank=[...tripRef.current.interestBank];
-    let successCount=0;
+    let successCount=0,notFoundCount=0;
     for(let idx=0;idx<toEnrich.length;idx++){
       setBatchProgress({done:idx,total:toEnrich.length,name:toEnrich[idx].name});
       const updated=await enrichOneAsync(toEnrich[idx]);
       if(updated){
         currentBank=currentBank.map(b=>b.id===toEnrich[idx].id?updated:b);
         onUpdate({...tripRef.current,interestBank:currentBank});
-        successCount++;
+        if(updated._notFound)notFoundCount++;else successCount++;
       }
-      await new Promise(r=>setTimeout(r,400)); // הגבלת קצב בקשות API
+      await new Promise(r=>setTimeout(r,500));
     }
     setBatchProgress(null);
-    const skipped=toEnrich.length-successCount;
-    toast(`הושלמו ${successCount} פריטים${skipped?` (${skipped} לא נמצאו)`:''}  ✓`,'success');
+    toast(`קושרו ${successCount} אטרקציות לגוגל${notFoundCount?` (${notFoundCount} לא נמצאו בגוגל)`:''}  ✓`,'success');
   };
 
   /* ══════════════════════════════════
@@ -2502,10 +2543,10 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
         </div>}
       </div>}
       {/* כפתור השלמת כתובות קבוצתית — מופיע רק כשיש פריטים ללא כתובת */}
-      {!batchProgress&&trip.interestBank.some(i=>!i.address||i._noCoords)&&(
+      {!batchProgress&&trip.interestBank.some(i=>!i.placeId&&!i._notFound)&&(
         <button className="btn btn-amber btn-sm" style={{width:'100%'}}
           disabled={!!enrichingId} onClick={batchEnrichMissing}>
-          🔍 השלם כתובות לכל הפריטים ({trip.interestBank.filter(i=>!i.address||i._noCoords).length})
+          🔍 קשר לגוגל ({trip.interestBank.filter(i=>!i.placeId&&!i._notFound).length} אטרקציות ממתינות)
         </button>
       )}
       <button className="btn btn-secondary btn-sm" style={{width:'100%'}}
