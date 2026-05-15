@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v57';
+const APP_VERSION = 'v58';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -3195,8 +3195,9 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus}){
 
           {/* תיאור */}
           <div style={{background:'rgba(251,146,60,0.08)',border:'1px solid rgba(251,146,60,0.2)',borderRadius:8,padding:'10px 14px',fontSize:12,lineHeight:1.9}}>
-            <strong>מה זה?</strong> מסד נתונים בענן של Google — מסנכרן את הטיול שלך בזמן אמת בין כל המכשירים (מחשב, סלולר, טאבלט).<br/>
-            <strong>חינמי לחלוטין</strong> לשימוש אישי — עד 1GB אחסון ו-10GB/חודש תעבורה.
+            <strong>מה זה?</strong> מסד נתונים בענן של Google — מסנכרן את הטיול שלך בזמן אמת בין כל המכשירים (מחשב, סלולר, טאבלט). <strong>חינמי לחלוטין</strong> לשימוש אישי.<br/>
+            <strong>⚠️ שים לב — חסימה אחרי 30 יום:</strong> כשיוצרים פרויקט Firebase בפעם הראשונה, גוגל שם אוטומטית חוקי גישה (Rules) שמאפשרים גישה ל-<strong>30 יום בלבד</strong>. אחרי שהזמן פג, Firebase חוסם כל בקשה ומחזיר "Permission denied" — <strong>הנתונים לא נמחקים</strong>, רק הגישה ננעלת.<br/>
+            <strong>הפתרון:</strong> להחליף את ה-Rules לכאלה שלא פגים — ראה כרטיס 🔒 למטה, זה לוקח פחות מדקה.
           </div>
 
           {/* הגדרה */}
