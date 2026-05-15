@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v60';
+const APP_VERSION = 'v61';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -1701,9 +1701,16 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
 /* ══════════════════════════════════
    פריט בנק אטרקציות
 ══════════════════════════════════ */
-function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,onSelect,onEnrich,enriching}){
+function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,onSelect,onEnrich,enriching,onNoteChange}){
   const[selDay,setSelDay]=useState('');
+  const[noteVal,setNoteVal]=useState(item.note||'');
+  const[showNote,setShowNote]=useState(!!(item.note));
+  useEffect(()=>{setNoteVal(item.note||'');setShowNote(!!(item.note));},[item.id,item.note]);
   const focusMap=()=>{if(item.lat){onLocate?.(item.lat,item.lng);onFocusItem?.(item.lat,item.lng,item.name);}};
+  const saveNote=(val)=>{if(onNoteChange&&val!==item.note)onNoteChange(item.id,val);};
+  /* קישור גוגל מפות — מה-url שנשמר בייבוא, או בנה מ-placeId */
+  const mapsUrl=item.url||(item.placeId?`https://www.google.com/maps/place/?q=place_id:${item.placeId}`:'');
+
   return <div className="interest-item" style={{marginBottom:6,flexDirection:'column',alignItems:'stretch',gap:8,
     outline:selected?'2px solid var(--accent)':'2px solid transparent',borderRadius:8,transition:'outline 0.15s'}}>
     <div style={{display:'flex',alignItems:'flex-start',gap:6}}>
@@ -1712,25 +1719,57 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
       <div style={{flex:1,minWidth:0,cursor:item.lat?'pointer':'default'}} onClick={focusMap}>
         <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
         {item.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1,lineHeight:1.4}}>{item.placeType}</div>}
-        {item._noCoords&&!item.placeId&&<div style={{fontSize:10,color:'var(--amber)',marginTop:1}}>📍 ללא מיקום — לחץ 🔍 להשלמה מגוגל מפות</div>}
         {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginTop:1}}>{item.address}</div>}
         {item.rating&&<div style={{fontSize:11,color:'var(--amber)',marginTop:2}}>⭐ {item.rating}{item.userRatingsTotal?` (${Number(item.userRatingsTotal).toLocaleString()})`:''}</div>}
         {item.openStatus&&<div style={{fontSize:11,fontWeight:600,marginTop:1,color:item.openStatus==='פתוח עכשיו'?'#22c55e':'#ef4444'}}>{item.openStatus==='פתוח עכשיו'?'✅':'🔴'} {item.openStatus}</div>}
         {item.todayHours&&<div style={{fontSize:11,color:'var(--text3)',marginTop:1}}>🕐 {item.todayHours}</div>}
         {item.phone&&<div style={{fontSize:11,color:'var(--accent)',marginTop:1}}>📞 {item.phone}</div>}
         {item.website&&<a href={item.website} target="_blank" rel="noreferrer" style={{fontSize:11,color:'var(--accent)',display:'block',marginTop:1,wordBreak:'break-all'}} onClick={e=>e.stopPropagation()}>🌐 {item.website.replace(/^https?:\/\//,'').split('/')[0]}</a>}
+        {/* קישור גוגל מפות — אוטומטי מהייבוא או מ-placeId, ללא צורך ב-🔍 */}
+        {mapsUrl&&<a href={mapsUrl} target="_blank" rel="noreferrer"
+          style={{fontSize:11,color:'#4285F4',display:'inline-flex',alignItems:'center',gap:3,marginTop:3,textDecoration:'none',fontWeight:600}}
+          onClick={e=>e.stopPropagation()}>
+          <span style={{fontSize:13}}>🗺️</span> פתח בגוגל מפות
+        </a>}
       </div>
       <div style={{display:'flex',flexDirection:'column',gap:4,flexShrink:0}}>
         {item.lat&&(onLocate||onFocusItem)&&(
           <button className="btn btn-secondary btn-icon btn-sm" title="הצג במפה" onClick={focusMap}>📍</button>
         )}
         {onEnrich&&<button className="btn btn-secondary btn-icon btn-sm"
-          title={item.placeId?'רענן פרטים מגוגל מפות':'קשר לגוגל מפות והשלם פרטים'}
+          title={item.placeId?'רענן דירוג/שעות/תמונה מגוגל':'השלם דירוג, שעות ופרטים מגוגל'}
           onClick={()=>onEnrich(item)} disabled={!!enriching}
           style={{fontSize:enriching?12:11,opacity:enriching?0.6:1}}>{enriching?'⏳':'🔍'}</button>}
         <button className="btn btn-danger btn-icon btn-sm" onClick={onDelete} title="הסר">✕</button>
       </div>
     </div>
+
+    {/* הערה מגוגל מפות (מיובאת) */}
+    {item.googleNote&&<div style={{background:'rgba(66,133,244,0.08)',border:'1px solid rgba(66,133,244,0.2)',borderRadius:6,padding:'5px 9px',fontSize:11,color:'var(--text2)',lineHeight:1.6}}>
+      💬 <strong>הערה מגוגל:</strong> {item.googleNote}
+    </div>}
+
+    {/* הערה אישית */}
+    {showNote?(
+      <div style={{display:'flex',gap:5,alignItems:'flex-start'}}>
+        <textarea
+          value={noteVal}
+          onChange={e=>setNoteVal(e.target.value)}
+          onBlur={e=>saveNote(e.target.value)}
+          placeholder="הערה אישית — מה מיוחד במקום הזה?"
+          rows={2}
+          style={{flex:1,fontSize:11,padding:'5px 8px',borderRadius:6,border:'1px solid var(--border)',
+            background:'var(--bg2)',color:'var(--text)',resize:'vertical',fontFamily:'Heebo,sans-serif',
+            direction:'rtl',lineHeight:1.6,minHeight:38}}
+        />
+        {!noteVal&&<button className="btn btn-secondary btn-icon btn-sm" style={{flexShrink:0,marginTop:1}}
+          title="בטל הערה" onClick={()=>setShowNote(false)}>✕</button>}
+      </div>
+    ):(
+      <button className="btn btn-secondary btn-sm" style={{alignSelf:'flex-start',fontSize:10,padding:'3px 8px',opacity:.7}}
+        onClick={()=>setShowNote(true)}>+ הוסף הערה</button>
+    )}
+
     <div style={{display:'flex',gap:5}}>
       <select value={selDay} onChange={e=>setSelDay(e.target.value)}
         style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border)',color:'var(--text)',borderRadius:7,padding:'5px 8px',fontSize:11,fontFamily:'Heebo,sans-serif',direction:'rtl'}}>
@@ -2257,10 +2296,12 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
         const lat=coords?.[2]??null;
         const lng=coords?.[3]??null;
         const googlePath=loc[7]||'';
+        const googleNote=typeof p[3]==='string'?p[3].trim():'';
         places.push({
           id:uid(),name,address,lat,lng,
           _noCoords:!lat,
           url:googlePath?`https://www.google.com${googlePath}`:'',
+          googleNote,
         });
       }catch{}
     }
@@ -2540,7 +2581,8 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
               <BankItem key={item.id} item={item} days={trip.days} onAddToDay={addItemToDay}
                 onDelete={()=>delBank(item.id)} onLocate={onLocate} onFocusItem={onFocusItem}
                 selected={selected.has(item.id)} onSelect={toggleSelect}
-                onEnrich={enrichItem} enriching={enrichingId===item.id}/>
+                onEnrich={enrichItem} enriching={enrichingId===item.id}
+                onNoteChange={(id,note)=>{onUpdate({...tripRef.current,interestBank:tripRef.current.interestBank.map(i=>i.id===id?{...i,note}:i)});}}/>
             ))}
           </div>;
         })
