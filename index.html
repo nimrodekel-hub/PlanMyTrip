@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v67';
+const APP_VERSION = 'v68';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -969,6 +969,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
     window.__gmIw=iw;
     window.__gmIwPlace=iwPlace;
     window.__gmBuild=buildIwContent;
+    window.__gmGetCenter=()=>{ const c=map.getCenter(); return c?{lat:c.lat(),lng:c.lng()}:null; };
 
     // ── מרקרי תוצאות חיפוש — מנוהלים בנפרד מסמני הטיול ──
     const searchMarkersArr=[];
@@ -1936,6 +1937,8 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
   const[enrichingId,setEnrichingId]=useState(null);
   const[batchProgress,setBatchProgress]=useState(null); // null | {done,total,name}
   const[bankSearch,setBankSearch]=useState('');
+  const[sortMode,setSortMode]=useState('default'); // 'default'|'name'|'distance'
+  const[mapCenter,setMapCenter]=useState(null); // {lat,lng} לשימוש במיון לפי מרחק
   // expanded = קבוצות פתוחות; ברירת מחדל: ריק = כולן סגורות
   const[expanded,setExpanded]=useState(()=>new Set());
   const takeoutRef=useRef(null);
@@ -2088,16 +2091,32 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
     return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0],'he'));
   },[trip.interestBank]);
 
-  /* סינון לפי חיפוש — רשימה שטוחה */
-  const searchResults=useMemo(()=>{
+  /* מרחק בין שתי נקודות (ק"מ) — Haversine */
+  const haversineKm=(lat1,lng1,lat2,lng2)=>{
+    const R=6371,toR=x=>x*Math.PI/180;
+    const dLat=toR(lat2-lat1),dLng=toR(lng2-lng1);
+    const a=Math.sin(dLat/2)**2+Math.cos(toR(lat1))*Math.cos(toR(lat2))*Math.sin(dLng/2)**2;
+    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  };
+  const fmtDist=km=>km===Infinity?'—':km<1?`${Math.round(km*1000)}מ׳`:`${km<10?km.toFixed(1):Math.round(km)}ק"מ`;
+
+  /* פריטים מסוננים + ממוינים */
+  const displayItems=useMemo(()=>{
+    let items=[...trip.interestBank];
+    // סינון לפי חיפוש
     const q=bankSearch.trim().toLowerCase();
-    if(!q) return null;
-    return trip.interestBank.filter(i=>
-      (i.name||'').toLowerCase().includes(q)||
-      (i.address||'').toLowerCase().includes(q)||
-      (i.placeType||'').toLowerCase().includes(q)
-    );
-  },[bankSearch,trip.interestBank]);
+    if(q) items=items.filter(i=>(i.name||'').toLowerCase().includes(q)||(i.address||'').toLowerCase().includes(q)||(i.placeType||'').toLowerCase().includes(q));
+    // מיון
+    if(sortMode==='name'){
+      items.sort((a,b)=>(a.name||'').localeCompare(b.name||'','he'));
+    } else if(sortMode==='distance'&&mapCenter){
+      items=items.map(i=>({...i,_dist:i.lat&&i.lng?haversineKm(mapCenter.lat,mapCenter.lng,i.lat,i.lng):Infinity}));
+      items.sort((a,b)=>a._dist-b._dist);
+    }
+    return items;
+  },[bankSearch,sortMode,mapCenter,trip.interestBank]);
+  // תצוגה שטוחה כשמחפשים או ממיינים (לא ברירת מחדל)
+  const showFlat=!!(bankSearch.trim())||sortMode!=='default';
 
   /* ניהול בחירה */
   const toggleSelect=(id,val)=>setSelected(prev=>{const s=new Set(prev);val?s.add(id):s.delete(id);return s;});
@@ -2542,40 +2561,70 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
       {onClose&&<button onClick={onClose} style={{background:'none',border:'none',color:'var(--text3)',fontSize:20,cursor:'pointer',lineHeight:1,padding:'0 2px'}}>✕</button>}
     </div>
 
-    {/* שורת חיפוש */}
-    {trip.interestBank.length>0&&<div style={{padding:'6px 10px',borderBottom:'1px solid var(--border)',flexShrink:0,display:'flex',gap:5,alignItems:'center'}}>
-      <input
-        className="input"
-        placeholder="🔍 חפש אטרקציה לפי שם, כתובת, סוג…"
-        value={bankSearch}
-        onChange={e=>setBankSearch(e.target.value)}
-        style={{fontSize:12,padding:'5px 9px',flex:1}}
-      />
-      {bankSearch&&<button className="btn btn-secondary btn-sm" style={{flexShrink:0,padding:'4px 8px'}}
-        onClick={()=>setBankSearch('')}>✕</button>}
+    {/* שורת חיפוש + מיון */}
+    {trip.interestBank.length>0&&<div style={{padding:'6px 10px',borderBottom:'1px solid var(--border)',flexShrink:0,display:'flex',flexDirection:'column',gap:5}}>
+      <div style={{display:'flex',gap:5,alignItems:'center'}}>
+        <input
+          className="input"
+          placeholder="🔍 חפש לפי שם, כתובת, סוג…"
+          value={bankSearch}
+          onChange={e=>setBankSearch(e.target.value)}
+          style={{fontSize:12,padding:'5px 9px',flex:1}}
+        />
+        {bankSearch&&<button className="btn btn-secondary btn-sm" style={{flexShrink:0,padding:'4px 8px'}}
+          onClick={()=>setBankSearch('')}>✕</button>}
+      </div>
+      <div style={{display:'flex',gap:4,alignItems:'center'}}>
+        <span style={{fontSize:10,color:'var(--text3)',flexShrink:0}}>מיון:</span>
+        {[['default','📋 ברירת מחדל'],['name','א-ת שם'],['distance','📍 מרחק']].map(([mode,label])=>(
+          <button key={mode} className="btn btn-sm"
+            style={{fontSize:10,padding:'2px 7px',flex:1,
+              background:sortMode===mode?'var(--accent)':'var(--bg3)',
+              color:sortMode===mode?'#fff':'var(--text2)',
+              border:`1px solid ${sortMode===mode?'var(--accent)':'var(--border)'}`}}
+            onClick={()=>{
+              if(mode==='distance'){
+                const c=window.__gmGetCenter?.();
+                if(!c){toast('פתח את המפה כדי למיין לפי מרחק','error');return;}
+                setMapCenter(c);
+              }
+              setSortMode(mode);
+            }}>{label}</button>
+        ))}
+      </div>
+      {sortMode==='distance'&&mapCenter&&<div style={{fontSize:10,color:'var(--text3)',textAlign:'center'}}>
+        ממרכז המפה · לחץ "מרחק" שוב לעדכן מיקום
+      </div>}
     </div>}
 
-    {/* רשימה מקובצת / תוצאות חיפוש */}
+    {/* רשימה מקובצת / תצוגה שטוחה */}
     <div className="scroll-y flex-1" style={{padding:'8px 10px'}}>
       {trip.interestBank.length===0
         ?<div style={{color:'var(--text3)',fontSize:12,textAlign:'center',padding:'24px 8px',lineHeight:1.9}}>
             לחץ על מקום במפה ← "הוסף לבנק האטרקציות".<br/>או ייבא מ-Google Takeout.
           </div>
-        :searchResults!==null
-        ?searchResults.length===0
+        :showFlat
+        ?displayItems.length===0
           ?<div style={{color:'var(--text3)',fontSize:12,textAlign:'center',padding:'24px 8px'}}>
-              לא נמצאו אטרקציות התואמות לחיפוש
+              לא נמצאו אטרקציות
             </div>
           :<>
             <div style={{fontSize:10,color:'var(--text3)',marginBottom:6,paddingRight:2}}>
-              {searchResults.length} תוצאות
+              {displayItems.length} אטרקציות
             </div>
-            {searchResults.map(item=>(
-              <BankItem key={item.id} item={item} days={trip.days} onAddToDay={addItemToDay}
-                onDelete={()=>delBank(item.id)} onLocate={onLocate} onFocusItem={onFocusItem}
-                selected={selected.has(item.id)} onSelect={toggleSelect}
-                onEnrich={enrichItem} enriching={enrichingId===item.id}
-                onNoteChange={(id,note)=>{onUpdate({...tripRef.current,interestBank:tripRef.current.interestBank.map(i=>i.id===id?{...i,note}:i)});}}/>
+            {displayItems.map(item=>(
+              <div key={item.id}>
+                {sortMode==='distance'&&item._dist!==undefined&&(
+                  <div style={{fontSize:10,color:'var(--accent)',fontWeight:600,marginBottom:2,paddingRight:2}}>
+                    📍 {fmtDist(item._dist)}
+                  </div>
+                )}
+                <BankItem item={item} days={trip.days} onAddToDay={addItemToDay}
+                  onDelete={()=>delBank(item.id)} onLocate={onLocate} onFocusItem={onFocusItem}
+                  selected={selected.has(item.id)} onSelect={toggleSelect}
+                  onEnrich={enrichItem} enriching={enrichingId===item.id}
+                  onNoteChange={(id,note)=>{onUpdate({...tripRef.current,interestBank:tripRef.current.interestBank.map(i=>i.id===id?{...i,note}:i)});}}/>
+              </div>
             ))}
           </>
         :grouped.map(([country,items])=>{
