@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v59';
+const APP_VERSION = 'v60';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -735,7 +735,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
   useEffect(()=>{
     if (!ready||!mapRef.current||mapInst.current) return;
     const map=new window.google.maps.Map(mapRef.current,{
-      center:{lat:32.0853,lng:34.7818}, zoom:14,
+      center:{lat:32.0853,lng:34.7818}, zoom:12,
       mapTypeControl:true, streetViewControl:true, fullscreenControl:true,
       clickableIcons:true,
       styles:[
@@ -747,6 +747,16 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
     });
     mapInst.current=map;
     window.__gmFocus=(lat,lng,zoom=17)=>{ map.panTo({lat,lng}); map.setZoom(zoom); };
+
+    // מיקום נוכחי — פעם אחת בטעינה
+    const goToCurrentLoc=(onDone)=>{
+      navigator.geolocation?.getCurrentPosition(
+        pos=>{ map.panTo({lat:pos.coords.latitude,lng:pos.coords.longitude}); map.setZoom(14); onDone?.(); },
+        ()=>{ onDone?.(); } // גם אם נדחה — נשאר בברירת מחדל
+      );
+    };
+    goToCurrentLoc();
+    window.__gmCurrentLoc=()=>goToCurrentLoc(()=>toast('מרכז על מיקומך הנוכחי','success'));
 
     // ResizeObserver — מפעיל resize כשהמיכל חוזר להיות גלוי (סלולר: מעבר בין תצוגות)
     if(window.ResizeObserver&&mapRef.current){
@@ -790,9 +800,9 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
     if (input){
       const doSearch=async()=>{
         const q=input.value.trim(); if (!q) return;
-        // 1. Places textSearch
+        // 1. Places textSearch — location bias לפי מרכז המפה הנוכחי (לא מגביל, רק מעדיף)
         const placesOk=await new Promise(res=>{
-          searchSvc.textSearch({query:q,language:'he'},(results,status)=>{
+          searchSvc.textSearch({query:q,language:'he',location:map.getCenter()},(results,status)=>{
             if (status===window.google.maps.places.PlacesServiceStatus.OK&&results?.length){
               const bounds=new window.google.maps.LatLngBounds();
               results.slice(0,6).forEach(p=>{
@@ -806,9 +816,13 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
           });
         });
         if (placesOk) return;
-        // 2. Nominatim — מוצא חופים, פארקים, מסעדות, ערים
+        // 2. Nominatim — מוצא חופים, פארקים, מסעדות, ערים — עם bias לפי מרכז המפה
         try{
-          const nRes=await nominatimSearch(q);
+          const ctr=map.getCenter();
+          const vb=`${ctr.lng()-3},${ctr.lat()+3},${ctr.lng()+3},${ctr.lat()-3}`;
+          const nUrl=`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=4&viewbox=${vb}&bounded=0&accept-language=he`;
+          const nr=await fetch(nUrl,{headers:{'Accept-Language':'he'}});
+          const nRes=await nr.json();
           if (panToNominatim(nRes)) return;
         }catch{}
         // 3. Google Geocoder — כתובות
@@ -1237,8 +1251,9 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
 
   return <div style={{height:'100%',width:'100%',position:'relative',display:'flex',flexDirection:'column'}}>
     <div style={{padding:'8px',background:'var(--bg2)',borderBottom:'1px solid var(--border)',display:'flex',gap:6,alignItems:'center'}}>
-      <input id="map-search-input" className="input" placeholder="🔍 חפש מקום, עיר, אטרקציה… (Enter)" style={{fontSize:13,flex:1}}/>
+      <input id="map-search-input" className="input" placeholder="🔍 חפש מקום, עיר, מלון, אטרקציה… (Enter)" style={{fontSize:13,flex:1}}/>
       <button className="btn btn-secondary btn-sm" onClick={()=>window.__gmSearch?.()}>חפש</button>
+      <button className="btn btn-secondary btn-sm" title="מיקום נוכחי" onClick={()=>window.__gmCurrentLoc?.()}>📍</button>
       <button className="btn btn-secondary btn-sm" title="מזג אוויר" onClick={()=>setWxOpen(o=>!o)}
         style={{background:wxOpen?'var(--accent)':undefined,color:wxOpen?'#fff':undefined}}>🌤️</button>
     </div>
@@ -1940,6 +1955,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
   /* חילוץ שם מדינה מהכתובת — חלק אחרון אחרי פסיק, ללא מיקוד */
   /* מיפוי אנגלית → עברית לשמות מדינות (לאיחוד קבוצות) */
   const COUNTRY_HE={
+    // אנגלית סטנדרטית
     'israel':'ישראל','austria':'אוסטריה','belgium':'בלגיה','france':'צרפת',
     'germany':'גרמניה','italy':'איטליה','spain':'ספרד','switzerland':'שווייץ',
     'netherlands':'הולנד','holland':'הולנד','czech republic':'צ\'כיה','czechia':'צ\'כיה',
@@ -1958,20 +1974,63 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
     'cyprus':'קפריסין','malta':'מלטה','estonia':'אסטוניה','latvia':'לטביה',
     'lithuania':'ליטא','georgia':'גיאורגיה','armenia':'ארמניה','peru':'פרו',
     'brazil':'ברזיל','argentina':'ארגנטינה','mexico':'מקסיקו','south africa':'דרום אפריקה',
+    // שפות מקומיות (google maps מחזיר לפעמים שם מדינה בשפת המדינה)
+    'deutschland':'גרמניה','osterreich':'אוסטריה','österreich':'אוסטריה',
+    'schweiz':'שווייץ','suisse':'שווייץ','svizzera':'שווייץ',
+    'espana':'ספרד','españa':'ספרד','italia':'איטליה',
+    'nederland':'הולנד','belgique':'בלגיה','belgie':'בלגיה','belgië':'בלגיה',
+    'magyarorszag':'הונגריה','magyarország':'הונגריה',
+    'ceska republika':'צ\'כיה','česká republika':'צ\'כיה','česko':'צ\'כיה',
+    'polska':'פולין','hrvatska':'קרואטיה',
+    'norge':'נורווגיה','sverige':'שוודיה','suomi':'פינלנד','danmark':'דנמרק',
+    'eire':'אירלנד','éire':'אירלנד',
+    // עברית → עברית (למקרה שהכתובת כבר בעברית — מונע כפילויות)
+    'ישראל':'ישראל','גרמניה':'גרמניה','צרפת':'צרפת','איטליה':'איטליה',
+    'ספרד':'ספרד','שווייץ':'שווייץ','הולנד':'הולנד','אוסטריה':'אוסטריה',
+    'בלגיה':'בלגיה','הונגריה':'הונגריה','פולין':'פולין','קרואטיה':'קרואטיה',
+    'יוון':'יוון','פורטוגל':'פורטוגל','בריטניה':'בריטניה','ארצות הברית':'ארצות הברית',
+    'טורקיה':'טורקיה','ירדן':'ירדן','מצרים':'מצרים','צ\'כיה':'צ\'כיה',
+    'רומניה':'רומניה','בולגריה':'בולגריה','סרביה':'סרביה','סלובקיה':'סלובקיה',
+    'סלובניה':'סלובניה','שוודיה':'שוודיה','נורווגיה':'נורווגיה','דנמרק':'דנמרק',
+    'פינלנד':'פינלנד','לוקסמבורג':'לוקסמבורג','אירלנד':'אירלנד','איסלנד':'איסלנד',
+    'קנדה':'קנדה','אוסטרליה':'אוסטרליה','יפן':'יפן','סין':'סין','הודו':'הודו',
+    'תאילנד':'תאילנד','מרוקו':'מרוקו','רוסיה':'רוסיה','אוקראינה':'אוקראינה',
+    'קפריסין':'קפריסין','מלטה':'מלטה','גיאורגיה':'גיאורגיה','ארמניה':'ארמניה',
+    'ברזיל':'ברזיל','ארגנטינה':'ארגנטינה','מקסיקו':'מקסיקו','דרום אפריקה':'דרום אפריקה',
+    'אלבניה':'אלבניה','מקדוניה':'מקדוניה','בוסניה':'בוסניה','מונטנגרו':'מונטנגרו',
+    'אסטוניה':'אסטוניה','לטביה':'לטביה','ליטא':'ליטא',
   };
 
-  /* נרמל שם מדינה: אנגלית → עברית, ועיר ישראלית → ישראל */
+  /* ערים ישראליות שעלולות להופיע כחלק אחרון בכתובת */
+  const ISRAEL_CITIES=new Set([
+    'jerusalem','tel aviv','tel aviv-jaffa','tel aviv - jaffa','haifa','eilat',
+    'netanya','beer sheva','be\'er sheva','beersheba','herzliya','ramat gan',
+    'bnei brak','petah tikva','rishon lezion','rishon le-zion','rehovot','holon',
+    'bat yam','ashdod','ashkelon','nahariya','acre','akko','nazareth','tiberias',
+    'safed','tzfat','kfar saba','modiin','caesarea','jaffa','yafo','afula',
+    'dimona','hadera','lod','ramla','raanana','givatayim','ness ziona',
+    'ירושלים','תל אביב','תל אביב-יפו','תל אביב - יפו','חיפה','אילת',
+    'נתניה','באר שבע','הרצליה','רמת גן','בני ברק','פתח תקווה',
+    'ראשון לציון','רחובות','חולון','בת ים','אשדוד','אשקלון',
+    'נהריה','עכו','נצרת','טבריה','צפת','כפר סבא','מודיעין','קיסריה','יפו',
+    'רמת השרון','הוד השרון','כפר יונה','נס ציונה','גבעתיים','לוד','רמלה','רעננה',
+    'אפולה','דימונה','חדרה',
+  ]);
+
+  /* נרמל שם מדינה: אנגלית/שפה מקומית/עברית → עברית */
   const normalizeCountry=(raw,fullAddr)=>{
     if(!raw) return 'ללא כתובת';
     const lo=raw.toLowerCase().trim();
-    /* התאמה ישירה */
+    // התאמה ישירה (כולל עברית→עברית ושפות מקומיות)
     if(COUNTRY_HE[lo]) return COUNTRY_HE[lo];
-    /* התאמה חלקית (למשל "United States of America") */
+    // התאמה חלקית (למשל "United States of America")
     for(const[en,he] of Object.entries(COUNTRY_HE)){
       if(lo.includes(en)) return he;
     }
-    /* אם הכתובת המלאה מכילה Israel/ישראל בכל מקום — מדינה = ישראל */
-    if(/\bisrael\b|\bישראל\b/i.test(fullAddr)) return 'ישראל';
+    // עיר ישראלית → ישראל
+    if(ISRAEL_CITIES.has(lo)) return 'ישראל';
+    // Israel/ישראל בכתובת המלאה — ללא \b כי \b לא עובד עם עברית ב-JS
+    if(/israel/i.test(fullAddr)||/ישראל/.test(fullAddr)) return 'ישראל';
     return raw;
   };
 
@@ -3056,10 +3115,18 @@ function NotesTab({trip,onUpdate}){
 function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,onDeleteTrip,onPush,onPull,ghBusy,genKey}){
   const[showForm,setShowForm]=useState(false);
   const[newName,setNewName]=useState('');
+  const[renameId,setRenameId]=useState(null);
+  const[renameName,setRenameName]=useState('');
   const createTrip=()=>{
     const n=newName.trim()||'טיול חדש';
     onNewTrip(n);
     setNewName(''); setShowForm(false);
+  };
+  const startRename=(t)=>{setRenameId(t.id);setRenameName(t.name);};
+  const commitRename=()=>{
+    const t=trips.find(x=>x.id===renameId); if(!t) return;
+    if(renameName.trim()) onLoadTrip(null,{...t,name:renameName.trim()});
+    setRenameId(null);
   };
 
   return <div className="scroll-y" style={{height:'100%',padding:20}}>
@@ -3087,13 +3154,26 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
           )}
           {trips.map(t=>(
             <div key={t.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:8,background:t.id===activeTrip?.id?'rgba(79,142,247,.12)':'var(--surface2)'}}>
-              <div style={{flex:1,fontSize:13}}>
-                <div style={{fontWeight:600}}>{t.name}</div>
-                <div style={{fontSize:11,color:'var(--text3)'}}>{t.startDate||'—'} → {t.endDate||'—'} · {t.days.length} ימים · {t.expenses.length} הוצאות</div>
-              </div>
-              {t.id!==activeTrip?.id&&<button className="btn btn-secondary btn-sm" onClick={()=>onLoadTrip(t.id)}>טען</button>}
-              {t.id===activeTrip?.id&&<span className="chip chip-green" style={{fontSize:10}}>פעיל</span>}
-              <button className="btn btn-danger btn-sm" onClick={()=>{if(confirm(`למחוק את "${t.name}"?`))onDeleteTrip(t.id);}}>🗑</button>
+              {renameId===t.id?(
+                <div style={{flex:1,display:'flex',gap:6}}>
+                  <input className="input" style={{flex:1,fontSize:13}} value={renameName} autoFocus
+                    onChange={e=>setRenameName(e.target.value)}
+                    onKeyDown={e=>{if(e.key==='Enter')commitRename();if(e.key==='Escape')setRenameId(null);}}/>
+                  <button className="btn btn-primary btn-sm" onClick={commitRename}>✓</button>
+                  <button className="btn btn-secondary btn-sm" onClick={()=>setRenameId(null)}>✕</button>
+                </div>
+              ):(
+                <>
+                  <div style={{flex:1,fontSize:13}}>
+                    <div style={{fontWeight:600}}>{t.name}</div>
+                    <div style={{fontSize:11,color:'var(--text3)'}}>{t.startDate||'—'} → {t.endDate||'—'} · {t.days.length} ימים · {t.expenses.length} הוצאות</div>
+                  </div>
+                  <button className="btn btn-secondary btn-sm" title="שנה שם" onClick={()=>startRename(t)}>✏️</button>
+                  {t.id!==activeTrip?.id&&<button className="btn btn-secondary btn-sm" onClick={()=>onLoadTrip(t.id)}>טען</button>}
+                  {t.id===activeTrip?.id&&<span className="chip chip-green" style={{fontSize:10}}>פעיל</span>}
+                  <button className="btn btn-danger btn-sm" onClick={()=>{if(confirm(`למחוק את "${t.name}"?`))onDeleteTrip(t.id);}}>🗑</button>
+                </>
+              )}
             </div>
           ))}
         </div>
