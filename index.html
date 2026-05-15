@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v64';
+const APP_VERSION = 'v65';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -331,18 +331,22 @@ const BLOCK_COLOR     = {travel:'var(--accent)',activity:'var(--green)',stop:'va
 const PLACE_TYPE_HE={restaurant:'🍽️ מסעדה',cafe:'☕ קפה',bar:'🍺 בר',food:'🍽️ אוכל',
   lodging:'🏨 מלון',shopping_mall:'🛍️ קניון',store:'🛍️ חנות',supermarket:'🛒 סופרמרקט',
   grocery_or_supermarket:'🛒 סופר',clothing_store:'👗 ביגוד',
+  winery:'🍷 יקב',
   tourist_attraction:'🎯 אטרקציה',museum:'🏛️ מוזיאון',park:'🌳 פארק',
-  natural_feature:'🏔️ טבע',campground:'⛺ קמפינג',beach:'🏖️ חוף ים',
-  amusement_park:'🎢 פארק שעשועים',zoo:'🦁 גן חיות',aquarium:'🐠 אקווריום',
+  natural_feature:'🏔️ טבע',campground:'⛺ אתר קמפינג',rv_park:'🏕️ חניון קרוואנים',
+  beach:'🏖️ חוף ים',
+  amusement_park:'🎢 פארק שעשועים',playground:'🎠 אטרקציות לילדים',
+  zoo:'🦁 גן חיות',aquarium:'🐠 אקווריום',
   movie_theater:'🎬 קולנוע',gym:'💪 ספורט',stadium:'🏟️ אצטדיון',
   airport:'✈️ שדה תעופה',train_station:'🚂 רכבת',bus_station:'🚌 אוטובוס',
   gas_station:'⛽ תחנת דלק',hospital:'🏥 בית חולים',pharmacy:'💊 בית מרקחת',
   synagogue:'🕍 בית כנסת',church:'⛪ כנסייה',mosque:'🕌 מסגד',
   spa:'💆 ספא',bank:'🏦 בנק',atm:'🏧 כספומט',
   point_of_interest:'📍 אטרקציה',establishment:'🏢 עסק'};
-const PLACE_TYPE_PRIORITY=['restaurant','cafe','bar','lodging','shopping_mall','supermarket',
-  'grocery_or_supermarket','clothing_store','store','museum','zoo','aquarium','amusement_park',
-  'park','campground','beach','movie_theater','tourist_attraction','gym','stadium',
+const PLACE_TYPE_PRIORITY=['restaurant','cafe','bar','winery','lodging','shopping_mall','supermarket',
+  'grocery_or_supermarket','clothing_store','store','museum','zoo','aquarium',
+  'playground','amusement_park','campground','rv_park',
+  'park','beach','movie_theater','tourist_attraction','gym','stadium',
   'airport','train_station','bus_station','gas_station','hospital','pharmacy','spa','bank','atm',
   'synagogue','church','mosque','natural_feature','food','point_of_interest','establishment'];
 const getPlaceTypeLabel=types=>{
@@ -701,6 +705,7 @@ const SEARCH_ICON_MAP=[
   ['restaurant',               '🍽', '#e65100'],
   ['cafe',                     '☕', '#5d4037'],
   ['bar',                      '🍺', '#4e342e'],
+  ['winery',                   '🍷', '#7b1c2e'],  // יקב
   ['night_club',               '🎵', '#4a148c'],
   ['lodging',                  '🛏', '#1565c0'],
   ['shopping_mall',            '🛍', '#00695c'],
@@ -709,12 +714,14 @@ const SEARCH_ICON_MAP=[
   ['clothing_store',           '👗', '#ad1457'],
   ['store',                    '🛍', '#00796b'],
   ['museum',                   '🏛', '#7b1fa2'],
+  ['playground',               '🎠', '#0097a7'],  // אטרקציות לילדים
   ['amusement_park',           '🎢', '#bf360c'],
   ['zoo',                      '🦁', '#e65100'],
   ['aquarium',                 '🐠', '#0277bd'],
-  ['tourist_attraction',       '🎯', '#6a1b9a'],
+  ['tourist_attraction',       '🎯', '#6a1b9a'],  // אטרקציה
   ['park',                     '🌳', '#2e7d32'],
-  ['campground',               '⛺', '#558b2f'],
+  ['campground',               '⛺', '#33691e'],  // אתר קמפינג
+  ['rv_park',                  '🏕', '#2e7d32'],  // חניון קרוואנים
   ['beach',                    '🏖', '#f57f17'],
   ['natural_feature',          '🏔', '#388e3c'],
   ['gym',                      '💪', '#ef6c00'],
@@ -723,7 +730,7 @@ const SEARCH_ICON_MAP=[
   ['airport',                  '✈',  '#37474f'],
   ['train_station',            '🚂', '#546e7a'],
   ['bus_station',              '🚌', '#607d8b'],
-  ['gas_station',              '⛽', '#795548'],
+  ['gas_station',              '⛽', '#795548'],  // תחנת דלק
   ['hospital',                 '🏥', '#c62828'],
   ['pharmacy',                 '💊', '#2e7d32'],
   ['spa',                      '💆', '#ad1457'],
