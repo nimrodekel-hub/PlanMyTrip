@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v69';
+const APP_VERSION = 'v70';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -2110,7 +2110,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
     return normalizeCountry(last||'ללא כתובת',addr);
   };
 
-  /* קיבוץ לפי מדינה, ממויין אלפביתית */
+  /* קיבוץ לפי מדינה — ממויין לפי א-ת בתוך כל קבוצה כשנבחר מיון שם */
   const grouped=useMemo(()=>{
     const map={};
     for(const item of trip.interestBank){
@@ -2118,8 +2118,12 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
       if(!map[c]) map[c]=[];
       map[c].push(item);
     }
-    return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0],'he'));
-  },[trip.interestBank]);
+    const entries=Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0],'he'));
+    if(sortMode==='name'){
+      entries.forEach(([,items])=>items.sort((a,b)=>(a.name||'').localeCompare(b.name||'','he')));
+    }
+    return entries;
+  },[trip.interestBank,sortMode]);
 
   /* מרחק בין שתי נקודות (ק"מ) — Haversine */
   const haversineKm=(lat1,lng1,lat2,lng2)=>{
@@ -2145,8 +2149,8 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
     }
     return items;
   },[bankSearch,sortMode,mapCenter,trip.interestBank]);
-  // תצוגה שטוחה כשמחפשים או ממיינים (לא ברירת מחדל)
-  const showFlat=!!(bankSearch.trim())||sortMode!=='default';
+  // תצוגה שטוחה: רק בחיפוש או מיון לפי מרחק — א-ת נשאר בתוך קבוצות מדינה
+  const showFlat=!!(bankSearch.trim())||sortMode==='distance';
 
   /* ניהול בחירה */
   const toggleSelect=(id,val)=>setSelected(prev=>{const s=new Set(prev);val?s.add(id):s.delete(id);return s;});
