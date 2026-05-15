@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v66';
+const APP_VERSION = 'v67';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -1935,6 +1935,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
   const[selected,setSelected]=useState(()=>new Set());
   const[enrichingId,setEnrichingId]=useState(null);
   const[batchProgress,setBatchProgress]=useState(null); // null | {done,total,name}
+  const[bankSearch,setBankSearch]=useState('');
   // expanded = קבוצות פתוחות; ברירת מחדל: ריק = כולן סגורות
   const[expanded,setExpanded]=useState(()=>new Set());
   const takeoutRef=useRef(null);
@@ -2086,6 +2087,17 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
     }
     return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0],'he'));
   },[trip.interestBank]);
+
+  /* סינון לפי חיפוש — רשימה שטוחה */
+  const searchResults=useMemo(()=>{
+    const q=bankSearch.trim().toLowerCase();
+    if(!q) return null;
+    return trip.interestBank.filter(i=>
+      (i.name||'').toLowerCase().includes(q)||
+      (i.address||'').toLowerCase().includes(q)||
+      (i.placeType||'').toLowerCase().includes(q)
+    );
+  },[bankSearch,trip.interestBank]);
 
   /* ניהול בחירה */
   const toggleSelect=(id,val)=>setSelected(prev=>{const s=new Set(prev);val?s.add(id):s.delete(id);return s;});
@@ -2530,12 +2542,42 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
       {onClose&&<button onClick={onClose} style={{background:'none',border:'none',color:'var(--text3)',fontSize:20,cursor:'pointer',lineHeight:1,padding:'0 2px'}}>✕</button>}
     </div>
 
-    {/* רשימה מקובצת */}
+    {/* שורת חיפוש */}
+    {trip.interestBank.length>0&&<div style={{padding:'6px 10px',borderBottom:'1px solid var(--border)',flexShrink:0,display:'flex',gap:5,alignItems:'center'}}>
+      <input
+        className="input"
+        placeholder="🔍 חפש אטרקציה לפי שם, כתובת, סוג…"
+        value={bankSearch}
+        onChange={e=>setBankSearch(e.target.value)}
+        style={{fontSize:12,padding:'5px 9px',flex:1}}
+      />
+      {bankSearch&&<button className="btn btn-secondary btn-sm" style={{flexShrink:0,padding:'4px 8px'}}
+        onClick={()=>setBankSearch('')}>✕</button>}
+    </div>}
+
+    {/* רשימה מקובצת / תוצאות חיפוש */}
     <div className="scroll-y flex-1" style={{padding:'8px 10px'}}>
       {trip.interestBank.length===0
         ?<div style={{color:'var(--text3)',fontSize:12,textAlign:'center',padding:'24px 8px',lineHeight:1.9}}>
             לחץ על מקום במפה ← "הוסף לבנק האטרקציות".<br/>או ייבא מ-Google Takeout.
           </div>
+        :searchResults!==null
+        ?searchResults.length===0
+          ?<div style={{color:'var(--text3)',fontSize:12,textAlign:'center',padding:'24px 8px'}}>
+              לא נמצאו אטרקציות התואמות לחיפוש
+            </div>
+          :<>
+            <div style={{fontSize:10,color:'var(--text3)',marginBottom:6,paddingRight:2}}>
+              {searchResults.length} תוצאות
+            </div>
+            {searchResults.map(item=>(
+              <BankItem key={item.id} item={item} days={trip.days} onAddToDay={addItemToDay}
+                onDelete={()=>delBank(item.id)} onLocate={onLocate} onFocusItem={onFocusItem}
+                selected={selected.has(item.id)} onSelect={toggleSelect}
+                onEnrich={enrichItem} enriching={enrichingId===item.id}
+                onNoteChange={(id,note)=>{onUpdate({...tripRef.current,interestBank:tripRef.current.interestBank.map(i=>i.id===id?{...i,note}:i)});}}/>
+            ))}
+          </>
         :grouped.map(([country,items])=>{
           const allSel=items.every(i=>selected.has(i.id));
           const someSel=items.some(i=>selected.has(i.id));
