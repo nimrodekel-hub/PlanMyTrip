@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v63';
+const APP_VERSION = 'v64';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -696,6 +696,58 @@ function VehicleHeader({trip,theme,syncStatus,hasGh,hasFb,onThemeToggle,onUpdate
 
 const DAY_COLORS=['#ef4444','#3b82f6','#22c55e','#f97316','#a855f7','#ec4899','#14b8a6','#eab308'];
 
+/* ── אייקוני מרקר חיפוש לפי קטגוריה (כמו גוגל מפות) ── */
+const SEARCH_ICON_MAP=[
+  ['restaurant',               '🍽', '#e65100'],
+  ['cafe',                     '☕', '#5d4037'],
+  ['bar',                      '🍺', '#4e342e'],
+  ['night_club',               '🎵', '#4a148c'],
+  ['lodging',                  '🛏', '#1565c0'],
+  ['shopping_mall',            '🛍', '#00695c'],
+  ['supermarket',              '🛒', '#00838f'],
+  ['grocery_or_supermarket',   '🛒', '#00838f'],
+  ['clothing_store',           '👗', '#ad1457'],
+  ['store',                    '🛍', '#00796b'],
+  ['museum',                   '🏛', '#7b1fa2'],
+  ['amusement_park',           '🎢', '#bf360c'],
+  ['zoo',                      '🦁', '#e65100'],
+  ['aquarium',                 '🐠', '#0277bd'],
+  ['tourist_attraction',       '🎯', '#6a1b9a'],
+  ['park',                     '🌳', '#2e7d32'],
+  ['campground',               '⛺', '#558b2f'],
+  ['beach',                    '🏖', '#f57f17'],
+  ['natural_feature',          '🏔', '#388e3c'],
+  ['gym',                      '💪', '#ef6c00'],
+  ['stadium',                  '🏟', '#33691e'],
+  ['movie_theater',            '🎬', '#4a148c'],
+  ['airport',                  '✈',  '#37474f'],
+  ['train_station',            '🚂', '#546e7a'],
+  ['bus_station',              '🚌', '#607d8b'],
+  ['gas_station',              '⛽', '#795548'],
+  ['hospital',                 '🏥', '#c62828'],
+  ['pharmacy',                 '💊', '#2e7d32'],
+  ['spa',                      '💆', '#ad1457'],
+  ['bank',                     '🏦', '#1a237e'],
+  ['synagogue',                '🕍', '#b8860b'],
+  ['church',                   '⛪', '#546e7a'],
+  ['mosque',                   '🕌', '#1b5e20'],
+];
+// פין מעוצב (טיפת מים) עם אימוג׳י בתוך עיגול לבן — כמו גוגל מפות
+const makeSearchMarkerIcon=types=>{
+  const row=SEARCH_ICON_MAP.find(([t])=>(types||[]).includes(t))||['','📍','#1a73e8'];
+  const[,em,color]=row;
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 52" width="40" height="52">`+
+    `<path d="M20 2C10.06 2 2 10.06 2 20c0 11.05 18 34 18 34s18-22.95 18-34C38 10.06 29.94 2 20 2z" fill="${color}" stroke="rgba(0,0,0,0.22)" stroke-width="1.5"/>`+
+    `<circle cx="20" cy="20" r="13" fill="rgba(255,255,255,0.93)"/>`+
+    `<text x="20" y="26" text-anchor="middle" font-family="Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif" font-size="15">${em}</text>`+
+    `</svg>`;
+  return{
+    url:'data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(svg),
+    scaledSize:new window.google.maps.Size(34,44),
+    anchor:new window.google.maps.Point(17,44),
+  };
+};
+
 /* ══════════════════════════════════
    מפת גוגל
 ══════════════════════════════════ */
@@ -820,8 +872,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
             const m=new window.google.maps.Marker({
               position:{lat,lng},map,
               title:r.name||'',
-              label:{text:String(i+1),color:'#fff',fontSize:'10px',fontWeight:'bold'},
-              icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:11,fillColor:'#1a73e8',fillOpacity:1,strokeColor:'#fff',strokeWeight:2},
+              icon:makeSearchMarkerIcon(r.types||[]),
               zIndex:20,
             });
             m.addListener('click',()=>showPlaceById(r.place_id,lat,lng));
