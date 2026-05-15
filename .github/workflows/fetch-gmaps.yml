@@ -2,23 +2,37 @@ name: Fetch Google Maps List
 on:
   repository_dispatch:
     types: [fetch-gmaps]
+
+permissions:
+  contents: write
+
 jobs:
   fetch:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Fetch from Google
         env:
           GMAPS_URL: ${{ github.event.client_payload.api_url }}
           REQ_ID: ${{ github.event.client_payload.req_id }}
         run: |
           mkdir -p _cache
-          curl -sf --max-time 30 -A "Mozilla/5.0" "$GMAPS_URL" > _cache/gmaps_response.txt || true
-          echo "$REQ_ID" > _cache/gmaps_id.txt
-      - name: Commit
+          HTTP_CODE=$(curl -s -o _cache/gmaps_response.txt -w "%{http_code}" \
+            --max-time 30 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "$GMAPS_URL")
+          echo "HTTP status: $HTTP_CODE"
+          # אם curl נכשל או HTTP לא 200 — כתוב קובץ שגיאה ברור
+          if [ "$HTTP_CODE" != "200" ] || ! grep -q ")]}'}" _cache/gmaps_response.txt 2>/dev/null; then
+            echo "FETCH_FAILED:$HTTP_CODE" > _cache/gmaps_response.txt
+          fi
+          # כתוב את ה-id רק אחרי שהתוכן מוכן
+          printf '%s' "$REQ_ID" > _cache/gmaps_id.txt
+
+      - name: Commit and push
         run: |
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git add _cache/
           git diff --staged --quiet || git commit -m "cache: gmaps [skip ci]"
+          git pull --rebase origin main
           git push

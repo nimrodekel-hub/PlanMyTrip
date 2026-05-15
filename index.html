@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v53';
+const APP_VERSION = 'v54';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -1883,7 +1883,9 @@ const fetchViaGitHubAction=async(apiUrl,settings,onStatus)=>{
       if(!rR.ok) throw new Error('קובץ תשובה לא נמצא');
       const rJ=await rR.json();
       const text=b64ToUtf8(rJ.content);
-      if(!text.includes(")]}'")) throw new Error('תוכן לא תקין');
+      if(text.startsWith('FETCH_FAILED:'))
+        throw new Error('גוגל לא החזיר תוצאה מה-Action ('+text.trim()+') — נסה שוב');
+      if(!text.includes(")]}'")) throw new Error('תוכן לא תקין — נסה שוב');
       return text;
     }catch(e){
       if(e.message==='קובץ תשובה לא נמצא'||e.message==='תוכן לא תקין') throw e;
