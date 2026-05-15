@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v56';
+const APP_VERSION = 'v57';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -3033,8 +3033,6 @@ function NotesTab({trip,onUpdate}){
    לשונית הגדרות
 ══════════════════════════════════ */
 function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,onDeleteTrip,onPush,onPull,ghBusy,genKey}){
-  const[s,setS]=useState({...settings});
-  const upd=(k,v)=>setS(p=>({...p,[k]:v}));
   const[showForm,setShowForm]=useState(false);
   const[newName,setNewName]=useState('');
   const createTrip=()=>{
@@ -3120,86 +3118,6 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
         </div>
       </div>}
 
-      {/* ── Firebase (מועדף) ── */}
-      <div className="card" style={{border:s.firebaseUrl&&s.syncKey?'2px solid var(--green)':!s.githubToken?'2px solid var(--amber)':'1px solid var(--border)'}}>
-        <div className="card-header">
-          <span style={{fontWeight:700}}>☁️ סנכרון בין מכשירים</span>
-          {s.firebaseUrl&&s.syncKey?<span className="chip chip-green" style={{fontSize:10}}>✓ Firebase</span>
-            :s.githubToken?<span className="chip chip-blue" style={{fontSize:10}}>GitHub</span>
-            :<span className="chip chip-amber" style={{fontSize:10}}>⚠️ לא מוגדר</span>}
-        </div>
-        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:12}}>
-
-          {/* הוראות Firebase */}
-          <div style={{background:'rgba(79,142,247,0.08)',border:'1px solid rgba(79,142,247,0.2)',borderRadius:8,padding:'12px 14px',fontSize:12,lineHeight:2}}>
-            <strong style={{color:'var(--accent)',fontSize:13}}>🔥 סנכרון דרך Firebase (מומלץ — חינמי)</strong><br/>
-            <span style={{color:'var(--text2)'}}>
-              1. פתח <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" style={{color:'var(--accent)',fontWeight:600}}>console.firebase.google.com</a><br/>
-              2. "Add project" → שם → Create<br/>
-              3. "Build" → "Realtime Database" → Create → <strong>"Start in test mode"</strong><br/>
-              4. העתק את כתובת ה-Database (מסתיימת ב-<code>.firebaseio.com</code>)<br/>
-              5. הדבק למטה ← לחץ "צור מפתח סנכרון" ← שמור
-            </span>
-          </div>
-
-          <div><label className="label">כתובת Firebase (מוגדרת אוטומטית ✓)</label>
-            <input className="input" type="text" value={FB_URL} readOnly
-              style={{fontFamily:'monospace',fontSize:11,color:'var(--green)',background:'var(--bg3)',cursor:'default'}}/></div>
-
-          <div style={{display:'flex',gap:8,alignItems:'flex-end'}}>
-            <div style={{flex:1}}><label className="label">מפתח סנכרון (Sync Key) — זהה בכל המכשירים</label>
-              <input className="input" type="text" value={s.syncKey||''} onChange={e=>upd('syncKey',e.target.value.trim())}
-                placeholder="לחץ 'צור' ליצירת מפתח אוטומטי" style={{fontFamily:'monospace',fontSize:11}}/></div>
-            <button className="btn btn-secondary btn-sm" style={{flexShrink:0,whiteSpace:'nowrap'}}
-              onClick={()=>upd('syncKey',genSyncKey())}>🔑 צור מפתח</button>
-          </div>
-
-          {s.syncKey&&<div style={{background:'var(--bg3)',borderRadius:8,padding:'8px 12px',fontSize:11,color:'var(--text2)',lineHeight:1.8}}>
-            📱 <strong>להגדרת סלולר:</strong> פתח הגדרות ⚙️ באפליקציה ← הכנס את אותה כתובת Firebase ואת המפתח:<br/>
-            <code style={{color:'var(--accent)',wordBreak:'break-all'}}>{s.syncKey}</code>
-          </div>}
-
-          <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center'}}>
-            <button className="btn btn-primary" onClick={()=>{
-              onSettings(s);
-              toast('ההגדרות נשמרו','success');
-              if((s.firebaseUrl&&s.syncKey)||s.githubToken) setTimeout(()=>onPush(s),400);
-            }}>💾 שמור{(s.firebaseUrl&&s.syncKey)||s.githubToken?' ✓ ויסנכרן':''}</button>
-            {activeTrip&&((s.firebaseUrl&&s.syncKey)||s.githubToken)&&<>
-              <button className="btn btn-success" onClick={onPush} disabled={ghBusy}>{ghBusy?'⏳…':'⬆ סנכרן עכשיו'}</button>
-              <button className="btn btn-secondary" onClick={onPull} disabled={ghBusy}>{ghBusy?'⏳…':'⬇ טען מהענן'}</button>
-            </>}
-          </div>
-
-          {/* GitHub token — נדרש גם לייבוא רשימות מגוגל מפות */}
-          <div style={{borderTop:'1px solid var(--border)',paddingTop:12,display:'flex',flexDirection:'column',gap:8}}>
-            <div style={{fontSize:12,fontWeight:700,color:'var(--text2)'}}>🐙 GitHub — סנכרון + ייבוא מגוגל מפות</div>
-            <div style={{background:'rgba(79,142,247,0.07)',borderRadius:8,padding:'8px 12px',fontSize:11,lineHeight:1.9,color:'var(--text2)'}}>
-              נדרש ל: סנכרון בין מכשירים <strong>ולייבוא רשימות מגוגל מפות</strong> כשהפרוקסים חסומים.<br/>
-              <a href="https://github.com/settings/tokens/new?scopes=repo&description=PlanMyTrip" target="_blank" rel="noreferrer" style={{color:'var(--accent)',fontWeight:600}}>לחץ כאן ליצירת token</a> ← בחר scope: <code>repo</code> ← Generate ← העתק ← הדבק למטה
-            </div>
-            <div><label className="label">GitHub Personal Access Token</label>
-              <input className="input" type="password" value={s.githubToken||''} onChange={e=>upd('githubToken',e.target.value)} placeholder="ghp_xxxxxxxxxxxx" autoComplete="off"/>
-              {s.githubToken&&<div style={{fontSize:11,color:'var(--green)',marginTop:3}}>✓ מוגדר — ייבוא מגוגל מפות דרך GitHub זמין</div>}
-            </div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-              <div><label className="label">שם משתמש GitHub</label>
-                <input className="input" type="text" value={s.githubUsername||''} onChange={e=>upd('githubUsername',e.target.value)} placeholder="your-username"/></div>
-              <div><label className="label">שם ריפוזיטורי</label>
-                <input className="input" type="text" value={s.githubRepo||''} onChange={e=>upd('githubRepo',e.target.value)} placeholder="PlanMyTrip"/></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-header"><span style={{fontWeight:700}}>🗺️ Google Maps API</span></div>
-        <div className="card-body">
-          <label className="label">מפתח API של גוגל מפות</label>
-          <input className="input" type="password" value={s.googleMapsKey||''} onChange={e=>upd('googleMapsKey',e.target.value)} autoComplete="off"/>
-        </div>
-      </div>
-
     </div>
   </div>;
 }
@@ -3220,107 +3138,109 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus}){
   const[testResult,setTestResult]=useState(null);
   const upd=(k,v)=>setS(p=>({...p,[k]:v}));
 
-  // אם אין syncKey — צור אחד אוטומטית
-  const effectiveKey = s.syncKey||settings.syncKey;
+  const effectiveKey=s.syncKey||settings.syncKey;
 
   const copyKey=()=>{
     navigator.clipboard?.writeText(effectiveKey||'').then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});
   };
 
   const testConnection=async()=>{
-    if(!s.firebaseUrl||!effectiveKey){setTestResult({ok:false,msg:'חסרים כתובת Firebase או מפתח סנכרון'});return;}
+    if(!effectiveKey){setTestResult({ok:false,msg:'חסר מפתח סנכרון — צור מפתח למטה'});return;}
     setTesting(true); setTestResult(null);
     try{
-      const r=await fetch(`${s.firebaseUrl.replace(/\/$/,'')}/planmytrip/${effectiveKey}.json?_=${Date.now()}`);
+      const r=await fetch(`${FB_URL.replace(/\/$/,'')}/planmytrip/${effectiveKey}.json?_=${Date.now()}`);
       if(r.ok){ setTestResult({ok:true,msg:'✅ החיבור תקין! Firebase נגיש ומוכן.'}); }
-      else { setTestResult({ok:false,msg:`❌ שגיאה ${r.status} — בדוק את כתובת ה-URL`}); }
+      else { setTestResult({ok:false,msg:`❌ שגיאה ${r.status} — בדוק שה-Rules מוגדרים נכון (ראה כרטיס אדום למטה)`}); }
     }catch(e){ setTestResult({ok:false,msg:`❌ חיבור נכשל — ${e.message}`}); }
     finally{setTesting(false);}
   };
 
   const saveAndSync=()=>{
-    const newS={...s,firebaseUrl:FB_URL}; // תמיד FB_URL הנכון
+    const newS={...s,firebaseUrl:FB_URL};
     onSettings(newS);
     setTimeout(()=>onPush(newS),300);
   };
+
+  const save=()=>{onSettings({...s});toast('ההגדרות נשמרו ✓','success');};
 
   const statusColor=syncStatus==='synced'?'var(--green)':syncStatus==='syncing'?'var(--amber)':syncStatus==='error'?'var(--red)':'var(--text3)';
   const statusText=syncStatus==='synced'?'מסונכרן ✓':syncStatus==='syncing'?'מסנכרן...':syncStatus==='error'?'שגיאת סנכרון':'לא מסונכרן';
 
   return <div className="scroll-y" style={{height:'100%',padding:20}}>
-    <div style={{maxWidth:660,margin:'0 auto',display:'flex',flexDirection:'column',gap:20}}>
+    <div style={{maxWidth:660,margin:'0 auto',display:'flex',flexDirection:'column',gap:24}}>
 
       {/* ── כותרת ── */}
       <div style={{display:'flex',alignItems:'center',gap:14}}>
         <span style={{fontSize:36}}>🔗</span>
         <div>
-          <div style={{fontSize:20,fontWeight:800}}>חיבוריות וסנכרון</div>
-          <div style={{fontSize:13,color:'var(--text2)',marginTop:2}}>הגדרת סנכרון הטיול בין מחשב, סלולר וטאבלט</div>
-        </div>
-        <div style={{marginRight:'auto',textAlign:'left'}}>
-          <div style={{fontSize:11,color:'var(--text3)'}}>סטטוס</div>
-          <div style={{fontSize:13,fontWeight:700,color:statusColor}}>{statusText}</div>
+          <div style={{fontSize:20,fontWeight:800}}>חיבוריות</div>
+          <div style={{fontSize:13,color:'var(--text2)',marginTop:2}}>כל חיבורי האפליקציה לשירותים חיצוניים — הגדר פעם אחת ושכח</div>
         </div>
       </div>
 
-      {/* ── מצב נוכחי ── */}
-      <div className="card" style={{border:`2px solid ${settings.firebaseUrl&&settings.syncKey?'var(--green)':'var(--amber)'}`}}>
+      {/* ══════════════════════════════════════════════════
+          חיבור 1 — Firebase Realtime Database
+          ═══════════════════════════════════════════════ */}
+      <div className="card" style={{border:settings.firebaseUrl&&settings.syncKey?'2px solid var(--green)':'1px solid var(--border)'}}>
         <div className="card-header">
-          <span style={{fontWeight:700}}>📊 מצב נוכחי</span>
-          {settings.firebaseUrl&&settings.syncKey
-            ?<span className="chip chip-green">✓ Firebase מחובר</span>
-            :<span className="chip chip-amber">⚠️ לא מחובר</span>}
-        </div>
-        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10}}>
-          <div style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:'6px 14px',fontSize:13,alignItems:'center'}}>
-            <span style={{color:'var(--text3)'}}>כתובת Firebase:</span>
-            <code style={{fontSize:11,color:'var(--accent)',wordBreak:'break-all'}}>{settings.firebaseUrl||'לא הוגדר'}</code>
-            <span style={{color:'var(--text3)'}}>מפתח סנכרון:</span>
-            <div style={{display:'flex',alignItems:'center',gap:8}}>
-              <code style={{fontSize:10,color:'var(--text2)',wordBreak:'break-all',flex:1}}>{settings.syncKey||'לא נוצר'}</code>
-              {settings.syncKey&&<button className="btn btn-secondary btn-sm" onClick={()=>{navigator.clipboard?.writeText(settings.syncKey);setCopied(true);setTimeout(()=>setCopied(false),2000);}}>
-                {copied?'✓ הועתק':'📋 העתק'}
-              </button>}
-            </div>
+          <span style={{fontWeight:700,fontSize:15}}>🔥 Firebase Realtime Database</span>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            {settings.firebaseUrl&&settings.syncKey
+              ?<span className="chip chip-green">✓ מחובר</span>
+              :<span className="chip chip-amber">⚠️ לא מוגדר</span>}
+            <span style={{fontSize:11,fontWeight:700,color:statusColor}}>{statusText}</span>
           </div>
-          {settings.syncKey&&<div style={{background:'rgba(34,197,94,0.08)',border:'1px solid rgba(34,197,94,0.2)',borderRadius:8,padding:'10px 12px',fontSize:12,lineHeight:1.8}}>
-            📱 <strong>לחיבור סלולר:</strong> פתח את האפליקציה בסלולר ← עמוד חיבוריות ← הזן מפתח סנכרון:<br/>
-            <code style={{color:'var(--accent)',fontSize:11,wordBreak:'break-all'}}>{settings.syncKey}</code>
-          </div>}
         </div>
-      </div>
+        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:14}}>
 
-      {/* ── הגדרות ── */}
-      <div className="card">
-        <div className="card-header"><span style={{fontWeight:700}}>⚙️ הגדרות חיבור</span></div>
-        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:12}}>
+          {/* תיאור */}
+          <div style={{background:'rgba(251,146,60,0.08)',border:'1px solid rgba(251,146,60,0.2)',borderRadius:8,padding:'10px 14px',fontSize:12,lineHeight:1.9}}>
+            <strong>מה זה?</strong> מסד נתונים בענן של Google — מסנכרן את הטיול שלך בזמן אמת בין כל המכשירים (מחשב, סלולר, טאבלט).<br/>
+            <strong>חינמי לחלוטין</strong> לשימוש אישי — עד 1GB אחסון ו-10GB/חודש תעבורה.
+          </div>
+
+          {/* הגדרה */}
+          <div style={{background:'rgba(79,142,247,0.06)',border:'1px solid rgba(79,142,247,0.15)',borderRadius:8,padding:'10px 14px',fontSize:12,lineHeight:2}}>
+            <strong style={{color:'var(--accent)'}}>📖 איך מגדירים? (פעם אחת בלבד)</strong><br/>
+            1. פתח <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" style={{color:'var(--accent)',fontWeight:600}}>console.firebase.google.com</a><br/>
+            2. "Add project" ← תן שם לפרויקט ← Continue ← Create project<br/>
+            3. בתפריט הצד: "Build" ← "Realtime Database" ← "Create Database"<br/>
+            4. בחר <strong>"Start in test mode"</strong> ← Enable<br/>
+            5. לחץ "צור מפתח" למטה ← לחץ "שמור וסנכרן" — זהו! 🎉
+          </div>
+
+          {/* כתובת Firebase (read-only) */}
           <div>
             <label className="label">כתובת Firebase Database — מוגדרת אוטומטית ✓</label>
             <div style={{display:'flex',gap:8,alignItems:'center'}}>
               <input className="input" type="text" value={FB_URL} readOnly
-                style={{fontFamily:'monospace',fontSize:11,color:'var(--green)',background:'var(--bg3)',cursor:'default'}}/>
-              <button className="btn btn-secondary btn-sm" style={{flexShrink:0,whiteSpace:'nowrap'}}
+                style={{fontFamily:'monospace',fontSize:11,color:'var(--green)',background:'var(--bg3)',cursor:'default',flex:1}}/>
+              <button className="btn btn-secondary btn-sm" style={{flexShrink:0}}
                 onClick={()=>{navigator.clipboard?.writeText(FB_URL);toast('הועתק','success');}}>📋</button>
             </div>
-            <div style={{marginTop:6,background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.25)',borderRadius:6,padding:'7px 10px',fontSize:11,lineHeight:1.7}}>
-              ⚠️ <strong>שים לב:</strong> זו כתובת ה-API של מסד הנתונים — <strong>לא</strong> כתובת הקונסול.<br/>
-              אל תשנה אותה. הכתובת נקבעת אוטומטית לפי הפרויקט שלך.
-            </div>
           </div>
+
+          {/* מפתח סנכרון */}
           <div>
-            <label className="label">מפתח סנכרון — זהה בכל המכשירים</label>
+            <label className="label">מפתח סנכרון — <strong>זהה בכל המכשירים</strong></label>
             <div style={{display:'flex',gap:8}}>
               <input className="input" type="text" value={s.syncKey||effectiveKey||''}
                 onChange={e=>upd('syncKey',e.target.value.trim())}
-                placeholder="יוצר אוטומטית בשמירה ראשונה"
+                placeholder="יוצר אוטומטית — לחץ 'צור מפתח'"
                 style={{fontFamily:'monospace',fontSize:11,flex:1}}/>
-              <button className="btn btn-secondary btn-sm" style={{flexShrink:0}}
-                onClick={()=>upd('syncKey',genSyncKey())}>🔑 צור חדש</button>
+              <button className="btn btn-secondary btn-sm" style={{flexShrink:0,whiteSpace:'nowrap'}}
+                onClick={()=>upd('syncKey',genSyncKey())}>🔑 צור מפתח</button>
               {(s.syncKey||effectiveKey)&&<button className="btn btn-secondary btn-sm" style={{flexShrink:0}} onClick={copyKey}>
                 {copied?'✓':'📋'}
               </button>}
             </div>
+            {(s.syncKey||effectiveKey)&&<div style={{marginTop:6,background:'rgba(34,197,94,0.07)',border:'1px solid rgba(34,197,94,0.15)',borderRadius:6,padding:'7px 10px',fontSize:11,lineHeight:1.8}}>
+              📱 <strong>לחיבור סלולר:</strong> פתח האפליקציה בסלולר ← "חיבוריות" ← הזן את המפתח:<br/>
+              <code style={{color:'var(--accent)',wordBreak:'break-all'}}>{s.syncKey||effectiveKey}</code>
+            </div>}
           </div>
+
+          {/* כפתורים */}
           <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
             <button className="btn btn-primary" onClick={saveAndSync} disabled={ghBusy}>
               {ghBusy?'⏳ שומר...':'💾 שמור וסנכרן עכשיו'}
@@ -3329,7 +3249,7 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus}){
               {testing?'⏳ בודק...':'🔌 בדוק חיבור'}
             </button>
             <button className="btn btn-secondary" onClick={()=>onPull()} disabled={ghBusy}>
-              ⬇️ טען נתונים מהענן
+              ⬇️ טען מהענן
             </button>
           </div>
           {testResult&&<div style={{padding:'10px 14px',borderRadius:8,fontSize:13,
@@ -3337,10 +3257,11 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus}){
             border:`1px solid ${testResult.ok?'rgba(34,197,94,0.3)':'rgba(239,68,68,0.3)'}`}}>
             {testResult.msg}
           </div>}
+
         </div>
       </div>
 
-      {/* ── הוראות חיבור סלולר ── */}
+      {/* ── חיבור סלולר ── */}
       <div className="card">
         <div className="card-header"><span style={{fontWeight:700}}>📱 איך מחברים סלולר / מכשיר נוסף?</span></div>
         <div className="card-body" style={{display:'flex',flexDirection:'column',gap:14}}>
@@ -3356,16 +3277,15 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus}){
         </div>
       </div>
 
-      {/* ── תיקון שגיאת Rules ── */}
+      {/* ── תיקון Rules ── */}
       <div className="card" style={{border:'2px solid var(--red)'}}>
         <div className="card-header" style={{background:'rgba(239,68,68,0.08)'}}>
-          <span style={{fontWeight:700}}>🔒 קיבלת "bad credential" או "Permission denied"? תקן כאן</span>
+          <span style={{fontWeight:700}}>🔒 קיבלת "Permission denied"? תקן Rules כאן</span>
         </div>
         <div className="card-body" style={{display:'flex',flexDirection:'column',gap:12}}>
           <div style={{fontSize:13,color:'var(--text2)',lineHeight:1.8}}>
             Firebase חוסם גישה כי ה-Rules לא מוגדרים נכון. פתרון מהיר — העתק את הקוד הבא והדבק ב-Firebase:
           </div>
-          {/* קוד Rules להעתקה */}
           <div style={{position:'relative'}}>
             <pre style={{background:'var(--bg3)',borderRadius:10,padding:14,fontSize:12,lineHeight:1.8,direction:'ltr',textAlign:'left',margin:0,overflowX:'auto'}}>{`{
   "rules": {
@@ -3397,14 +3317,12 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus}){
         </div>
       </div>
 
-      {/* ── שאלות נפוצות ── */}
+      {/* ── שאלות נפוצות Firebase ── */}
       <div className="card" style={{border:'1px solid rgba(79,142,247,0.3)'}}>
         <div className="card-header" style={{background:'rgba(79,142,247,0.06)'}}>
           <span style={{fontWeight:700}}>❓ שאלות נפוצות על Firebase</span>
         </div>
         <div className="card-body" style={{display:'flex',flexDirection:'column',gap:16}}>
-
-          {/* שאלה 1 */}
           <div style={{borderBottom:'1px solid var(--border)',paddingBottom:14}}>
             <div style={{fontWeight:700,fontSize:13,marginBottom:6}}>האם הנתונים שלי יימחקו אחרי 30 יום?</div>
             <div style={{fontSize:13,color:'var(--text2)',lineHeight:1.9,background:'rgba(34,197,94,0.07)',borderRadius:8,padding:'10px 14px'}}>
@@ -3413,11 +3331,8 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus}){
               קשורים רק לחוקי גישה (Rules) שFirebase מגדיר <em>אוטומטית</em> כשיוצרים מסד בTest Mode.<br/><br/>
               <strong>אם הגדרת את ה-Rules שהנחינו אותך כאן</strong> (הקוד בכרטיס האדום למעלה),
               אין לך שום מגבלת זמן — הגישה פתוחה לנצח.
-              רק אם Firebase חסם אותך ← חזור לכרטיס האדום ועדכן את ה-Rules.
             </div>
           </div>
-
-          {/* שאלה 2 */}
           <div style={{borderBottom:'1px solid var(--border)',paddingBottom:14}}>
             <div style={{fontWeight:700,fontSize:13,marginBottom:6}}>מה קורה אם Firebase חוסם גישה?</div>
             <div style={{fontSize:13,color:'var(--text2)',lineHeight:1.8}}>
@@ -3426,13 +3341,10 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus}){
               זה לוקח פחות מדקה.
             </div>
           </div>
-
-          {/* שאלה 3 */}
           <div>
             <div style={{fontWeight:700,fontSize:13,marginBottom:6}}>איפה הנתונים שמורים בפועל?</div>
             <div style={{fontSize:13,color:'var(--text2)',lineHeight:1.8}}>
-              הכל — נתוני טיולים, ימים, הוצאות, מסמכים, תמונות — נשמר בקובץ JSON אחד
-              בשרתי Google (Firebase). ניתן לצפות בנתונים ישירות בקונסול Firebase:
+              הכל — טיולים, ימים, הוצאות, מסמכים — נשמר בקובץ JSON אחד בשרתי Google (Firebase).
             </div>
             <a href="https://planmytrip-de33c-default-rtdb.firebaseio.com/planmytrip.json"
               target="_blank" rel="noreferrer"
@@ -3440,7 +3352,101 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus}){
               🔍 צפה בנתונים גולמיים ↗
             </a>
           </div>
+        </div>
+      </div>
 
+      {/* ══════════════════════════════════════════════════
+          חיבור 2 — GitHub Personal Access Token
+          ═══════════════════════════════════════════════ */}
+      <div className="card" style={{border:s.githubToken?'2px solid var(--green)':'1px solid var(--border)'}}>
+        <div className="card-header">
+          <span style={{fontWeight:700,fontSize:15}}>🐙 GitHub — ייבוא רשימות מגוגל מפות</span>
+          {s.githubToken
+            ?<span className="chip chip-green">✓ מחובר</span>
+            :<span className="chip" style={{background:'rgba(100,100,100,0.15)',color:'var(--text2)',fontSize:10}}>אופציונלי</span>}
+        </div>
+        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+
+          {/* תיאור */}
+          <div style={{background:'rgba(88,96,176,0.08)',border:'1px solid rgba(88,96,176,0.2)',borderRadius:8,padding:'10px 14px',fontSize:12,lineHeight:1.9}}>
+            <strong>מה זה?</strong> מאפשר לייבא רשימות מגוגל מפות ישירות לאפליקציה — מועדפים ⭐, "רוצה לבקר" 🏷️, תכניות טיול 🗺️.<br/>
+            <strong>למה צריך?</strong> דפדפן לא יכול לגשת ישירות לגוגל (חסימת CORS). כשהפרוקסים הציבוריים חסומים, האפליקציה מריצה <strong>GitHub Action</strong> — תהליך אוטומטי שרץ בשרתי GitHub, מוריד את הרשימה מגוגל, ומחזיר אותה לאפליקציה.<br/>
+            <span style={{color:'var(--text3)'}}>✅ ללא Token — הייבוא עדיין עובד דרך פרוקסים ציבוריים, אבל עלול להיכשל לפעמים.</span>
+          </div>
+
+          {/* הגדרה */}
+          <div style={{background:'rgba(79,142,247,0.06)',border:'1px solid rgba(79,142,247,0.15)',borderRadius:8,padding:'10px 14px',fontSize:12,lineHeight:2}}>
+            <strong style={{color:'var(--accent)'}}>📖 איך יוצרים Token? (פעם אחת בלבד)</strong><br/>
+            1. לחץ: <a href="https://github.com/settings/tokens/new?scopes=repo&description=PlanMyTrip" target="_blank" rel="noreferrer" style={{color:'var(--accent)',fontWeight:600}}>פתח יצירת GitHub Token ←</a><br/>
+            2. בשדה "Note": כתוב שם (למשל <code>PlanMyTrip</code>)<br/>
+            3. ב"Expiration": בחר <strong>"No expiration"</strong> (כדי שלא יפוג)<br/>
+            4. ב"Select scopes": ✅ סמן <strong><code>repo</code></strong> (את כל תתי-האפשרויות שלו)<br/>
+            5. לחץ <strong>"Generate token"</strong> ← העתק את ה-Token שמתחיל ב-<code>ghp_</code><br/>
+            6. הדבק בשדה למטה ← לחץ "💾 שמור"
+          </div>
+
+          {/* שדה Token */}
+          <div>
+            <label className="label">GitHub Personal Access Token</label>
+            <input className="input" type="password" value={s.githubToken||''} onChange={e=>upd('githubToken',e.target.value)} placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autoComplete="off"/>
+            {s.githubToken
+              ?<div style={{fontSize:11,color:'var(--green)',marginTop:3}}>✓ מוגדר — ייבוא מגוגל מפות דרך GitHub זמין</div>
+              :<div style={{fontSize:11,color:'var(--text3)',marginTop:3}}>אופציונלי — נדרש רק כגיבוי לייבוא רשימות מגוגל מפות</div>}
+          </div>
+
+          {/* שם משתמש + ריפוזיטורי */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            <div>
+              <label className="label">שם משתמש GitHub</label>
+              <input className="input" type="text" value={s.githubUsername||''} onChange={e=>upd('githubUsername',e.target.value)} placeholder="your-username"/>
+            </div>
+            <div>
+              <label className="label">שם ריפוזיטורי</label>
+              <input className="input" type="text" value={s.githubRepo||''} onChange={e=>upd('githubRepo',e.target.value)} placeholder="PlanMyTrip"/>
+            </div>
+          </div>
+
+          <button className="btn btn-primary" onClick={save} style={{alignSelf:'flex-start'}}>💾 שמור</button>
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════
+          חיבור 3 — Google Maps JavaScript API
+          ═══════════════════════════════════════════════ */}
+      <div className="card" style={{border:s.googleMapsKey?'2px solid var(--green)':'1px solid var(--border)'}}>
+        <div className="card-header">
+          <span style={{fontWeight:700,fontSize:15}}>🗺️ Google Maps JavaScript API</span>
+          {s.googleMapsKey
+            ?<span className="chip chip-green">✓ מוגדר</span>
+            :<span className="chip" style={{background:'rgba(100,100,100,0.15)',color:'var(--text2)',fontSize:10}}>אופציונלי</span>}
+        </div>
+        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+
+          {/* תיאור */}
+          <div style={{background:'rgba(34,197,94,0.06)',border:'1px solid rgba(34,197,94,0.18)',borderRadius:8,padding:'10px 14px',fontSize:12,lineHeight:1.9}}>
+            <strong>מה זה?</strong> מאפשר להציג מפה אינטראקטיבית בתוך האפליקציה — בחיפוש מקומות, בכרטיסי אטרקציות ובתצוגת מסלול.<br/>
+            <span style={{color:'var(--text3)'}}>✅ ללא מפתח — האפליקציה עובדת מלאה, רק ללא מפה אינטראקטיבית.</span>
+          </div>
+
+          {/* הגדרה */}
+          <div style={{background:'rgba(79,142,247,0.06)',border:'1px solid rgba(79,142,247,0.15)',borderRadius:8,padding:'10px 14px',fontSize:12,lineHeight:2}}>
+            <strong style={{color:'var(--accent)'}}>📖 איך יוצרים מפתח API? (פעם אחת בלבד)</strong><br/>
+            1. פתח <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" style={{color:'var(--accent)',fontWeight:600}}>Google Cloud Console — Credentials ←</a><br/>
+            2. "Create credentials" ← "API key"<br/>
+            3. לחץ "Edit API key" ← ב"API restrictions": בחר "Maps JavaScript API" ← Save<br/>
+            4. העתק את המפתח שמתחיל ב-<code>AIzaSy</code> ← הדבק למטה ← לחץ "💾 שמור"
+          </div>
+
+          {/* שדה */}
+          <div>
+            <label className="label">מפתח Google Maps API</label>
+            <input className="input" type="password" value={s.googleMapsKey||''} onChange={e=>upd('googleMapsKey',e.target.value)} autoComplete="off" placeholder="AIzaSy..."/>
+            {s.googleMapsKey
+              ?<div style={{fontSize:11,color:'var(--green)',marginTop:3}}>✓ מוגדר — מפה אינטראקטיבית פעילה</div>
+              :<div style={{fontSize:11,color:'var(--text3)',marginTop:3}}>אופציונלי — ללא מפתח, האפליקציה עדיין עובדת מלאה</div>}
+          </div>
+
+          <button className="btn btn-primary" onClick={save} style={{alignSelf:'flex-start'}}>💾 שמור</button>
         </div>
       </div>
 
