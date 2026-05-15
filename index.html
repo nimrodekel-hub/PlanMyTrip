@@ -294,7 +294,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v55';
+const APP_VERSION = 'v56';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -1865,12 +1865,12 @@ const fetchViaGitHubAction=async(apiUrl,settings,onStatus)=>{
     throw new Error('שליחת בקשה נכשלה: '+(err.message||dispR.status));
   }
 
-  onStatus?.('⏳ GitHub שולף מגוגל... (עד 90 שניות)');
+  onStatus?.('⏳ GitHub שולף מגוגל... (עד 120 שניות)');
 
-  /* סקור כל 4 שניות עד 90 שניות */
+  /* סקור כל 4 שניות עד 120 שניות */
   const idUrl =`${repoBase}/contents/_cache/gmaps_id.txt`;
   const respUrl=`${repoBase}/contents/_cache/gmaps_response.txt`;
-  for(let i=0;i<22;i++){
+  for(let i=0;i<30;i++){  /* 30×4s = 120 שניות */
     await new Promise(res=>setTimeout(res,4000));
     try{
       const idR=await fetch(idUrl+'?t='+Date.now(),{headers:hdr});
@@ -2232,7 +2232,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
           'הפרוקסים חסומים כרגע. להוסיף GitHub Personal Access Token בהגדרות ⚙️ → יאפשר ייבוא אמין דרך GitHub'
         );
       }
-      setLinkStatus('⏳ GitHub שולף מגוגל... (עד 90 שניות)');
+      setLinkStatus('⏳ GitHub שולף מגוגל... (עד 120 שניות)');
       try{
         apiResp=await fetchViaGitHubAction(baseApiUrl,settings,msg=>setLinkStatus(msg));
       }catch(e){
