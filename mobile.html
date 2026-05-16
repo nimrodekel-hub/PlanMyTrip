@@ -6,7 +6,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="theme-color" content="#1a73e8" />
+  <meta name="theme-color" content="#0f1117" />
   <title>PlanMyTrip</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -14,841 +14,804 @@
   <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
-      --bg: #0f1117; --bg2: #1a1d27; --bg3: #232736;
-      --surface: #2a2e3f; --surface2: #333849; --border: #3d4358;
-      --text: #e8eaf0; --text2: #9aa0b8; --text3: #6b7295;
-      --accent: #1a73e8; --accent2: #4f8ef7;
-      --green: #22c55e; --amber: #f59e0b; --red: #ef4444;
-      --nav-h: 60px;
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
-      --safe-top: env(safe-area-inset-top, 0px);
+      --bg:#0f1117; --bg2:#1a1d27; --bg3:#232736;
+      --surface:#2a2e3f; --surface2:#333849; --border:#3d4358;
+      --text:#e8eaf0; --text2:#9aa0b8; --text3:#6b7295;
+      --accent:#1a73e8; --accent2:#4f8ef7;
+      --green:#22c55e; --amber:#f59e0b; --red:#ef4444; --purple:#a855f7;
+      --nav-h:58px;
+      --safe-b:env(safe-area-inset-bottom,0px);
+      --safe-t:env(safe-area-inset-top,0px);
     }
+    html,body { height:100%; width:100%; font-family:'Heebo',sans-serif; background:var(--bg); color:var(--text); overflow:hidden; direction:rtl; -webkit-tap-highlight-color:transparent; }
+    #root { height:100%; display:flex; flex-direction:column; }
 
-    html, body {
-      height: 100%; width: 100%;
-      font-family: 'Heebo', sans-serif;
-      background: var(--bg); color: var(--text);
-      overflow: hidden; direction: rtl;
-      -webkit-tap-highlight-color: transparent;
-      -webkit-touch-callout: none;
-    }
+    /* ── Bottom nav ── */
+    .bnav { position:fixed; bottom:0; left:0; right:0; height:calc(var(--nav-h) + var(--safe-b)); background:var(--bg2); border-top:1px solid var(--border); display:flex; align-items:stretch; padding-bottom:var(--safe-b); z-index:900; }
+    .nbtn { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; border:none; background:none; color:var(--text3); font-family:'Heebo',sans-serif; cursor:pointer; padding:5px 0; position:relative; }
+    .nbtn.active { color:var(--accent2); }
+    .nbtn.active::after { content:''; position:absolute; top:0; left:15%; right:15%; height:2px; background:var(--accent2); border-radius:0 0 3px 3px; }
+    .nicon { font-size:20px; line-height:1; }
+    .nlabel { font-size:10px; font-weight:600; }
 
-    #root { height: 100%; display: flex; flex-direction: column; }
-
-    /* ── Bottom Navigation ── */
-    .bottom-nav {
-      position: fixed; bottom: 0; left: 0; right: 0;
-      height: calc(var(--nav-h) + var(--safe-bottom));
-      background: var(--bg2); border-top: 1px solid var(--border);
-      display: flex; align-items: stretch;
-      padding-bottom: var(--safe-bottom);
-      z-index: 1000;
-    }
-    .nav-btn {
-      flex: 1; display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      gap: 3px; border: none; background: none;
-      color: var(--text3); font-family: 'Heebo', sans-serif;
-      cursor: pointer; transition: all 0.15s;
-      padding: 6px 0;
-      -webkit-tap-highlight-color: transparent;
-      position: relative;
-    }
-    .nav-btn.active { color: var(--accent2); }
-    .nav-btn.active::after {
-      content: ''; position: absolute; top: 0; left: 20%; right: 20%;
-      height: 2px; background: var(--accent2); border-radius: 0 0 2px 2px;
-    }
-    .nav-icon { font-size: 22px; line-height: 1; }
-    .nav-label { font-size: 10px; font-weight: 600; }
-
-    /* ── Screen container ── */
-    .screen-wrap {
-      flex: 1; overflow: hidden; position: relative;
-      padding-top: var(--safe-top);
-      padding-bottom: calc(var(--nav-h) + var(--safe-bottom));
-    }
-    .screen {
-      position: absolute; inset: 0;
-      overflow-y: auto; overflow-x: hidden;
-      display: flex; flex-direction: column;
-      transition: opacity 0.18s ease, transform 0.18s ease;
-    }
-    .screen.hidden {
-      opacity: 0; pointer-events: none;
-      transform: translateY(6px);
-    }
+    /* ── Screens ── */
+    .sw { flex:1; overflow:hidden; position:relative; padding-top:var(--safe-t); padding-bottom:calc(var(--nav-h) + var(--safe-b)); }
+    .screen { position:absolute; inset:0; overflow-y:auto; overflow-x:hidden; display:flex; flex-direction:column; transition:opacity .18s ease,transform .18s ease; }
+    .screen.h { opacity:0; pointer-events:none; transform:translateY(5px); }
+    .map-screen { overflow:hidden !important; }
 
     /* ── Screen header ── */
-    .screen-header {
-      background: var(--bg2); border-bottom: 1px solid var(--border);
-      padding: 14px 16px 12px; flex-shrink: 0;
-      position: sticky; top: 0; z-index: 10;
-    }
-    .screen-title {
-      font-size: 18px; font-weight: 700; color: var(--text);
-    }
-    .screen-subtitle {
-      font-size: 12px; color: var(--text3); margin-top: 2px;
-    }
+    .sh { background:var(--bg2); border-bottom:1px solid var(--border); padding:13px 16px 11px; flex-shrink:0; position:sticky; top:0; z-index:10; }
+    .stitle { font-size:17px; font-weight:700; }
+    .ssub { font-size:12px; color:var(--text3); margin-top:2px; }
+
+    /* ── Sub-tabs ── */
+    .sub-tabs { display:flex; background:var(--bg2); border-bottom:1px solid var(--border); overflow-x:auto; flex-shrink:0; padding:0 8px; gap:2px; }
+    .sub-tab { flex-shrink:0; padding:10px 14px; border:none; background:none; color:var(--text3); font-family:'Heebo',sans-serif; font-size:13px; font-weight:600; cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap; }
+    .sub-tab.active { color:var(--accent2); border-bottom-color:var(--accent2); }
 
     /* ── Cards ── */
-    .card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 12px; overflow: hidden;
-    }
-    .card-row {
-      display: flex; align-items: center; gap: 12px;
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--border);
-    }
-    .card-row:last-child { border-bottom: none; }
-    .card-row-icon {
-      font-size: 22px; width: 36px; text-align: center; flex-shrink: 0;
-    }
-    .card-row-main { flex: 1; min-width: 0; }
-    .card-row-title {
-      font-size: 14px; font-weight: 600; color: var(--text);
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .card-row-sub {
-      font-size: 12px; color: var(--text3); margin-top: 2px;
-    }
-    .card-row-end { font-size: 12px; color: var(--text3); flex-shrink: 0; }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+    .crow { display:flex; align-items:center; gap:11px; padding:13px 15px; border-bottom:1px solid var(--border); }
+    .crow:last-child { border-bottom:none; }
+    .cicon { font-size:21px; width:34px; text-align:center; flex-shrink:0; }
+    .cmain { flex:1; min-width:0; }
+    .ctitle { font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .csub { font-size:11px; color:var(--text3); margin-top:2px; }
+    .cend { font-size:12px; color:var(--text3); flex-shrink:0; }
 
     /* ── Section label ── */
-    .section-label {
-      font-size: 11px; font-weight: 700; color: var(--text3);
-      text-transform: uppercase; letter-spacing: 0.06em;
-      padding: 16px 16px 6px;
-    }
+    .slabel { font-size:11px; font-weight:700; color:var(--text3); text-transform:uppercase; letter-spacing:.05em; padding:14px 16px 5px; }
 
     /* ── Stat pills ── */
-    .stat-row { display: flex; gap: 10px; padding: 0 16px 14px; flex-wrap: wrap; }
-    .stat-pill {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 20px; padding: 6px 14px;
-      font-size: 12px; font-weight: 600; color: var(--text2);
-      display: flex; align-items: center; gap: 6px;
-    }
-    .stat-pill span { font-size: 15px; }
+    .spill { display:inline-flex; align-items:center; gap:5px; background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:5px 13px; font-size:12px; font-weight:600; color:var(--text2); }
+    .spill span { font-size:14px; }
 
     /* ── Empty state ── */
-    .empty-state {
-      flex: 1; display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      gap: 10px; padding: 40px 20px; text-align: center; color: var(--text3);
-    }
-    .empty-icon { font-size: 48px; opacity: 0.5; }
-    .empty-title { font-size: 16px; font-weight: 600; color: var(--text2); }
-    .empty-desc { font-size: 13px; line-height: 1.6; }
-
-    /* ── Loading ── */
-    .loading-screen {
-      flex: 1; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 16px;
-    }
-    .spinner {
-      width: 36px; height: 36px; border: 3px solid var(--border);
-      border-top-color: var(--accent2); border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    .empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:9px; padding:40px 20px; text-align:center; color:var(--text3); }
+    .eicon { font-size:46px; opacity:.45; }
+    .etitle { font-size:16px; font-weight:600; color:var(--text2); }
+    .edesc { font-size:13px; line-height:1.65; }
 
     /* ── Toast ── */
-    .toast-wrap {
-      position: fixed; top: calc(var(--safe-top) + 12px);
-      left: 16px; right: 16px; z-index: 9999;
-      display: flex; flex-direction: column; gap: 8px;
-      pointer-events: none;
-    }
-    .toast {
-      background: var(--surface2); border: 1px solid var(--border);
-      border-radius: 10px; padding: 10px 14px;
-      font-size: 13px; font-weight: 500;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-      animation: toastIn 0.25s ease;
-      display: flex; align-items: center; gap: 8px;
-    }
-    .toast.success { border-color: var(--green); color: var(--green); }
-    .toast.error   { border-color: var(--red); color: var(--red); }
-    .toast.info    { border-color: var(--accent2); color: var(--accent2); }
-    @keyframes toastIn {
-      from { opacity: 0; transform: translateY(-8px); }
-      to   { opacity: 1; transform: none; }
-    }
+    .toast-w { position:fixed; top:calc(var(--safe-t) + 12px); left:14px; right:14px; z-index:9999; display:flex; flex-direction:column; gap:7px; pointer-events:none; }
+    .toast { background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:9px 13px; font-size:13px; font-weight:500; box-shadow:0 4px 20px rgba(0,0,0,.5); animation:tIn .22s ease; display:flex; align-items:center; gap:7px; }
+    .toast.s { border-color:var(--green); color:var(--green); }
+    .toast.e { border-color:var(--red); color:var(--red); }
+    .toast.i { border-color:var(--accent2); color:var(--accent2); }
+    @keyframes tIn { from{opacity:0;transform:translateY(-7px)} to{opacity:1;transform:none} }
+    @keyframes spin { to{transform:rotate(360deg)} }
 
-    /* ── Trip selector ── */
-    .trip-selector {
-      display: flex; align-items: center; gap: 8px;
-      padding: 10px 16px; background: var(--bg3);
-      border-bottom: 1px solid var(--border);
-      overflow-x: auto; flex-shrink: 0;
-    }
-    .trip-chip {
-      flex-shrink: 0; padding: 5px 14px; border-radius: 16px;
-      font-size: 12px; font-weight: 600; border: 1px solid var(--border);
-      background: var(--surface); color: var(--text2);
-      cursor: pointer; white-space: nowrap; transition: all 0.12s;
-    }
-    .trip-chip.active {
-      background: var(--accent); border-color: var(--accent);
-      color: #fff;
-    }
+    /* ── Map screen ── */
+    .map-container { position:absolute; inset:0; }
+    .map-searchbar { position:absolute; top:12px; left:12px; right:12px; z-index:10; display:flex; gap:8px; }
+    .map-si { flex:1; background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:10px 13px; color:var(--text); font-family:'Heebo',sans-serif; font-size:14px; outline:none; direction:rtl; box-shadow:0 2px 10px rgba(0,0,0,.4); }
+    .map-si::placeholder { color:var(--text3); }
+    .map-fab { position:absolute; left:14px; z-index:10; width:44px; height:44px; border-radius:50%; border:none; background:var(--bg2); color:var(--text); font-size:20px; cursor:pointer; box-shadow:0 2px 10px rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; border:1px solid var(--border); }
+    .map-fab.loc-fab { bottom:calc(14px); }
+    .map-loading { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; background:var(--bg3); z-index:5; }
+    .spinner { width:34px; height:34px; border:3px solid var(--border); border-top-color:var(--accent2); border-radius:50%; animation:spin .8s linear infinite; }
 
-    /* ── Sync badge ── */
-    .sync-badge {
-      display: inline-flex; align-items: center; gap: 5px;
-      font-size: 11px; font-weight: 600; padding: 3px 8px;
-      border-radius: 10px;
-    }
-    .sync-badge.synced { color: var(--green); background: rgba(34,197,94,0.1); }
-    .sync-badge.syncing { color: var(--amber); background: rgba(245,158,11,0.1); }
-    .sync-badge.error { color: var(--red); background: rgba(239,68,68,0.1); }
-    .sync-badge.idle { color: var(--text3); background: var(--surface); }
+    /* ── Bottom sheet ── */
+    .sheet-ov { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:800; }
+    .bsheet { position:fixed; bottom:calc(var(--nav-h) + var(--safe-b)); left:0; right:0; background:var(--bg2); border-radius:18px 18px 0 0; border-top:1px solid var(--border); transform:translateY(100%); transition:transform .3s cubic-bezier(.32,.72,0,1); z-index:801; max-height:72vh; overflow-y:auto; }
+    .bsheet.open { transform:translateY(0); }
+    .bsheet-handle { width:36px; height:4px; background:var(--border); border-radius:2px; margin:10px auto 6px; }
+    .bsheet-name { font-size:17px; font-weight:700; padding:6px 16px 2px; }
+    .bsheet-type { font-size:12px; color:var(--text3); padding:0 16px 8px; }
+    .bsheet-addr { font-size:13px; color:var(--text2); padding:0 16px 12px; line-height:1.5; }
+    .bsheet-actions { display:flex; gap:9px; padding:0 16px 16px; flex-wrap:wrap; }
+    .bsheet-btn { flex:1; min-width:120px; padding:11px 10px; border:none; border-radius:10px; font-family:'Heebo',sans-serif; font-size:13px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; }
+    .bsheet-btn.web { background:var(--accent); color:#fff; }
+    .bsheet-btn.bank { background:rgba(245,158,11,.15); color:var(--amber); border:1px solid rgba(245,158,11,.3); }
+    .bsheet-btn.sched { background:rgba(34,197,94,.15); color:var(--green); border:1px solid rgba(34,197,94,.3); }
 
-    /* ── Placeholder map ── */
-    .map-placeholder {
-      flex: 1; display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      background: var(--bg3); gap: 12px; position: relative;
-    }
-    .map-placeholder-grid {
-      position: absolute; inset: 0; opacity: 0.05;
-      background-image:
-        linear-gradient(var(--text) 1px, transparent 1px),
-        linear-gradient(90deg, var(--text) 1px, transparent 1px);
-      background-size: 40px 40px;
-    }
+    /* ── Day selector overlay ── */
+    .day-ov { position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:1000; display:flex; align-items:flex-end; }
+    .day-panel { background:var(--bg2); border-radius:18px 18px 0 0; border-top:1px solid var(--border); width:100%; padding-bottom:var(--safe-b); max-height:60vh; overflow-y:auto; }
+    .day-panel-title { font-size:15px; font-weight:700; padding:14px 16px 10px; border-bottom:1px solid var(--border); }
+    .day-opt { display:flex; align-items:center; gap:12px; padding:13px 16px; border-bottom:1px solid var(--border); cursor:pointer; }
+    .day-opt:active { background:var(--surface); }
+    .day-opt:last-child { border-bottom:none; }
 
-    /* ── Day blocks ── */
-    .day-header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 16px 8px;
-    }
-    .day-title { font-size: 16px; font-weight: 700; }
-    .day-meta { font-size: 12px; color: var(--text3); }
-    .block-item {
-      display: flex; align-items: center; gap: 12px;
-      padding: 12px 16px; border-bottom: 1px solid var(--border);
-    }
-    .block-item:last-child { border-bottom: none; }
-    .block-dot {
-      width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
-    }
-    .block-time { font-size: 11px; color: var(--text3); width: 40px; flex-shrink: 0; }
-    .block-emoji { font-size: 16px; flex-shrink: 0; }
-    .block-title { font-size: 13px; font-weight: 500; flex: 1; min-width: 0; }
-    .block-dur { font-size: 11px; color: var(--text3); }
+    /* ── Checklist ── */
+    .add-row { display:flex; gap:8px; padding:10px 14px; border-bottom:1px solid var(--border); background:var(--bg2); flex-shrink:0; }
+    .add-inp { flex:1; background:var(--bg3); border:1px solid var(--border); border-radius:8px; padding:9px 12px; color:var(--text); font-family:'Heebo',sans-serif; font-size:14px; outline:none; direction:rtl; }
+    .add-inp::placeholder { color:var(--text3); }
+    .add-btn { background:var(--accent); color:#fff; border:none; border-radius:8px; padding:0 16px; font-family:'Heebo',sans-serif; font-size:18px; cursor:pointer; font-weight:700; }
+    .ci { display:flex; align-items:center; gap:11px; padding:13px 16px; border-bottom:1px solid var(--border); }
+    .ci:last-child { border-bottom:none; }
+    .cbox { width:26px; height:26px; border-radius:6px; border:2px solid var(--border); background:none; flex-shrink:0; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:14px; color:#fff; transition:all .12s; }
+    .cbox.chk { background:var(--green); border-color:var(--green); }
+    .ci-text { flex:1; font-size:14px; line-height:1.4; word-break:break-word; }
+    .ci-text.done { text-decoration:line-through; color:var(--text3); }
+    .ci-del { background:none; border:none; color:var(--text3); cursor:pointer; font-size:16px; padding:4px 6px; opacity:.5; }
+    .ci-del:active { opacity:1; color:var(--red); }
+    .ci-cat { font-size:10px; color:var(--text3); margin-top:2px; }
+    .prog-bar { height:3px; background:var(--bg3); flex-shrink:0; }
+    .prog-fill { height:100%; background:var(--green); transition:width .3s; }
 
-    /* ── Bank item ── */
-    .bank-item {
-      display: flex; align-items: center; gap: 12px;
-      padding: 12px 16px; border-bottom: 1px solid var(--border);
-    }
-    .bank-item:last-child { border-bottom: none; }
-    .bank-type-icon { font-size: 20px; flex-shrink: 0; }
-    .bank-name { font-size: 13px; font-weight: 600; }
-    .bank-addr { font-size: 11px; color: var(--text3); margin-top: 2px; }
+    /* ── Notes ── */
+    .note-ta { width:100%; background:var(--bg3); border:1px solid var(--border); border-radius:10px; padding:12px; color:var(--text); font-family:'Heebo',sans-serif; font-size:14px; line-height:1.7; resize:none; outline:none; direction:rtl; }
+    .qnote { display:flex; align-items:flex-start; gap:10px; padding:12px 16px; border-bottom:1px solid var(--border); }
+    .qnote:last-child { border-bottom:none; }
+    .qnote-text { flex:1; font-size:13px; line-height:1.55; }
+    .qnote-date { font-size:10px; color:var(--text3); margin-top:3px; }
 
-    /* ── Scrollbar ── */
-    ::-webkit-scrollbar { width: 3px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    /* ── Docs ── */
+    .doc-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:14px 16px; }
+    .doc-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:6px; min-width:0; }
+    .doc-icon { font-size:30px; }
+    .doc-name { font-size:12px; color:var(--text2); word-break:break-word; line-height:1.35; }
+    .doc-meta { font-size:10px; color:var(--text3); }
+
+    /* ── Bank items ── */
+    .bitem { display:flex; align-items:center; gap:11px; padding:12px 15px; border-bottom:1px solid var(--border); }
+    .bitem:last-child { border-bottom:none; }
+
+    /* ── Schedule ── */
+    .blk { display:flex; align-items:center; gap:11px; padding:11px 15px; border-bottom:1px solid var(--border); }
+    .blk:last-child { border-bottom:none; }
+    .bdot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+    .btime { font-size:11px; color:var(--text3); width:38px; flex-shrink:0; }
+    .bname { font-size:13px; font-weight:500; flex:1; min-width:0; }
+    .bdur { font-size:11px; color:var(--text3); }
+
+    /* ── Trip screen ── */
+    .sync-b { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; padding:3px 8px; border-radius:10px; }
+    .sync-b.synced { color:var(--green); background:rgba(34,197,94,.1); }
+    .sync-b.syncing { color:var(--amber); background:rgba(245,158,11,.1); }
+    .sync-b.error { color:var(--red); background:rgba(239,68,68,.1); }
+    .sync-b.idle { color:var(--text3); background:var(--surface); }
+    .trip-chip { flex-shrink:0; padding:5px 13px; border-radius:16px; font-size:12px; font-weight:600; border:1px solid var(--border); background:var(--surface); color:var(--text2); cursor:pointer; white-space:nowrap; }
+    .trip-chip.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+
+    ::-webkit-scrollbar { width:3px; } ::-webkit-scrollbar-track { background:transparent; } ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
   </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useRef, useMemo, useCallback } = React;
+const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOBILE_VERSION = 'm1';
-const FB_URL = 'https://planmytrip-de33c-default-rtdb.firebaseio.com';
-const LS_KEY = 'caravanCtrl_he';
+const MOB_VER='m2';
+const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
+const LS_KEY='caravanCtrl_he';
+const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
-const BLOCK_EMOJI = {travel:'🚗',activity:'🎯',stop:'⏸️',rest:'😴',games:'🎮',free:'🕐'};
-const BLOCK_HE    = {travel:'נסיעה',activity:'פעילות',stop:'עצירה',rest:'מנוחה',games:'משחקים',free:'זמן פנוי'};
-const BLOCK_COLOR = {travel:'#4f8ef7',activity:'#22c55e',stop:'#f59e0b',rest:'#94a3b8',games:'#a855f7',free:'#64748b'};
+const BLOCK_EMOJI={travel:'🚗',activity:'🎯',stop:'⏸️',rest:'😴',games:'🎮',free:'🕐'};
+const BLOCK_HE={travel:'נסיעה',activity:'פעילות',stop:'עצירה',rest:'מנוחה',games:'משחקים',free:'זמן פנוי'};
+const BLOCK_COLOR={travel:'#4f8ef7',activity:'#22c55e',stop:'#f59e0b',rest:'#94a3b8',games:'#a855f7',free:'#64748b'};
 
-const PLACE_TYPE_HE = {
-  campground:'⛺ קמפינג', rv_park:'🏕️ קרוואנים', lodging:'🏨 מלון',
-  bakery:'🥐 מאפייה', winery:'🍷 יקב', cafe:'☕ קפה', bar:'🍺 בר',
-  restaurant:'🍽️ מסעדה', food:'🍽️ אוכל',
-  shopping_mall:'🛍️ קניון', supermarket:'🛒 סופר', grocery_or_supermarket:'🛒 סופר',
-  clothing_store:'👕 ביגוד', store:'🏪 חנות',
-  zoo:'🦁 גן חיות', aquarium:'🐟 אקווריום', museum:'🏛️ מוזיאון',
-  amusement_park:'🎡 פארק שעשועים', playground:'🎠 גן משחקים',
-  park:'🌳 פארק', beach:'🏖️ חוף', tourist_attraction:'📸 אטרקציה',
-  gym:'💪 חדר כושר', stadium:'🏟️ אצטדיון',
-  airport:'✈️ שדה תעופה', train_station:'🚂 רכבת', bus_station:'🚌 אוטובוס',
-  gas_station:'⛽ תחנת דלק', hospital:'🏥 בית חולים', pharmacy:'💊 בית מרקחת',
-  synagogue:'🕍 בית כנסת', church:'⛪ כנסייה', mosque:'🕌 מסגד',
-  natural_feature:'⛰️ טבע', point_of_interest:'📍 אטרקציה', establishment:'🏢 עסק',
-};
-const PLACE_TYPE_PRIORITY = [
-  'campground','rv_park','bakery','winery','cafe','bar','lodging','restaurant',
-  'shopping_mall','supermarket','grocery_or_supermarket','clothing_store','store',
-  'zoo','aquarium','museum','amusement_park','playground','park','beach',
-  'tourist_attraction','gym','stadium','airport','train_station','bus_station',
-  'gas_station','hospital','pharmacy','synagogue','church','mosque',
-  'natural_feature','food','point_of_interest','establishment',
-];
-const getPlaceTypeLabel = types => {
-  if (!types?.length) return '';
-  const key = PLACE_TYPE_PRIORITY.find(p => types.includes(p));
-  return key ? PLACE_TYPE_HE[key] : '';
-};
-const getCountry = item => item.country || item.address?.split(',').slice(-1)[0]?.trim() || '—';
+const PLACE_TYPE_PRIORITY=['campground','rv_park','bakery','winery','cafe','bar','lodging','restaurant','shopping_mall','supermarket','grocery_or_supermarket','clothing_store','store','zoo','aquarium','museum','amusement_park','playground','park','beach','tourist_attraction','gym','stadium','airport','train_station','bus_station','gas_station','hospital','pharmacy','synagogue','church','mosque','natural_feature','food','point_of_interest','establishment'];
+const PLACE_TYPE_HE={campground:'⛺ קמפינג',rv_park:'🏕️ קרוואנים',lodging:'🏨 מלון',bakery:'🥐 מאפייה',winery:'🍷 יקב',cafe:'☕ קפה',bar:'🍺 בר',restaurant:'🍽️ מסעדה',food:'🍽️ אוכל',shopping_mall:'🛍️ קניון',supermarket:'🛒 סופר',grocery_or_supermarket:'🛒 סופר',clothing_store:'👕 ביגוד',store:'🏪 חנות',zoo:'🦁 גן חיות',aquarium:'🐟 אקווריום',museum:'🏛️ מוזיאון',amusement_park:'🎡 פארק שעשועים',playground:'🎠 גן משחקים',park:'🌳 פארק',beach:'🏖️ חוף',tourist_attraction:'📸 אטרקציה',gym:'💪 כושר',stadium:'🏟️ אצטדיון',airport:'✈️ שדה תעופה',train_station:'🚂 רכבת',bus_station:'🚌 אוטובוס',gas_station:'⛽ דלק',hospital:'🏥 בית חולים',pharmacy:'💊 בית מרקחת',synagogue:'🕍 בית כנסת',church:'⛪ כנסייה',mosque:'🕌 מסגד',natural_feature:'⛰️ טבע',point_of_interest:'📍 אטרקציה',establishment:'🏢 עסק'};
+const getTypeLabel=types=>{if(!types?.length)return'';const k=PLACE_TYPE_PRIORITY.find(p=>types.includes(p));return k?PLACE_TYPE_HE[k]:'';};
+const getCountry=item=>item.country||item.address?.split(',').slice(-1)[0]?.trim()||'—';
+const uid=()=>Math.random().toString(36).slice(2,10);
+const fmtSize=b=>b>=1048576?`${(b/1048576).toFixed(1)}MB`:b>=1024?`${Math.round(b/1024)}KB`:`${b}B`;
+const docIcon=t=>t?.includes('pdf')?'📄':t?.startsWith('image')?'🖼️':t?.includes('word')||t?.includes('document')?'📝':t?.includes('sheet')||t?.includes('excel')?'📊':'📎';
 
 /* ─── Firebase ─── */
-const fbBase = url => url.replace(/\/+$/, '');
-const fbRead = async (dbUrl, key) => {
-  const r = await fetch(`${fbBase(dbUrl)}/planmytrip/${key}.json?_=${Date.now()}`);
-  if (!r.ok) throw new Error(`שגיאה ${r.status}`);
-  return r.json();
-};
-const fbWrite = async (dbUrl, key, data) => {
-  const r = await fetch(`${fbBase(dbUrl)}/planmytrip/${key}.json`, {
-    method: 'PUT', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify(data),
-  });
-  if (!r.ok) throw new Error(`שגיאה ${r.status}`);
-  return r.json();
-};
+const fbBase=url=>url.replace(/\/+$/,'');
+const fbRead=async(dbUrl,key)=>{const r=await fetch(`${fbBase(dbUrl)}/planmytrip/${key}.json?_=${Date.now()}`);if(!r.ok)throw new Error(`שגיאה ${r.status}`);return r.json();};
+const fbWrite=async(dbUrl,key,data)=>{const r=await fetch(`${fbBase(dbUrl)}/planmytrip/${key}.json`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});if(!r.ok)throw new Error(`שגיאה ${r.status}`);return r.json();};
 
-/* ─── Local storage ─── */
-const loadState = () => { try { return JSON.parse(localStorage.getItem(LS_KEY)||'null'); } catch { return null; } };
-const saveState = s => { try { localStorage.setItem(LS_KEY, JSON.stringify(s)); } catch {} };
+/* ─── localStorage ─── */
+const loadState=()=>{try{return JSON.parse(localStorage.getItem(LS_KEY)||'null');}catch{return null;}};
+const saveState=s=>{try{localStorage.setItem(LS_KEY,JSON.stringify(s));}catch{}};
 
-/* ─── Normalize trip ─── */
-const normTrip = t => {
-  if (!t || typeof t !== 'object') return null;
-  return {
-    expenses:[], interestBank:[], packingList:[], shoppingList:[], documents:[], quickNotes:[], days:[], generalNotes:'',
-    ...t,
-    days:(t.days||[]).map(d=>({blocks:[],...d,
-      startLocation:d.startLocation||'', startTime:d.startTime||'08:00',
-      endLocation:d.endLocation||'', endTime:d.endTime||'20:00',
-    })),
-    interestBank: t.interestBank||[],
-    expenses: t.expenses||[],
-  };
+/* ─── normTrip ─── */
+const normTrip=t=>{
+  if(!t||typeof t!=='object')return null;
+  return{expenses:[],interestBank:[],packingList:[],shoppingList:[],documents:[],quickNotes:[],days:[],generalNotes:'',...t,
+    days:(t.days||[]).map(d=>({blocks:[],...d,startLocation:d.startLocation||'',startTime:d.startTime||'08:00',endLocation:d.endLocation||'',endTime:d.endTime||'20:00'})),
+    interestBank:t.interestBank||[],expenses:t.expenses||[],packingList:t.packingList||[],shoppingList:t.shoppingList||[],documents:t.documents||[],quickNotes:t.quickNotes||[]};
 };
 
-/* ─── uid ─── */
-const uid = () => Math.random().toString(36).slice(2,10);
+/* ─── dark map styles ─── */
+const DARK_MAP=[{elementType:'geometry',stylers:[{color:'#1d2c4d'}]},{elementType:'labels.text.fill',stylers:[{color:'#8ec3b9'}]},{elementType:'labels.text.stroke',stylers:[{color:'#1a3646'}]},{featureType:'administrative.country',elementType:'geometry.stroke',stylers:[{color:'#4b6878'}]},{featureType:'road',elementType:'geometry',stylers:[{color:'#304a7d'}]},{featureType:'road',elementType:'labels.text.fill',stylers:[{color:'#98a5be'}]},{featureType:'road.highway',elementType:'geometry',stylers:[{color:'#2c6675'}]},{featureType:'water',elementType:'geometry',stylers:[{color:'#0e1626'}]},{featureType:'water',elementType:'labels.text.fill',stylers:[{color:'#4e6d70'}]},{featureType:'poi',elementType:'geometry',stylers:[{color:'#283d6a'}]}];
 
-/* ═══════════════════════════════════════
+/* ════════════════════════════════
    TOAST
-═══════════════════════════════════════ */
-let _toastFn = null;
-const toast = (msg, type='info') => _toastFn?.(msg, type);
-
-function ToastLayer() {
-  const [items, setItems] = useState([]);
-  _toastFn = useCallback((msg, type) => {
-    const id = uid();
-    setItems(p => [...p, {id, msg, type}]);
-    setTimeout(() => setItems(p => p.filter(t => t.id !== id)), 3000);
-  }, []);
-  if (!items.length) return null;
-  return (
-    <div className="toast-wrap">
-      {items.map(t => (
-        <div key={t.id} className={`toast ${t.type}`}>{t.msg}</div>
-      ))}
-    </div>
-  );
+════════════════════════════════ */
+let _toast=null;
+const toast=(msg,type='i')=>_toast?.(msg,type);
+function ToastLayer(){
+  const[items,setItems]=useState([]);
+  _toast=useCallback((msg,type)=>{const id=uid();setItems(p=>[...p,{id,msg,type}]);setTimeout(()=>setItems(p=>p.filter(t=>t.id!==id)),3200);},[]);
+  if(!items.length)return null;
+  return<div className="toast-w">{items.map(t=><div key={t.id} className={`toast ${t.type}`}>{t.msg}</div>)}</div>;
 }
 
-/* ═══════════════════════════════════════
-   MAP SCREEN (stage 1 – placeholder)
-═══════════════════════════════════════ */
-function MapScreen({ trip, active }) {
-  return (
-    <div className={`screen${active ? '' : ' hidden'}`}>
-      <div className="map-placeholder" style={{flex:1, minHeight: 0}}>
-        <div className="map-placeholder-grid" />
-        <div style={{position:'relative', textAlign:'center', zIndex:1, padding:'0 32px'}}>
-          <div style={{fontSize:60, marginBottom:12}}>🗺️</div>
-          <div style={{fontSize:17, fontWeight:700, color:'var(--text)', marginBottom:8}}>
-            המפה תיטען כאן
+/* ════════════════════════════════
+   DAY SELECTOR (for "add to schedule")
+════════════════════════════════ */
+function DaySelector({days,onSelect,onClose}){
+  return<div className="day-ov" onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div className="day-panel">
+      <div className="day-panel-title">הוסף לאיזה יום?</div>
+      {days.map((d,i)=>(
+        <div key={d.id} className="day-opt" onClick={()=>onSelect(d.id)}>
+          <span style={{fontSize:18}}>📅</span>
+          <div>
+            <div style={{fontWeight:600,fontSize:14}}>יום {i+1}{d.startLocation?` — ${d.startLocation}`:''}</div>
+            <div style={{fontSize:11,color:'var(--text3)'}}>{d.startTime}–{d.endTime} · {(d.blocks||[]).length} פעילויות</div>
           </div>
-          <div style={{fontSize:13, color:'var(--text3)', lineHeight:1.7}}>
-            בשלב הבא יוצג כאן Google Maps מלא עם<br/>
-            סמנים לאטרקציות וחיפוש מקומות
-          </div>
-          {trip && (
-            <div style={{marginTop:20, display:'flex', gap:10, justifyContent:'center', flexWrap:'wrap'}}>
-              <div className="stat-pill">
-                <span>📅</span>{trip.days?.length||0} ימים
-              </div>
-              <div className="stat-pill">
-                <span>⭐</span>{trip.interestBank?.length||0} אטרקציות
-              </div>
-            </div>
-          )}
         </div>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════
-   SCHEDULE SCREEN (stage 1)
-═══════════════════════════════════════ */
-function ScheduleScreen({ trip, active }) {
-  const days = trip?.days || [];
-
-  return (
-    <div className={`screen${active ? '' : ' hidden'}`}>
-      <div className="screen-header">
-        <div className="screen-title">📅 לוז הטיול</div>
-        {trip && <div className="screen-subtitle">{trip.name} · {days.length} ימים</div>}
-      </div>
-
-      {!trip && (
-        <div className="empty-state">
-          <div className="empty-icon">📅</div>
-          <div className="empty-title">אין טיול פעיל</div>
-        </div>
-      )}
-
-      {days.length === 0 && trip && (
-        <div className="empty-state">
-          <div className="empty-icon">📅</div>
-          <div className="empty-title">אין ימים בלוז</div>
-          <div className="empty-desc">הוסף ימים לטיול דרך אפליקציית המחשב</div>
-        </div>
-      )}
-
-      {days.map((day, di) => (
-        <DayCard key={day.id} day={day} dayIndex={di} />
       ))}
-
-      <div style={{height:16}} />
+      <div className="day-opt" onClick={onClose} style={{color:'var(--text3)',justifyContent:'center'}}>ביטול</div>
     </div>
-  );
+  </div>;
 }
 
-function DayCard({ day, dayIndex }) {
-  const [open, setOpen] = useState(dayIndex === 0);
-  const blocks = day.blocks || [];
-  const totalBlocks = blocks.length;
+/* ════════════════════════════════
+   MAP SCREEN
+════════════════════════════════ */
+function MapScreen({trip,active,mapsReady,onUpdate}){
+  const mapDivRef=useRef(null);
+  const mapRef=useRef(null);
+  const bankMkRef=useRef([]);
+  const srchMkRef=useRef([]);
+  const svcRef=useRef(null);
+  const iwRef=useRef(null);
+  const srchInputRef=useRef(null);
+  const[sheet,setSheet]=useState(null); // {placeId,lat,lng,name,address,rating,website,types,inBank}
+  const[daySelPlace,setDaySelPlace]=useState(null);
+  const[loading,setLoading]=useState(false);
 
-  const blockDuration = b => {
-    if (!b.startTime || !b.endTime) return null;
-    const [sh,sm] = b.startTime.split(':').map(Number);
-    const [eh,em] = b.endTime.split(':').map(Number);
-    const mins = (eh*60+em) - (sh*60+sm);
-    if (mins <= 0) return null;
-    return mins >= 60 ? `${Math.floor(mins/60)}ש${mins%60?` ${mins%60}ד`:''}` : `${mins}ד`;
+  /* init map */
+  useEffect(()=>{
+    if(!mapsReady||!mapDivRef.current||mapRef.current)return;
+    const m=new window.google.maps.Map(mapDivRef.current,{
+      center:{lat:46,lng:14},zoom:5,
+      disableDefaultUI:true,gestureHandling:'greedy',styles:DARK_MAP,
+    });
+    svcRef.current=new window.google.maps.places.PlacesService(m);
+    iwRef.current=new window.google.maps.InfoWindow();
+    m.addListener('click',async e=>{
+      if(!e.placeId)return;
+      e.stop();
+      loadPlace(e.placeId,e.latLng.lat(),e.latLng.lng());
+    });
+    mapRef.current=m;
+  },[mapsReady]);
+
+  /* resize when tab activates */
+  useEffect(()=>{
+    if(active&&mapRef.current){
+      setTimeout(()=>window.google?.maps?.event?.trigger(mapRef.current,'resize'),60);
+    }
+  },[active]);
+
+  /* bank markers */
+  useEffect(()=>{
+    if(!mapsReady||!mapRef.current)return;
+    bankMkRef.current.forEach(m=>m.setMap(null));
+    bankMkRef.current=[];
+    (trip?.interestBank||[]).forEach(item=>{
+      if(!item.lat||!item.lng)return;
+      const mk=new window.google.maps.Marker({
+        position:{lat:item.lat,lng:item.lng},map:mapRef.current,title:item.name||'',zIndex:5,
+        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:8,fillColor:'#f59e0b',fillOpacity:.9,strokeColor:'#fff',strokeWeight:1.5},
+      });
+      mk.addListener('click',()=>loadPlace(item.placeId,item.lat,item.lng,item));
+      bankMkRef.current.push(mk);
+    });
+  },[trip?.interestBank,mapsReady]);
+
+  const loadPlace=(placeId,lat,lng,bankItem=null)=>{
+    if(!svcRef.current){return;}
+    setLoading(true);
+    const inBank=bankItem!=null||!!(trip?.interestBank||[]).find(i=>i.placeId===placeId);
+    if(!placeId){
+      setSheet({lat,lng,name:bankItem?.name||'',address:bankItem?.address||'',inBank,bankItem});
+      setLoading(false);return;
+    }
+    svcRef.current.getDetails({placeId,fields:['name','rating','formatted_address','website','types','geometry']},
+      (res,st)=>{
+        const PS=window.google.maps.places.PlacesServiceStatus;
+        if(st===PS.OK&&res){
+          setSheet({placeId,lat:res.geometry?.location?.lat()||lat,lng:res.geometry?.location?.lng()||lng,
+            name:res.name,address:res.formatted_address,rating:res.rating,website:res.website,types:res.types,inBank});
+        } else {
+          setSheet({placeId,lat,lng,name:bankItem?.name||'',address:bankItem?.address||'',inBank});
+        }
+        setLoading(false);
+      });
   };
 
-  return (
-    <div style={{margin:'12px 16px 0'}}>
-      <div
-        className="card"
-        style={{cursor:'pointer'}}
-        onClick={() => setOpen(o => !o)}
-      >
-        <div style={{
-          display:'flex', alignItems:'center', justifyContent:'space-between',
-          padding:'14px 16px',
-          borderBottom: open && totalBlocks ? '1px solid var(--border)' : 'none',
-        }}>
-          <div>
-            <div style={{fontSize:15, fontWeight:700}}>
-              יום {dayIndex+1}
-              {day.startLocation && <span style={{fontWeight:400, color:'var(--text2)', fontSize:13}}> · {day.startLocation}</span>}
-            </div>
-            <div style={{fontSize:11, color:'var(--text3)', marginTop:3}}>
-              {day.startTime}–{day.endTime}
-              {totalBlocks > 0 && ` · ${totalBlocks} פעילויות`}
+  const doSearch=()=>{
+    const q=(srchInputRef.current?.value||'').trim();
+    if(!q||!mapRef.current||!svcRef.current)return;
+    srchMkRef.current.forEach(m=>m.setMap(null));srchMkRef.current=[];
+    const bounds=mapRef.current.getBounds();
+    const opts={query:q,language:'he'};
+    if(bounds)opts.bounds=bounds;
+    svcRef.current.textSearch(opts,(res,st)=>{
+      const PS=window.google.maps.places.PlacesServiceStatus;
+      if(st!==PS.OK||!res?.length){toast('לא נמצאו תוצאות','e');return;}
+      const toShow=(bounds?res.filter(r=>r.geometry?.location&&bounds.contains(r.geometry.location)):res).slice(0,10);
+      const list=toShow.length?toShow:res.slice(0,5);
+      list.forEach(r=>{
+        const loc=r.geometry?.location;if(!loc)return;
+        const mk=new window.google.maps.Marker({position:{lat:loc.lat(),lng:loc.lng()},map:mapRef.current,title:r.name||'',zIndex:20,
+          icon:{path:window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,scale:5,fillColor:'#4f8ef7',fillOpacity:1,strokeColor:'#fff',strokeWeight:1.5,rotation:180}});
+        mk.addListener('click',()=>loadPlace(r.place_id,loc.lat(),loc.lng()));
+        srchMkRef.current.push(mk);
+      });
+      if(list.length===1){const loc=list[0].geometry.location;loadPlace(list[0].place_id,loc.lat(),loc.lng());}
+    });
+  };
+
+  const goLoc=()=>{
+    if(!navigator.geolocation||!mapRef.current){toast('מיקום לא זמין','e');return;}
+    navigator.geolocation.getCurrentPosition(p=>{
+      const ll={lat:p.coords.latitude,lng:p.coords.longitude};
+      mapRef.current.panTo(ll);mapRef.current.setZoom(14);
+    },()=>toast('לא ניתן לגשת למיקום','e'));
+  };
+
+  const addToBank=()=>{
+    if(!sheet||!onUpdate)return;
+    const item={id:uid(),name:sheet.name||'',address:sheet.address||'',placeId:sheet.placeId||'',
+      lat:sheet.lat,lng:sheet.lng,types:sheet.types||[],rating:sheet.rating,website:sheet.website};
+    const cur=trip||{interestBank:[]};
+    onUpdate({...cur,interestBank:[...(cur.interestBank||[]),item]});
+    toast(`"${sheet.name}" נוסף לבנק ⭐`,'s');
+    setSheet(s=>({...s,inBank:true}));
+  };
+
+  const addToSchedule=(dayId)=>{
+    if(!sheet||!onUpdate||!trip)return;
+    const block={id:uid(),type:'activity',title:sheet.name||'',startTime:'10:00',endTime:'12:00',
+      note:'',placeId:sheet.placeId||'',address:sheet.address||''};
+    onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,blocks:[...(d.blocks||[]),block]}:d)});
+    toast(`"${sheet.name}" נוסף ליום ✓`,'s');
+    setDaySelPlace(null);
+  };
+
+  return(
+    <div className={`screen map-screen${active?'':' h'}`}>
+      {/* map div — always rendered */}
+      <div ref={mapDivRef} className="map-container"/>
+
+      {/* loading overlay */}
+      {!mapsReady&&<div className="map-loading"><div className="spinner"/><div style={{color:'var(--text3)',fontSize:13}}>טוען מפה...</div></div>}
+
+      {/* search bar */}
+      <div className="map-searchbar">
+        <input ref={srchInputRef} className="map-si" placeholder="🔍 חיפוש מקומות..." dir="rtl"
+          onKeyDown={e=>e.key==='Enter'&&doSearch()}/>
+        <button onClick={doSearch} style={{background:'var(--accent)',border:'none',borderRadius:10,color:'#fff',padding:'0 14px',fontFamily:'Heebo,sans-serif',fontSize:14,fontWeight:700,cursor:'pointer',boxShadow:'0 2px 10px rgba(0,0,0,.4)'}}>חפש</button>
+      </div>
+
+      {/* current location FAB */}
+      <button className="map-fab loc-fab" onClick={goLoc} title="מיקום נוכחי">◎</button>
+
+      {/* loading indicator */}
+      {loading&&<div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',zIndex:20,background:'var(--bg2)',borderRadius:50,padding:14,border:'1px solid var(--border)'}}>
+        <div className="spinner"/>
+      </div>}
+
+      {/* bottom sheet overlay */}
+      {sheet&&<div className="sheet-ov" onClick={()=>setSheet(null)}/>}
+
+      {/* bottom sheet */}
+      <div className={`bsheet${sheet?' open':''}`}>
+        <div className="bsheet-handle"/>
+        {sheet&&<>
+          <div className="bsheet-name">{sheet.name||'מקום לא ידוע'}</div>
+          {sheet.types?.length>0&&<div className="bsheet-type">{getTypeLabel(sheet.types)}</div>}
+          {sheet.rating&&<div style={{padding:'0 16px 6px',fontSize:13,color:'var(--amber)'}}>⭐ {sheet.rating}</div>}
+          {sheet.address&&<div className="bsheet-addr">📍 {sheet.address}</div>}
+          <div className="bsheet-actions">
+            {sheet.website&&<a href={sheet.website} target="_blank" rel="noreferrer" style={{textDecoration:'none',flex:1,minWidth:120}}>
+              <button className="bsheet-btn web" style={{width:'100%'}}>🌐 אתר</button>
+            </a>}
+            {!sheet.inBank&&<button className="bsheet-btn bank" onClick={addToBank}>⭐ שמור לבנק</button>}
+            {sheet.inBank&&<div style={{padding:'11px 10px',fontSize:12,color:'var(--amber)',fontWeight:600}}>⭐ כבר בבנק</div>}
+            {(trip?.days||[]).length>0&&<button className="bsheet-btn sched" onClick={()=>setDaySelPlace(sheet)}>📅 הוסף ללוז</button>}
+          </div>
+        </>}
+      </div>
+
+      {/* day selector */}
+      {daySelPlace&&<DaySelector days={trip?.days||[]} onSelect={addToSchedule} onClose={()=>setDaySelPlace(null)}/>}
+    </div>
+  );
+}
+
+/* ════════════════════════════════
+   SCHEDULE SCREEN
+════════════════════════════════ */
+function ScheduleScreen({trip,active}){
+  const days=trip?.days||[];
+  const blockDur=b=>{
+    if(!b.startTime||!b.endTime)return null;
+    const[sh,sm]=b.startTime.split(':').map(Number),[eh,em]=b.endTime.split(':').map(Number);
+    const m=(eh*60+em)-(sh*60+sm);if(m<=0)return null;
+    return m>=60?`${Math.floor(m/60)}ש${m%60?` ${m%60}ד`:''}`:` ${m}ד`;
+  };
+  return(
+    <div className={`screen${active?'':' h'}`}>
+      <div className="sh"><div className="stitle">📅 לוז הטיול</div>{trip&&<div className="ssub">{trip.name} · {days.length} ימים</div>}</div>
+      {!trip&&<div className="empty"><div className="eicon">📅</div><div className="etitle">אין טיול פעיל</div></div>}
+      {trip&&days.length===0&&<div className="empty"><div className="eicon">📅</div><div className="etitle">אין ימים בלוז</div><div className="edesc">הוסף ימים דרך אפליקציית המחשב</div></div>}
+      {days.map((day,di)=>{
+        const[open,setOpen]=useState(di===0);
+        const blks=day.blocks||[];
+        return(
+          <div key={day.id} style={{margin:'10px 14px 0'}}>
+            <div className="card" style={{cursor:'pointer'}} onClick={()=>setOpen(o=>!o)}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 15px',borderBottom:open&&blks.length?'1px solid var(--border)':'none'}}>
+                <div>
+                  <div style={{fontSize:15,fontWeight:700}}>יום {di+1}{day.startLocation&&<span style={{fontWeight:400,color:'var(--text2)',fontSize:13}}> · {day.startLocation}</span>}</div>
+                  <div style={{fontSize:11,color:'var(--text3)',marginTop:3}}>{day.startTime}–{day.endTime}{blks.length>0&&` · ${blks.length} פעילויות`}</div>
+                </div>
+                <div style={{fontSize:16,color:'var(--text3)',transform:open?'rotate(90deg)':'none',transition:'transform .2s'}}>‹</div>
+              </div>
+              {open&&blks.map(b=>(
+                <div key={b.id} className="blk">
+                  <div className="bdot" style={{background:BLOCK_COLOR[b.type]||'var(--text3)'}}/>
+                  <div className="btime">{b.startTime||''}</div>
+                  <div style={{fontSize:16,flexShrink:0}}>{BLOCK_EMOJI[b.type]||'📌'}</div>
+                  <div className="bname">{b.title||BLOCK_HE[b.type]||b.type}</div>
+                  {blockDur(b)&&<div className="bdur">{blockDur(b)}</div>}
+                </div>
+              ))}
             </div>
           </div>
-          <div style={{fontSize:18, color:'var(--text3)', transform: open ? 'rotate(90deg)' : 'none', transition:'transform 0.2s'}}>
-            ‹
+        );
+      })}
+      <div style={{height:16}}/>
+    </div>
+  );
+}
+
+/* ════════════════════════════════
+   BANK SCREEN
+════════════════════════════════ */
+function BankScreen({trip,active}){
+  const[search,setSearch]=useState('');
+  const bank=trip?.interestBank||[];
+  const filtered=useMemo(()=>{
+    const q=search.trim().toLowerCase();
+    if(!q)return bank;
+    return bank.filter(i=>(i.name||'').toLowerCase().includes(q)||(i.address||'').toLowerCase().includes(q));
+  },[bank,search]);
+  const grouped=useMemo(()=>{
+    const src=search.trim()?filtered:bank;
+    const m={};for(const i of src){const c=getCountry(i);if(!m[c])m[c]=[];m[c].push(i);}
+    return Object.entries(m).sort((a,b)=>a[0].localeCompare(b[0],'he'));
+  },[bank,filtered,search]);
+  return(
+    <div className={`screen${active?'':' h'}`}>
+      <div className="sh"><div className="stitle">⭐ בנק אטרקציות</div>{trip&&<div className="ssub">{bank.length} מקומות שמורים</div>}</div>
+      {bank.length>0&&<div style={{padding:'9px 14px',background:'var(--bg2)',borderBottom:'1px solid var(--border)',flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,background:'var(--bg3)',borderRadius:9,padding:'8px 12px',border:'1px solid var(--border)'}}>
+          <span style={{fontSize:15}}>🔍</span>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="חיפוש אטרקציה..." style={{flex:1,background:'none',border:'none',outline:'none',color:'var(--text)',fontSize:14,fontFamily:'Heebo,sans-serif',direction:'rtl'}}/>
+          {search&&<button onClick={()=>setSearch('')} style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:15,padding:0}}>✕</button>}
+        </div>
+      </div>}
+      {!trip&&<div className="empty"><div className="eicon">⭐</div><div className="etitle">אין טיול פעיל</div></div>}
+      {trip&&bank.length===0&&<div className="empty"><div className="eicon">⭐</div><div className="etitle">בנק האטרקציות ריק</div><div className="edesc">הוסף אטרקציות דרך אפליקציית המחשב או מהמפה</div></div>}
+      {search&&filtered.length===0&&<div className="empty"><div className="eicon">🔍</div><div className="etitle">אין תוצאות</div></div>}
+      {grouped.map(([country,items])=>(
+        <div key={country}>
+          <div className="slabel">{country} ({items.length})</div>
+          <div className="card" style={{margin:'0 14px'}}>
+            {items.map(item=>{
+              const lbl=getTypeLabel(item.types||(item.placeType?[item.placeType]:[]));
+              const ic=lbl?lbl.split(' ')[0]:'📍';
+              return(
+                <div key={item.id} className="bitem">
+                  <div style={{fontSize:20,flexShrink:0}}>{ic}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:14,fontWeight:600}}>{item.name||'—'}</div>
+                    {(item.address||lbl)&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>{lbl}{item.address&&<span> · {item.address}</span>}</div>}
+                    {item.note&&<div style={{fontSize:11,color:'var(--accent2)',marginTop:2}}>📝 {item.note}</div>}
+                  </div>
+                  {item.rating&&<div style={{fontSize:11,color:'var(--amber)',flexShrink:0}}>⭐ {item.rating}</div>}
+                </div>
+              );
+            })}
           </div>
         </div>
+      ))}
+      <div style={{height:16}}/>
+    </div>
+  );
+}
 
-        {open && blocks.map(b => (
-          <div key={b.id} className="block-item">
-            <div className="block-dot" style={{background: BLOCK_COLOR[b.type]||'var(--text3)'}} />
-            <div className="block-time">{b.startTime||''}</div>
-            <div className="block-emoji">{BLOCK_EMOJI[b.type]||'📌'}</div>
-            <div className="block-title">{b.title || BLOCK_HE[b.type] || b.type}</div>
-            {blockDuration(b) && <div className="block-dur">{blockDuration(b)}</div>}
+/* ════════════════════════════════
+   LISTS SCREEN — shopping/packing/notes/docs
+════════════════════════════════ */
+function ListsScreen({trip,active,onUpdate}){
+  const[sub,setSub]=useState('shopping');
+  const tabs=[{id:'shopping',label:'🛒 קניות'},{id:'packing',label:'🎒 ציוד'},{id:'notes',label:'📝 הערות'},{id:'docs',label:'📄 מסמכים'}];
+  return(
+    <div className={`screen${active?'':' h'}`}>
+      <div className="sh"><div className="stitle">📋 רשימות</div></div>
+      <div className="sub-tabs">
+        {tabs.map(t=><button key={t.id} className={`sub-tab${sub===t.id?' active':''}`} onClick={()=>setSub(t.id)}>{t.label}</button>)}
+      </div>
+      {!trip?<div className="empty"><div className="eicon">📋</div><div className="etitle">אין טיול פעיל</div></div>
+        :sub==='shopping'?<ChecklistTab key="shop" emoji="🛒" items={trip.shoppingList||[]} emptyText="רשימת הקניות ריקה" addPlaceholder="הוסף פריט לקניות..." onUpdate={items=>onUpdate({...trip,shoppingList:items})}/>
+        :sub==='packing'?<ChecklistTab key="pack" emoji="🎒" items={trip.packingList||[]} emptyText="רשימת הציוד ריקה" addPlaceholder="הוסף פריט לציוד..." onUpdate={items=>onUpdate({...trip,packingList:items})}/>
+        :sub==='notes'?<NotesTab trip={trip} onUpdate={onUpdate}/>
+        :<DocsTab trip={trip}/>}
+    </div>
+  );
+}
+
+/* ── Checklist tab ── */
+function ChecklistTab({emoji,items,emptyText,addPlaceholder,onUpdate}){
+  const[text,setText]=useState('');
+  const done=items.filter(i=>i.done).length;
+  const add=()=>{const t=text.trim();if(!t)return;onUpdate([...items,{id:uid(),text:t,done:false,category:'כללי'}]);setText('');};
+  const tog=id=>onUpdate(items.map(i=>i.id===id?{...i,done:!i.done}:i));
+  const del=id=>onUpdate(items.filter(i=>i.id!==id));
+  const grouped=items.reduce((a,i)=>{const c=i.category||'כללי';if(!a[c])a[c]=[];a[c].push(i);return a;},{});
+  return(
+    <>
+      {/* progress bar */}
+      {items.length>0&&<div className="prog-bar"><div className="prog-fill" style={{width:`${items.length?(done/items.length)*100:0}%`}}/></div>}
+      {/* add row */}
+      <div className="add-row">
+        <input className="add-inp" value={text} onChange={e=>setText(e.target.value)} placeholder={addPlaceholder} onKeyDown={e=>e.key==='Enter'&&add()}/>
+        <button className="add-btn" onClick={add}>+</button>
+      </div>
+      {/* stats */}
+      {items.length>0&&<div style={{padding:'8px 16px',fontSize:12,color:'var(--text3)',display:'flex',gap:10,borderBottom:'1px solid var(--border)',flexShrink:0}}>
+        <span>{emoji} {items.length} פריטים</span>
+        <span style={{color:'var(--green)'}}>✓ {done} הושלמו</span>
+        {done>0&&<button onClick={()=>onUpdate(items.filter(i=>!i.done))} style={{background:'none',border:'none',color:'var(--red)',fontSize:12,cursor:'pointer',padding:0,marginRight:'auto'}}>נקה הושלמו</button>}
+      </div>}
+      {/* list */}
+      <div style={{flex:1,overflowY:'auto'}}>
+        {items.length===0&&<div className="empty"><div className="eicon">{emoji}</div><div className="etitle">{emptyText}</div><div className="edesc">הקלד פריט בשדה למעלה והוסף</div></div>}
+        {Object.entries(grouped).map(([cat,citems])=>(
+          <div key={cat}>
+            {Object.keys(grouped).length>1&&<div className="slabel">{cat}</div>}
+            <div className="card" style={{margin:'0 14px 10px'}}>
+              {citems.map(item=>(
+                <div key={item.id} className="ci">
+                  <button className={`cbox${item.done?' chk':''}`} onClick={()=>tog(item.id)}>{item.done?'✓':''}</button>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div className={`ci-text${item.done?' done':''}`}>{item.text}</div>
+                  </div>
+                  <button className="ci-del" onClick={()=>del(item.id)}>✕</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+        <div style={{height:16}}/>
+      </div>
+    </>
+  );
+}
+
+/* ── Notes tab ── */
+function NotesTab({trip,onUpdate}){
+  const[newNote,setNewNote]=useState('');
+  const addNote=()=>{const t=newNote.trim();if(!t)return;onUpdate({...trip,quickNotes:[...(trip.quickNotes||[]),{id:uid(),text:t,createdAt:new Date().toISOString()}]});setNewNote('');};
+  const delNote=id=>onUpdate({...trip,quickNotes:(trip.quickNotes||[]).filter(n=>n.id!==id)});
+  const qnotes=trip.quickNotes||[];
+  return(
+    <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column'}}>
+      {/* general notes */}
+      <div className="slabel">📝 הערות כלליות</div>
+      <div style={{padding:'0 14px 14px'}}>
+        <textarea className="note-ta" rows={5}
+          value={trip.generalNotes||''}
+          onChange={e=>onUpdate({...trip,generalNotes:e.target.value})}
+          placeholder="קשר לאתר קמפינג, טלפונים, קודים, הערות מיוחדות..."/>
+      </div>
+      {/* quick notes */}
+      <div className="add-row">
+        <input className="add-inp" value={newNote} onChange={e=>setNewNote(e.target.value)} placeholder="הוסף פתקית מהירה..." onKeyDown={e=>e.key==='Enter'&&addNote()}/>
+        <button className="add-btn" onClick={addNote}>+</button>
+      </div>
+      <div className="slabel">📌 פתקיות מהירות ({qnotes.length})</div>
+      {qnotes.length===0&&<div style={{padding:'20px',textAlign:'center',color:'var(--text3)',fontSize:13}}>אין פתקיות עדיין</div>}
+      <div className="card" style={{margin:'0 14px'}}>
+        {[...qnotes].reverse().map(n=>(
+          <div key={n.id} className="qnote">
+            <div style={{flex:1}}>
+              <div className="qnote-text">{n.text}</div>
+              <div className="qnote-date">{new Date(n.createdAt).toLocaleDateString('he-IL')}</div>
+            </div>
+            <button className="ci-del" onClick={()=>delNote(n.id)}>✕</button>
           </div>
         ))}
       </div>
+      <div style={{height:16}}/>
     </div>
   );
 }
 
-/* ═══════════════════════════════════════
-   BANK SCREEN (stage 1)
-═══════════════════════════════════════ */
-function BankScreen({ trip, active }) {
-  const [search, setSearch] = useState('');
-  const bank = trip?.interestBank || [];
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return bank;
-    return bank.filter(i =>
-      (i.name||'').toLowerCase().includes(q) ||
-      (i.address||'').toLowerCase().includes(q)
-    );
-  }, [bank, search]);
-
-  const grouped = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const source = q ? filtered : bank;
-    const map = {};
-    for (const item of source) {
-      const c = getCountry(item);
-      if (!map[c]) map[c] = [];
-      map[c].push(item);
-    }
-    return Object.entries(map).sort((a,b) => a[0].localeCompare(b[0],'he'));
-  }, [bank, filtered, search]);
-
-  return (
-    <div className={`screen${active ? '' : ' hidden'}`}>
-      <div className="screen-header">
-        <div className="screen-title">⭐ בנק אטרקציות</div>
-        {trip && <div className="screen-subtitle">{bank.length} מקומות שמורים</div>}
-      </div>
-
-      {/* Search bar */}
-      {bank.length > 0 && (
-        <div style={{padding:'10px 16px', background:'var(--bg2)', borderBottom:'1px solid var(--border)', flexShrink:0}}>
-          <div style={{
-            display:'flex', alignItems:'center', gap:8,
-            background:'var(--bg3)', borderRadius:10, padding:'8px 12px',
-            border:'1px solid var(--border)',
-          }}>
-            <span style={{fontSize:16}}>🔍</span>
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="חיפוש אטרקציה..."
-              style={{
-                flex:1, background:'none', border:'none', outline:'none',
-                color:'var(--text)', fontSize:14, fontFamily:'Heebo,sans-serif',
-                direction:'rtl',
-              }}
-            />
-            {search && (
-              <button onClick={() => setSearch('')} style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:16,padding:0}}>✕</button>
+/* ── Docs tab ── */
+function DocsTab({trip}){
+  const docs=trip?.documents||[];
+  if(docs.length===0)return(
+    <div className="empty"><div className="eicon">📁</div><div className="etitle">אין מסמכים</div><div className="edesc">הוסף דרכונים, ביטוח, כרטיסים ועוד<br/>דרך אפליקציית המחשב</div></div>
+  );
+  return(
+    <div style={{flex:1,overflowY:'auto'}}>
+      <div className="doc-grid">
+        {docs.map(doc=>(
+          <div key={doc.id} className="doc-card">
+            <div className="doc-icon">{docIcon(doc.type)}</div>
+            <div className="doc-name">{doc.name}</div>
+            <div className="doc-meta">{fmtSize(doc.size||0)}</div>
+            {doc.url&&(
+              doc.type?.startsWith('image/')?
+                <img src={doc.url} alt={doc.name} style={{width:'100%',height:60,objectFit:'cover',borderRadius:6,marginTop:4}}/>
+                :<a href={doc.url} target="_blank" rel="noreferrer" download={doc.name} style={{fontSize:11,color:'var(--accent2)',textDecoration:'none',marginTop:4,display:'block'}}>
+                  {doc.type?.startsWith('image/')?'פתח 🖼️':'הורד ↓'}
+                </a>
             )}
           </div>
-        </div>
-      )}
-
-      {!trip && (
-        <div className="empty-state">
-          <div className="empty-icon">⭐</div>
-          <div className="empty-title">אין טיול פעיל</div>
-        </div>
-      )}
-
-      {bank.length === 0 && trip && (
-        <div className="empty-state">
-          <div className="empty-icon">⭐</div>
-          <div className="empty-title">בנק האטרקציות ריק</div>
-          <div className="empty-desc">הוסף אטרקציות דרך אפליקציית המחשב</div>
-        </div>
-      )}
-
-      {search && filtered.length === 0 && (
-        <div className="empty-state">
-          <div className="empty-icon">🔍</div>
-          <div className="empty-title">אין תוצאות</div>
-          <div className="empty-desc">לא נמצאו אטרקציות עבור "{search}"</div>
-        </div>
-      )}
-
-      {grouped.map(([country, items]) => (
-        <div key={country}>
-          <div className="section-label">{country} ({items.length})</div>
-          <div className="card" style={{margin:'0 16px'}}>
-            {items.map(item => (
-              <BankItemRow key={item.id} item={item} />
-            ))}
-          </div>
-        </div>
-      ))}
-
-      <div style={{height:16}} />
+        ))}
+      </div>
+      <div style={{height:16}}/>
     </div>
   );
 }
 
-function BankItemRow({ item }) {
-  const typeLabel = getPlaceTypeLabel(item.types || (item.placeType ? [item.placeType] : []));
-  const [icon, label] = typeLabel ? typeLabel.split(' ', 2) : ['📍',''];
-
-  return (
-    <div className="bank-item">
-      <div className="bank-type-icon">{icon || '📍'}</div>
-      <div style={{flex:1, minWidth:0}}>
-        <div className="bank-name">{item.name||'—'}</div>
-        {(item.address || item.placeType) && (
-          <div className="bank-addr">
-            {typeLabel && <span style={{marginLeft:4}}>{typeLabel}</span>}
-            {item.address && <span style={{color:'var(--text3)'}}> · {item.address}</span>}
-          </div>
-        )}
-        {item.note && (
-          <div style={{fontSize:11, color:'var(--accent2)', marginTop:2}}>📝 {item.note}</div>
-        )}
-      </div>
-      {item.rating && (
-        <div style={{fontSize:11, color:'var(--amber)', flexShrink:0}}>
-          ⭐ {item.rating}
+/* ════════════════════════════════
+   TRIP SCREEN
+════════════════════════════════ */
+function TripScreen({trips,activeId,onSelectTrip,syncStatus,onRefresh,active}){
+  const trip=trips.find(t=>t.id===activeId)||trips[0]||null;
+  const totalExp=trip?.expenses?.reduce((s,e)=>s+(parseFloat(e.amount)||0),0)||0;
+  const sl={idle:'⚪ לא מחובר',syncing:'🔄 מסנכרן...',synced:'✅ מסונכרן',error:'❌ שגיאה'};
+  return(
+    <div className={`screen${active?'':' h'}`}>
+      <div className="sh">
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div className="stitle">✈️ הטיול שלי</div>
+          <span className={`sync-b ${syncStatus}`}>{sl[syncStatus]||''}</span>
         </div>
-      )}
+      </div>
+      {trips.length>1&&<div style={{display:'flex',gap:8,padding:'10px 14px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',overflowX:'auto',flexShrink:0}}>
+        {trips.map(t=><div key={t.id} className={`trip-chip${t.id===activeId?' active':''}`} onClick={()=>onSelectTrip(t.id)}>{t.name}</div>)}
+      </div>}
+      {trip?<>
+        <div className="slabel">פרטי הטיול</div>
+        <div className="card" style={{margin:'0 14px'}}>
+          <div className="crow"><div className="cicon">✈️</div><div className="cmain"><div className="ctitle">{trip.name}</div><div className="csub">שם הטיול</div></div></div>
+          {trip.vehiclePlate&&<div className="crow"><div className="cicon">🚗</div><div className="cmain"><div className="ctitle">{trip.vehiclePlate}</div><div className="csub">רכב</div></div></div>}
+        </div>
+        <div className="slabel">סטטיסטיקות</div>
+        <div style={{display:'flex',gap:8,padding:'0 14px 14px',flexWrap:'wrap'}}>
+          <div className="spill"><span>📅</span>{trip.days?.length||0} ימים</div>
+          <div className="spill"><span>⭐</span>{trip.interestBank?.length||0} אטרקציות</div>
+          <div className="spill"><span>💰</span>₪{totalExp.toLocaleString()}</div>
+          <div className="spill"><span>🛒</span>{(trip.shoppingList||[]).filter(i=>!i.done).length} לקנות</div>
+          <div className="spill"><span>🎒</span>{(trip.packingList||[]).filter(i=>!i.done).length} לארוז</div>
+          <div className="spill"><span>📄</span>{trip.documents?.length||0} מסמכים</div>
+        </div>
+        <div className="slabel">פעולות</div>
+        <div className="card" style={{margin:'0 14px'}}>
+          <div className="crow" style={{cursor:'pointer'}} onClick={onRefresh}>
+            <div className="cicon">🔄</div><div className="cmain"><div className="ctitle">רענן נתונים מהענן</div><div className="csub">טעינה מחדש מ-Firebase</div></div>
+          </div>
+          <div className="crow" style={{cursor:'pointer'}} onClick={()=>{if(window.confirm('לפתוח אפליקציית מחשב?'))window.open('index.html','_blank');}}>
+            <div className="cicon">💻</div><div className="cmain"><div className="ctitle">פתח אפליקציית מחשב</div><div className="csub">עריכה מלאה</div></div>
+          </div>
+        </div>
+      </>:<div className="empty"><div className="eicon">✈️</div><div className="etitle">לא נמצאו טיולים</div><div className="edesc">צור טיול דרך אפליקציית המחשב</div></div>}
+      <div style={{margin:'20px 14px 0',padding:'11px',background:'var(--bg3)',borderRadius:10,textAlign:'center',color:'var(--text3)',fontSize:11}}>
+        PlanMyTrip Mobile {MOB_VER}
+      </div>
+      <div style={{height:16}}/>
     </div>
   );
 }
 
-/* ═══════════════════════════════════════
-   TRIP SCREEN (stage 1)
-═══════════════════════════════════════ */
-function TripScreen({ trips, activeId, onSelectTrip, syncStatus, onRefresh, active }) {
-  const trip = trips.find(t => t.id === activeId);
-  const totalExpenses = trip?.expenses?.reduce((s,e) => s + (parseFloat(e.amount)||0), 0) || 0;
-
-  const syncLabel = {
-    idle: '⚪ לא מחובר', syncing: '🔄 מסנכרן...', synced: '✅ מסונכרן', error: '❌ שגיאה'
-  }[syncStatus] || '';
-  const syncClass = syncStatus;
-
-  return (
-    <div className={`screen${active ? '' : ' hidden'}`}>
-      <div className="screen-header">
-        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
-          <div className="screen-title">✈️ הטיול שלי</div>
-          <span className={`sync-badge ${syncClass}`}>{syncLabel}</span>
-        </div>
-      </div>
-
-      {/* Trip selector */}
-      {trips.length > 1 && (
-        <div className="trip-selector">
-          {trips.map(t => (
-            <div
-              key={t.id}
-              className={`trip-chip${t.id === activeId ? ' active' : ''}`}
-              onClick={() => onSelectTrip(t.id)}
-            >
-              {t.name}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {trip ? (
-        <>
-          <div className="section-label">פרטי הטיול</div>
-          <div className="card" style={{margin:'0 16px'}}>
-            <div className="card-row">
-              <div className="card-row-icon">✈️</div>
-              <div className="card-row-main">
-                <div className="card-row-title">{trip.name}</div>
-                <div className="card-row-sub">שם הטיול</div>
-              </div>
-            </div>
-            {trip.vehiclePlate && (
-              <div className="card-row">
-                <div className="card-row-icon">🚗</div>
-                <div className="card-row-main">
-                  <div className="card-row-title">{trip.vehiclePlate}</div>
-                  <div className="card-row-sub">רכב</div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="section-label">סטטיסטיקות</div>
-          <div className="stat-row">
-            <div className="stat-pill"><span>📅</span>{trip.days?.length||0} ימים</div>
-            <div className="stat-pill"><span>⭐</span>{trip.interestBank?.length||0} אטרקציות</div>
-            <div className="stat-pill"><span>💰</span>₪{totalExpenses.toLocaleString()}</div>
-            <div className="stat-pill"><span>📦</span>{trip.packingList?.length||0} פריטי ציוד</div>
-          </div>
-
-          {trip.generalNotes && (
-            <>
-              <div className="section-label">הערות כלליות</div>
-              <div className="card" style={{margin:'0 16px', padding:'14px 16px'}}>
-                <div style={{fontSize:13, color:'var(--text2)', lineHeight:1.7, whiteSpace:'pre-wrap'}}>
-                  {trip.generalNotes}
-                </div>
-              </div>
-            </>
-          )}
-
-          <div className="section-label">פעולות</div>
-          <div className="card" style={{margin:'0 16px'}}>
-            <div className="card-row" style={{cursor:'pointer'}} onClick={onRefresh}>
-              <div className="card-row-icon">🔄</div>
-              <div className="card-row-main">
-                <div className="card-row-title">רענן נתונים מהענן</div>
-                <div className="card-row-sub">טעינה מחדש מ-Firebase</div>
-              </div>
-            </div>
-            <div className="card-row" style={{cursor:'pointer'}} onClick={() => {
-              if (window.confirm('לפתוח את אפליקציית המחשב?')) window.open('index.html','_blank');
-            }}>
-              <div className="card-row-icon">💻</div>
-              <div className="card-row-main">
-                <div className="card-row-title">פתח אפליקציית מחשב</div>
-                <div className="card-row-sub">עריכה מלאה דרך הדפדפן</div>
-              </div>
-            </div>
-          </div>
-        </>
-      ) : (
-        <div className="empty-state">
-          <div className="empty-icon">✈️</div>
-          <div className="empty-title">לא נמצאו טיולים</div>
-          <div className="empty-desc">צור טיול דרך אפליקציית המחשב</div>
-        </div>
-      )}
-
-      <div style={{
-        margin:'24px 16px 0', padding:'12px', background:'var(--bg3)',
-        borderRadius:10, textAlign:'center', color:'var(--text3)', fontSize:11,
-      }}>
-        PlanMyTrip Mobile {MOBILE_VERSION} · אפליקציית סלולר
-      </div>
-
-      <div style={{height:16}} />
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════
+/* ════════════════════════════════
    BOTTOM NAV
-═══════════════════════════════════════ */
-const NAV_ITEMS = [
-  { id:'map',      icon:'🗺️', label:'מפה'     },
-  { id:'schedule', icon:'📅', label:'לוז'      },
-  { id:'bank',     icon:'⭐', label:'אטרקציות' },
-  { id:'trip',     icon:'✈️', label:'טיול'     },
-];
-
-function BottomNav({ active, onChange }) {
-  return (
-    <nav className="bottom-nav">
-      {NAV_ITEMS.map(n => (
-        <button
-          key={n.id}
-          className={`nav-btn${active===n.id?' active':''}`}
-          onClick={() => onChange(n.id)}
-        >
-          <span className="nav-icon">{n.icon}</span>
-          <span className="nav-label">{n.label}</span>
-        </button>
-      ))}
-    </nav>
-  );
+════════════════════════════════ */
+const NAV=[{id:'map',icon:'🗺️',label:'מפה'},{id:'schedule',icon:'📅',label:'לוז'},{id:'bank',icon:'⭐',label:'בנק'},{id:'lists',icon:'📋',label:'רשימות'},{id:'trip',icon:'✈️',label:'טיול'}];
+function BottomNav({active,onChange}){
+  return<nav className="bnav">{NAV.map(n=><button key={n.id} className={`nbtn${active===n.id?' active':''}`} onClick={()=>onChange(n.id)}><span className="nicon">{n.icon}</span><span className="nlabel">{n.label}</span></button>)}</nav>;
 }
 
-/* ═══════════════════════════════════════
+/* ════════════════════════════════
    APP
-═══════════════════════════════════════ */
-function App() {
-  const saved = useMemo(() => loadState(), []);
-
-  const [settings] = useState(() => {
-    const def = {
-      firebaseUrl: FB_URL, syncKey: '',
-      googleMapsKey: 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw',
-    };
-    return { ...def, ...(saved?.settings || {}), firebaseUrl: FB_URL };
+════════════════════════════════ */
+function App(){
+  const saved=useMemo(()=>loadState(),[]);
+  const[settings]=useState(()=>{
+    const def={firebaseUrl:FB_URL,syncKey:'',googleMapsKey:GMAPS_KEY};
+    return{...def,...(saved?.settings||{}),firebaseUrl:FB_URL};
   });
-
-  const [trips, setTrips] = useState(() => {
-    const raw = saved?.trips;
-    if (raw?.length > 0) {
-      const n = raw.map(normTrip).filter(Boolean);
-      if (n.length > 0) return n;
-    }
-    return [];
+  const[trips,setTrips]=useState(()=>{
+    const raw=saved?.trips;
+    if(raw?.length>0){const n=raw.map(normTrip).filter(Boolean);if(n.length>0)return n;}
+    return[];
   });
+  const[activeId,setActiveId]=useState(saved?.activeId||(saved?.trips?.[0]?.id??null));
+  const[screen,setScreen]=useState('map');
+  const[syncStatus,setSyncStatus]=useState('idle');
+  const[mapsReady,setMapsReady]=useState(!!window.google?.maps);
+  const skipPush=useRef(false);
+  const autoSaveTimer=useRef(null);
+  const syncMounted=useRef(false);
+  const tripsRef=useRef(trips);
+  tripsRef.current=trips;
 
-  const [activeId, setActiveId] = useState(
-    saved?.activeId || saved?.trips?.[0]?.id || null
-  );
-  const [screen, setScreen] = useState('map');
-  const [syncStatus, setSyncStatus] = useState('idle');
-  const skipNextPush = useRef(false);
+  const trip=useMemo(()=>trips.find(t=>t.id===activeId)||trips[0]||null,[trips,activeId]);
 
-  const trip = useMemo(() => trips.find(t => t.id === activeId) || trips[0] || null, [trips, activeId]);
+  /* load Google Maps */
+  useEffect(()=>{
+    if(window.google?.maps){setMapsReady(true);return;}
+    window.__gmMobileInit=()=>setMapsReady(true);
+    const s=document.createElement('script');
+    s.src=`https://maps.googleapis.com/maps/api/js?key=${settings.googleMapsKey}&libraries=places&callback=__gmMobileInit&language=he`;
+    s.async=true;s.defer=true;
+    document.head.appendChild(s);
+  },[]);// eslint-disable-line
 
-  /* ── load from Firebase on mount ── */
-  const loadFromFirebase = useCallback(async () => {
-    const { firebaseUrl: fbUrl, syncKey } = settings;
-    if (!fbUrl || !syncKey) return;
+  /* load from Firebase */
+  const loadFromFirebase=useCallback(async()=>{
+    const{firebaseUrl:fbUrl,syncKey}=settings;
+    if(!fbUrl||!syncKey)return;
     setSyncStatus('syncing');
-    try {
-      const data = await fbRead(fbUrl, syncKey);
-      if (data?.trips?.length > 0) {
-        const loaded = data.trips.map(normTrip).filter(Boolean);
-        if (loaded.length > 0) {
-          skipNextPush.current = true;
-          setTrips(loaded);
-          if (data.activeId) setActiveId(data.activeId);
-          toast('הטיול נטען מ-Firebase ✓', 'success');
-        }
+    try{
+      const data=await fbRead(fbUrl,syncKey);
+      if(data?.trips?.length>0){
+        const loaded=data.trips.map(normTrip).filter(Boolean);
+        if(loaded.length>0){skipPush.current=true;setTrips(loaded);if(data.activeId)setActiveId(data.activeId);toast('הטיול נטען מ-Firebase ✓','s');}
       }
       setSyncStatus('synced');
-    } catch (e) {
-      setSyncStatus('error');
-      toast('שגיאה בטעינה מ-Firebase', 'error');
-    }
-  }, [settings]);
+    }catch{setSyncStatus('error');toast('שגיאה בטעינה מ-Firebase','e');}
+  },[settings]);
 
-  useEffect(() => { loadFromFirebase(); }, []); // eslint-disable-line
+  useEffect(()=>{loadFromFirebase();},[]);// eslint-disable-line
 
-  /* ── persist to localStorage when trips change ── */
-  useEffect(() => {
-    if (trips.length > 0) saveState({ settings, trips, activeId });
-  }, [trips, activeId]); // eslint-disable-line
+  /* persist to localStorage */
+  useEffect(()=>{
+    if(trips.length>0)saveState({settings,trips,activeId});
+  },[trips,activeId]);// eslint-disable-line
 
-  return (
+  /* debounced auto-save to Firebase */
+  const debounceSave=useCallback((newTrips,newActiveId)=>{
+    const{firebaseUrl:fbUrl,syncKey}=settings;
+    if(!fbUrl||!syncKey)return;
+    clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current=setTimeout(async()=>{
+      setSyncStatus('syncing');
+      try{await fbWrite(fbUrl,syncKey,{trips:newTrips,activeId:newActiveId,savedAt:new Date().toISOString()});setSyncStatus('synced');}
+      catch{setSyncStatus('error');}
+    },1800);
+  },[settings]);
+
+  /* updateTrip — updates the active trip and triggers save */
+  const updateTrip=useCallback(updatedTrip=>{
+    setTrips(prev=>{
+      const next=prev.map(t=>t.id===updatedTrip.id?updatedTrip:t);
+      debounceSave(next,activeId);
+      return next;
+    });
+  },[activeId,debounceSave]);
+
+  return(
     <>
-      <ToastLayer />
-      <div className="screen-wrap">
-        <MapScreen
-          trip={trip}
-          active={screen === 'map'}
-        />
-        <ScheduleScreen
-          trip={trip}
-          active={screen === 'schedule'}
-        />
-        <BankScreen
-          trip={trip}
-          active={screen === 'bank'}
-        />
-        <TripScreen
-          trips={trips}
-          activeId={activeId}
-          onSelectTrip={setActiveId}
-          syncStatus={syncStatus}
-          onRefresh={loadFromFirebase}
-          active={screen === 'trip'}
-        />
+      <ToastLayer/>
+      <div className="sw">
+        <MapScreen trip={trip} active={screen==='map'} mapsReady={mapsReady} onUpdate={updateTrip}/>
+        <ScheduleScreen trip={trip} active={screen==='schedule'}/>
+        <BankScreen trip={trip} active={screen==='bank'}/>
+        <ListsScreen trip={trip} active={screen==='lists'} onUpdate={updateTrip}/>
+        <TripScreen trips={trips} activeId={activeId} onSelectTrip={setActiveId} syncStatus={syncStatus} onRefresh={loadFromFirebase} active={screen==='trip'}/>
       </div>
-      <BottomNav active={screen} onChange={setScreen} />
+      <BottomNav active={screen} onChange={setScreen}/>
     </>
   );
 }
