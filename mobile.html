@@ -168,6 +168,40 @@
     .trip-chip.active { background:var(--accent); border-color:var(--accent); color:#fff; }
 
     ::-webkit-scrollbar { width:3px; } ::-webkit-scrollbar-track { background:transparent; } ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+    /* ── Day navigation (schedule) ── */
+    .day-nav { display:flex; align-items:center; justify-content:space-between; padding:12px 16px 8px; flex-shrink:0; gap:8px; }
+    .day-nav-btn { background:var(--surface); border:1px solid var(--border); border-radius:10px; color:var(--text2); font-size:18px; width:40px; height:40px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .day-nav-btn:disabled { opacity:.3; cursor:default; }
+    .day-nav-center { flex:1; text-align:center; }
+    .day-nav-title { font-size:15px; font-weight:700; }
+    .day-nav-sub { font-size:11px; color:var(--text3); margin-top:2px; }
+    .day-dots { display:flex; justify-content:center; gap:6px; padding:0 16px 10px; flex-shrink:0; }
+    .day-dot { width:7px; height:7px; border-radius:50%; background:var(--border); transition:all .2s; cursor:pointer; }
+    .day-dot.active { background:var(--accent2); width:18px; border-radius:4px; }
+    .blk-row { display:flex; gap:0; padding:0 14px; border-bottom:1px solid var(--border); cursor:pointer; position:relative; }
+    .blk-row:last-child { border-bottom:none; }
+    .blk-row:active { background:var(--surface2); }
+    .blk-left { display:flex; flex-direction:column; align-items:center; width:40px; flex-shrink:0; padding:14px 0; }
+    .blk-circle { width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; border:2px solid var(--bg2); flex-shrink:0; }
+    .blk-line { flex:1; width:2px; background:var(--border); min-height:8px; }
+    .blk-content { flex:1; min-width:0; padding:14px 0 14px 10px; }
+    .blk-title { font-size:14px; font-weight:600; }
+    .blk-meta { font-size:11px; color:var(--text3); margin-top:3px; }
+    .blk-map-btn { align-self:center; flex-shrink:0; padding:6px 10px; border:1px solid var(--border); border-radius:8px; background:none; color:var(--accent2); font-size:12px; cursor:pointer; white-space:nowrap; }
+
+    /* ── Map button on bank items ── */
+    .map-btn { padding:7px 11px; border:1px solid var(--border); border-radius:8px; background:none; color:var(--accent2); font-size:12px; cursor:pointer; flex-shrink:0; }
+
+    /* ── Expense row ── */
+    .exp-row { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--border); }
+    .exp-row:last-child { border-bottom:none; }
+    .exp-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+    .exp-cat { font-size:11px; font-weight:600; padding:2px 8px; border-radius:10px; flex-shrink:0; }
+    .exp-desc { flex:1; font-size:13px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .exp-amt { font-size:14px; font-weight:700; flex-shrink:0; }
+    .exp-del { background:none; border:none; color:var(--text3); cursor:pointer; font-size:15px; padding:3px 5px; opacity:.4; }
+    .exp-del:active { opacity:1; color:var(--red); }
   </style>
 </head>
 <body>
@@ -176,7 +210,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m2';
+const MOB_VER='m3';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -190,6 +224,9 @@ const PLACE_TYPE_HE={campground:'⛺ קמפינג',rv_park:'🏕️ קרוואנ
 const getTypeLabel=types=>{if(!types?.length)return'';const k=PLACE_TYPE_PRIORITY.find(p=>types.includes(p));return k?PLACE_TYPE_HE[k]:'';};
 const getCountry=item=>item.country||item.address?.split(',').slice(-1)[0]?.trim()||'—';
 const uid=()=>Math.random().toString(36).slice(2,10);
+
+const EXPENSE_CATS=['דלק','מזון','לינה','כניסות','קניות','שונות'];
+const CAT_COLORS={דלק:'#f97316',מזון:'#22c55e',לינה:'#4f8ef7',כניסות:'#a855f7',קניות:'#ec4899',שונות:'#64748b'};
 const fmtSize=b=>b>=1048576?`${(b/1048576).toFixed(1)}MB`:b>=1024?`${Math.round(b/1024)}KB`:`${b}B`;
 const docIcon=t=>t?.includes('pdf')?'📄':t?.startsWith('image')?'🖼️':t?.includes('word')||t?.includes('document')?'📝':t?.includes('sheet')||t?.includes('excel')?'📊':'📎';
 
@@ -249,7 +286,7 @@ function DaySelector({days,onSelect,onClose}){
 /* ════════════════════════════════
    MAP SCREEN
 ════════════════════════════════ */
-function MapScreen({trip,active,mapsReady,onUpdate}){
+function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
   const mapDivRef=useRef(null);
   const mapRef=useRef(null);
   const bankMkRef=useRef([]);
@@ -278,12 +315,20 @@ function MapScreen({trip,active,mapsReady,onUpdate}){
     mapRef.current=m;
   },[mapsReady]);
 
-  /* resize when tab activates */
+  /* resize + handle focus request when tab activates */
   useEffect(()=>{
-    if(active&&mapRef.current){
-      setTimeout(()=>window.google?.maps?.event?.trigger(mapRef.current,'resize'),60);
-    }
-  },[active]);
+    if(!active)return;
+    const t=setTimeout(()=>{
+      if(mapRef.current)window.google?.maps?.event?.trigger(mapRef.current,'resize');
+      const req=mapFocusRef?.current;
+      if(!req||!mapRef.current)return;
+      mapFocusRef.current=null;
+      if(req.lat&&req.lng){mapRef.current.panTo({lat:req.lat,lng:req.lng});mapRef.current.setZoom(16);}
+      if(req.placeId)loadPlace(req.placeId,req.lat||0,req.lng||0);
+      else if(req.name)setSheet({lat:req.lat,lng:req.lng,name:req.name,address:req.address||'',inBank:true});
+    },120);
+    return()=>clearTimeout(t);
+  },[active,mapsReady]);// eslint-disable-line
 
   /* bank markers */
   useEffect(()=>{
@@ -424,48 +469,93 @@ function MapScreen({trip,active,mapsReady,onUpdate}){
 }
 
 /* ════════════════════════════════
-   SCHEDULE SCREEN
+   SCHEDULE SCREEN — day-by-day
 ════════════════════════════════ */
-function ScheduleScreen({trip,active}){
+function ScheduleScreen({trip,active,onShowOnMap}){
+  const[dayIdx,setDayIdx]=useState(0);
   const days=trip?.days||[];
+  const safeIdx=Math.min(dayIdx,Math.max(0,days.length-1));
+  const day=days[safeIdx];
+
+  /* swipe gesture */
+  const touchX=useRef(null);
+  const onTS=e=>{touchX.current=e.touches[0].clientX;};
+  const onTE=e=>{
+    if(touchX.current===null)return;
+    const dx=e.changedTouches[0].clientX-touchX.current;
+    touchX.current=null;
+    if(Math.abs(dx)<50)return;
+    // RTL: swipe left → next day, swipe right → prev day
+    if(dx<0)setDayIdx(i=>Math.min(days.length-1,i+1));
+    else setDayIdx(i=>Math.max(0,i-1));
+  };
+
   const blockDur=b=>{
     if(!b.startTime||!b.endTime)return null;
     const[sh,sm]=b.startTime.split(':').map(Number),[eh,em]=b.endTime.split(':').map(Number);
     const m=(eh*60+em)-(sh*60+sm);if(m<=0)return null;
-    return m>=60?`${Math.floor(m/60)}ש${m%60?` ${m%60}ד`:''}`:` ${m}ד`;
+    return m>=60?`${Math.floor(m/60)}ש'${m%60?` ${m%60}ד`:''}`:` ${m}ד`;
   };
+
   return(
-    <div className={`screen${active?'':' h'}`}>
-      <div className="sh"><div className="stitle">📅 לוז הטיול</div>{trip&&<div className="ssub">{trip.name} · {days.length} ימים</div>}</div>
+    <div className={`screen${active?'':' h'}`} onTouchStart={onTS} onTouchEnd={onTE}>
+      <div className="sh">
+        <div className="stitle">📅 לוז הטיול</div>
+        {trip&&<div className="ssub">{trip.name} · {days.length} ימים</div>}
+      </div>
+
       {!trip&&<div className="empty"><div className="eicon">📅</div><div className="etitle">אין טיול פעיל</div></div>}
       {trip&&days.length===0&&<div className="empty"><div className="eicon">📅</div><div className="etitle">אין ימים בלוז</div><div className="edesc">הוסף ימים דרך אפליקציית המחשב</div></div>}
-      {days.map((day,di)=>{
-        const[open,setOpen]=useState(di===0);
-        const blks=day.blocks||[];
-        return(
-          <div key={day.id} style={{margin:'10px 14px 0'}}>
-            <div className="card" style={{cursor:'pointer'}} onClick={()=>setOpen(o=>!o)}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 15px',borderBottom:open&&blks.length?'1px solid var(--border)':'none'}}>
-                <div>
-                  <div style={{fontSize:15,fontWeight:700}}>יום {di+1}{day.startLocation&&<span style={{fontWeight:400,color:'var(--text2)',fontSize:13}}> · {day.startLocation}</span>}</div>
-                  <div style={{fontSize:11,color:'var(--text3)',marginTop:3}}>{day.startTime}–{day.endTime}{blks.length>0&&` · ${blks.length} פעילויות`}</div>
-                </div>
-                <div style={{fontSize:16,color:'var(--text3)',transform:open?'rotate(90deg)':'none',transition:'transform .2s'}}>‹</div>
-              </div>
-              {open&&blks.map(b=>(
-                <div key={b.id} className="blk">
-                  <div className="bdot" style={{background:BLOCK_COLOR[b.type]||'var(--text3)'}}/>
-                  <div className="btime">{b.startTime||''}</div>
-                  <div style={{fontSize:16,flexShrink:0}}>{BLOCK_EMOJI[b.type]||'📌'}</div>
-                  <div className="bname">{b.title||BLOCK_HE[b.type]||b.type}</div>
-                  {blockDur(b)&&<div className="bdur">{blockDur(b)}</div>}
-                </div>
-              ))}
+
+      {day&&<>
+        {/* day navigation arrows */}
+        <div className="day-nav">
+          <button className="day-nav-btn" onClick={()=>setDayIdx(i=>i+1)} disabled={safeIdx>=days.length-1}>‹</button>
+          <div className="day-nav-center">
+            <div className="day-nav-title">
+              יום {safeIdx+1}
+              {day.startLocation&&<span style={{fontWeight:400,color:'var(--text2)'}}> — {day.startLocation}</span>}
             </div>
+            <div className="day-nav-sub">{day.startTime}–{day.endTime} · {(day.blocks||[]).length} פעילויות</div>
           </div>
-        );
-      })}
-      <div style={{height:16}}/>
+          <button className="day-nav-btn" onClick={()=>setDayIdx(i=>i-1)} disabled={safeIdx<=0}>›</button>
+        </div>
+
+        {/* dot indicators */}
+        {days.length>1&&<div className="day-dots">
+          {days.map((_,i)=><div key={i} className={`day-dot${i===safeIdx?' active':''}`} onClick={()=>setDayIdx(i)}/>)}
+        </div>}
+
+        {/* blocks timeline */}
+        {(day.blocks||[]).length===0&&(
+          <div style={{padding:'30px 16px',textAlign:'center',color:'var(--text3)',fontSize:13}}>אין פעילויות ביום זה</div>
+        )}
+        <div style={{flex:1,overflowY:'auto'}}>
+          {(day.blocks||[]).map((b,bi,arr)=>{
+            const hasLoc=!!(b.placeId||(b.lat&&b.lng));
+            return(
+              <div key={b.id} className="blk-row" onClick={()=>hasLoc&&onShowOnMap&&onShowOnMap({lat:b.lat,lng:b.lng,placeId:b.placeId,name:b.title||BLOCK_HE[b.type],address:b.address||''})}>
+                <div className="blk-left">
+                  <div className="blk-circle" style={{background:BLOCK_COLOR[b.type]||'#555'}}>
+                    {BLOCK_EMOJI[b.type]||'📌'}
+                  </div>
+                  {bi<arr.length-1&&<div className="blk-line"/>}
+                </div>
+                <div className="blk-content">
+                  <div className="blk-title">{b.title||BLOCK_HE[b.type]||b.type}</div>
+                  <div className="blk-meta">
+                    {b.startTime&&`${b.startTime}${b.endTime?` — ${b.endTime}`:''}`}
+                    {blockDur(b)&&<span style={{color:'var(--text3)'}}> · {blockDur(b)}</span>}
+                    {b.note&&<span style={{color:'var(--accent2)',display:'block',marginTop:2}}>📝 {b.note}</span>}
+                  </div>
+                </div>
+                {hasLoc&&<button className="blk-map-btn" onClick={e=>{e.stopPropagation();onShowOnMap&&onShowOnMap({lat:b.lat,lng:b.lng,placeId:b.placeId,name:b.title||BLOCK_HE[b.type],address:b.address||''});}}>🗺️</button>}
+              </div>
+            );
+          })}
+          <div style={{height:16}}/>
+        </div>
+      </>}
     </div>
   );
 }
@@ -473,7 +563,7 @@ function ScheduleScreen({trip,active}){
 /* ════════════════════════════════
    BANK SCREEN
 ════════════════════════════════ */
-function BankScreen({trip,active}){
+function BankScreen({trip,active,onShowOnMap}){
   const[search,setSearch]=useState('');
   const bank=trip?.interestBank||[];
   const filtered=useMemo(()=>{
@@ -506,6 +596,7 @@ function BankScreen({trip,active}){
             {items.map(item=>{
               const lbl=getTypeLabel(item.types||(item.placeType?[item.placeType]:[]));
               const ic=lbl?lbl.split(' ')[0]:'📍';
+              const hasLoc=!!(item.lat&&item.lng);
               return(
                 <div key={item.id} className="bitem">
                   <div style={{fontSize:20,flexShrink:0}}>{ic}</div>
@@ -514,7 +605,8 @@ function BankScreen({trip,active}){
                     {(item.address||lbl)&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>{lbl}{item.address&&<span> · {item.address}</span>}</div>}
                     {item.note&&<div style={{fontSize:11,color:'var(--accent2)',marginTop:2}}>📝 {item.note}</div>}
                   </div>
-                  {item.rating&&<div style={{fontSize:11,color:'var(--amber)',flexShrink:0}}>⭐ {item.rating}</div>}
+                  {item.rating&&<div style={{fontSize:11,color:'var(--amber)',flexShrink:0,marginLeft:4}}>⭐ {item.rating}</div>}
+                  {hasLoc&&<button className="map-btn" onClick={()=>onShowOnMap&&onShowOnMap({lat:item.lat,lng:item.lng,placeId:item.placeId,name:item.name,address:item.address||''})}>🗺️</button>}
                 </div>
               );
             })}
@@ -531,7 +623,7 @@ function BankScreen({trip,active}){
 ════════════════════════════════ */
 function ListsScreen({trip,active,onUpdate}){
   const[sub,setSub]=useState('shopping');
-  const tabs=[{id:'shopping',label:'🛒 קניות'},{id:'packing',label:'🎒 ציוד'},{id:'notes',label:'📝 הערות'},{id:'docs',label:'📄 מסמכים'}];
+  const tabs=[{id:'shopping',label:'🛒 קניות'},{id:'packing',label:'🎒 ציוד'},{id:'notes',label:'📝 הערות'},{id:'expenses',label:'💰 הוצאות'},{id:'docs',label:'📄 מסמכים'}];
   return(
     <div className={`screen${active?'':' h'}`}>
       <div className="sh"><div className="stitle">📋 רשימות</div></div>
@@ -542,6 +634,7 @@ function ListsScreen({trip,active,onUpdate}){
         :sub==='shopping'?<ChecklistTab key="shop" emoji="🛒" items={trip.shoppingList||[]} emptyText="רשימת הקניות ריקה" addPlaceholder="הוסף פריט לקניות..." onUpdate={items=>onUpdate({...trip,shoppingList:items})}/>
         :sub==='packing'?<ChecklistTab key="pack" emoji="🎒" items={trip.packingList||[]} emptyText="רשימת הציוד ריקה" addPlaceholder="הוסף פריט לציוד..." onUpdate={items=>onUpdate({...trip,packingList:items})}/>
         :sub==='notes'?<NotesTab trip={trip} onUpdate={onUpdate}/>
+        :sub==='expenses'?<ExpensesTab trip={trip} onUpdate={onUpdate}/>
         :<DocsTab trip={trip}/>}
     </div>
   );
@@ -626,6 +719,81 @@ function NotesTab({trip,onUpdate}){
               <div className="qnote-date">{new Date(n.createdAt).toLocaleDateString('he-IL')}</div>
             </div>
             <button className="ci-del" onClick={()=>delNote(n.id)}>✕</button>
+          </div>
+        ))}
+      </div>
+      <div style={{height:16}}/>
+    </div>
+  );
+}
+
+/* ── Expenses tab ── */
+function ExpensesTab({trip,onUpdate}){
+  const[form,setForm]=useState({category:'מזון',amount:'',description:'',date:new Date().toISOString().slice(0,10)});
+  const expenses=trip?.expenses||[];
+  const total=expenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
+  const byCat=EXPENSE_CATS.reduce((a,c)=>{a[c]=expenses.filter(e=>e.category===c).reduce((s,e)=>s+(parseFloat(e.amount)||0),0);return a;},{});
+
+  const add=()=>{
+    const amt=parseFloat(form.amount);
+    if(!amt||isNaN(amt)){toast('הזן סכום תקני','e');return;}
+    onUpdate({...trip,expenses:[...expenses,{id:uid(),...form,amount:amt}]});
+    setForm(f=>({...f,amount:'',description:''}));
+    toast('הוצאה נוספה ✓','s');
+  };
+  const del=id=>onUpdate({...trip,expenses:expenses.filter(e=>e.id!==id)});
+
+  return(
+    <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column'}}>
+      {/* total + bar */}
+      <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',background:'var(--bg2)',flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:total>0?8:0}}>
+          <span style={{fontSize:22,fontWeight:800,color:'var(--accent2)'}}>₪{total.toLocaleString()}</span>
+          <span style={{fontSize:12,color:'var(--text3)'}}>סה"כ · {expenses.length} הוצאות</span>
+        </div>
+        {total>0&&<>
+          <div style={{display:'flex',borderRadius:4,overflow:'hidden',height:7,marginBottom:7}}>
+            {EXPENSE_CATS.filter(c=>byCat[c]>0).map(c=>(
+              <div key={c} style={{flex:byCat[c]/total,background:CAT_COLORS[c]}} title={`${c}: ₪${byCat[c].toFixed(0)}`}/>
+            ))}
+          </div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:'4px 12px'}}>
+            {EXPENSE_CATS.filter(c=>byCat[c]>0).map(c=>(
+              <span key={c} style={{fontSize:11,color:CAT_COLORS[c]}}>● {c}: ₪{byCat[c].toFixed(0)}</span>
+            ))}
+          </div>
+        </>}
+      </div>
+
+      {/* add form */}
+      <div style={{padding:'10px 14px 12px',borderBottom:'1px solid var(--border)',background:'var(--bg3)',flexShrink:0,display:'flex',flexDirection:'column',gap:8}}>
+        <div style={{display:'flex',gap:8}}>
+          <select value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}
+            style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 10px',color:'var(--text)',fontFamily:'Heebo,sans-serif',fontSize:13,outline:'none'}}>
+            {EXPENSE_CATS.map(c=><option key={c}>{c}</option>)}
+          </select>
+          <input value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} type="number" min="0"
+            placeholder="סכום ₪" onKeyDown={e=>e.key==='Enter'&&add()}
+            style={{width:90,background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 10px',color:'var(--text)',fontFamily:'Heebo,sans-serif',fontSize:14,outline:'none',textAlign:'center'}}/>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <input value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} placeholder="תיאור (אופציונלי)"
+            onKeyDown={e=>e.key==='Enter'&&add()}
+            style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 10px',color:'var(--text)',fontFamily:'Heebo,sans-serif',fontSize:13,outline:'none',direction:'rtl'}}/>
+          <button onClick={add} style={{background:'var(--accent)',color:'#fff',border:'none',borderRadius:8,padding:'0 18px',fontFamily:'Heebo,sans-serif',fontSize:16,fontWeight:700,cursor:'pointer'}}>+</button>
+        </div>
+      </div>
+
+      {/* list */}
+      {expenses.length===0&&<div className="empty"><div className="eicon">💰</div><div className="etitle">אין הוצאות עדיין</div><div className="edesc">הוסף הוצאות בטופס למעלה</div></div>}
+      <div className="card" style={{margin:'12px 14px'}}>
+        {[...expenses].reverse().map(ex=>(
+          <div key={ex.id} className="exp-row">
+            <div className="exp-dot" style={{background:CAT_COLORS[ex.category]||'#888'}}/>
+            <span className="exp-cat" style={{background:(CAT_COLORS[ex.category]||'#888')+'22',color:CAT_COLORS[ex.category]||'#888'}}>{ex.category}</span>
+            <div className="exp-desc">{ex.description||ex.category}<span style={{color:'var(--text3)',fontSize:10,marginRight:5}}>{ex.date}</span></div>
+            <span className="exp-amt">₪{parseFloat(ex.amount).toFixed(0)}</span>
+            <button className="exp-del" onClick={()=>del(ex.id)}>✕</button>
           </div>
         ))}
       </div>
@@ -745,6 +913,13 @@ function App(){
   const syncMounted=useRef(false);
   const tripsRef=useRef(trips);
   tripsRef.current=trips;
+  const mapFocusRef=useRef(null);
+
+  /* navigate to map and focus on a place */
+  const showOnMap=useCallback(item=>{
+    mapFocusRef.current=item;
+    setScreen('map');
+  },[]);
 
   const trip=useMemo(()=>trips.find(t=>t.id===activeId)||trips[0]||null,[trips,activeId]);
 
@@ -805,9 +980,9 @@ function App(){
     <>
       <ToastLayer/>
       <div className="sw">
-        <MapScreen trip={trip} active={screen==='map'} mapsReady={mapsReady} onUpdate={updateTrip}/>
-        <ScheduleScreen trip={trip} active={screen==='schedule'}/>
-        <BankScreen trip={trip} active={screen==='bank'}/>
+        <MapScreen trip={trip} active={screen==='map'} mapsReady={mapsReady} onUpdate={updateTrip} mapFocusRef={mapFocusRef}/>
+        <ScheduleScreen trip={trip} active={screen==='schedule'} onShowOnMap={showOnMap}/>
+        <BankScreen trip={trip} active={screen==='bank'} onShowOnMap={showOnMap}/>
         <ListsScreen trip={trip} active={screen==='lists'} onUpdate={updateTrip}/>
         <TripScreen trips={trips} activeId={activeId} onSelectTrip={setActiveId} syncStatus={syncStatus} onRefresh={loadFromFirebase} active={screen==='trip'}/>
       </div>
