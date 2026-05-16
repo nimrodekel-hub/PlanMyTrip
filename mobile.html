@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m4';
+const MOB_VER='m5';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -241,7 +241,85 @@ const BLOCK_COLOR={travel:'#4f8ef7',activity:'#22c55e',stop:'#f59e0b',rest:'#94a
 const PLACE_TYPE_PRIORITY=['campground','rv_park','bakery','winery','cafe','bar','lodging','restaurant','shopping_mall','supermarket','grocery_or_supermarket','clothing_store','store','zoo','aquarium','museum','amusement_park','playground','park','beach','tourist_attraction','gym','stadium','airport','train_station','bus_station','gas_station','hospital','pharmacy','synagogue','church','mosque','natural_feature','food','point_of_interest','establishment'];
 const PLACE_TYPE_HE={campground:'⛺ קמפינג',rv_park:'🏕️ קרוואנים',lodging:'🏨 מלון',bakery:'🥐 מאפייה',winery:'🍷 יקב',cafe:'☕ קפה',bar:'🍺 בר',restaurant:'🍽️ מסעדה',food:'🍽️ אוכל',shopping_mall:'🛍️ קניון',supermarket:'🛒 סופר',grocery_or_supermarket:'🛒 סופר',clothing_store:'👕 ביגוד',store:'🏪 חנות',zoo:'🦁 גן חיות',aquarium:'🐟 אקווריום',museum:'🏛️ מוזיאון',amusement_park:'🎡 פארק שעשועים',playground:'🎠 גן משחקים',park:'🌳 פארק',beach:'🏖️ חוף',tourist_attraction:'📸 אטרקציה',gym:'💪 כושר',stadium:'🏟️ אצטדיון',airport:'✈️ שדה תעופה',train_station:'🚂 רכבת',bus_station:'🚌 אוטובוס',gas_station:'⛽ דלק',hospital:'🏥 בית חולים',pharmacy:'💊 בית מרקחת',synagogue:'🕍 בית כנסת',church:'⛪ כנסייה',mosque:'🕌 מסגד',natural_feature:'⛰️ טבע',point_of_interest:'📍 אטרקציה',establishment:'🏢 עסק'};
 const getTypeLabel=types=>{if(!types?.length)return'';const k=PLACE_TYPE_PRIORITY.find(p=>types.includes(p));return k?PLACE_TYPE_HE[k]:'';};
-const getCountry=item=>item.country||item.address?.split(',').slice(-1)[0]?.trim()||'—';
+/* ── country normalisation (same logic as desktop) ── */
+const COUNTRY_HE={
+  'israel':'ישראל','austria':'אוסטריה','belgium':'בלגיה','france':'צרפת',
+  'germany':'גרמניה','italy':'איטליה','spain':'ספרד','switzerland':'שווייץ',
+  'netherlands':'הולנד','holland':'הולנד','czech republic':'צ\'כיה','czechia':'צ\'כיה',
+  'hungary':'הונגריה','poland':'פולין','croatia':'קרואטיה','greece':'יוון',
+  'portugal':'פורטוגל','united kingdom':'בריטניה','england':'בריטניה',
+  'scotland':'בריטניה','wales':'בריטניה','great britain':'בריטניה',
+  'united states':'ארצות הברית','usa':'ארצות הברית','u.s.a.':'ארצות הברית',
+  'turkey':'טורקיה','türkiye':'טורקיה','jordan':'ירדן','egypt':'מצרים',
+  'sweden':'שוודיה','norway':'נורווגיה','denmark':'דנמרק','finland':'פינלנד',
+  'slovakia':'סלובקיה','slovenia':'סלובניה','romania':'רומניה','bulgaria':'בולגריה',
+  'serbia':'סרביה','albania':'אלבניה','north macedonia':'מקדוניה',
+  'bosnia and herzegovina':'בוסניה','bosnia':'בוסניה','montenegro':'מונטנגרו',
+  'luxembourg':'לוקסמבורג','ireland':'אירלנד','iceland':'איסלנד','canada':'קנדה',
+  'australia':'אוסטרליה','japan':'יפן','china':'סין','india':'הודו',
+  'thailand':'תאילנד','morocco':'מרוקו','russia':'רוסיה','ukraine':'אוקראינה',
+  'cyprus':'קפריסין','malta':'מלטה','estonia':'אסטוניה','latvia':'לטביה',
+  'lithuania':'ליטא','georgia':'גיאורגיה','armenia':'ארמניה',
+  'brazil':'ברזיל','argentina':'ארגנטינה','mexico':'מקסיקו','south africa':'דרום אפריקה',
+  'deutschland':'גרמניה','österreich':'אוסטריה','osterreich':'אוסטריה',
+  'schweiz':'שווייץ','suisse':'שווייץ','svizzera':'שווייץ',
+  'espana':'ספרד','españa':'ספרד','italia':'איטליה',
+  'nederland':'הולנד','belgique':'בלגיה','belgie':'בלגיה','belgië':'בלגיה',
+  'magyarország':'הונגריה','magyarorszag':'הונגריה',
+  'česká republika':'צ\'כיה','česko':'צ\'כיה','ceska republika':'צ\'כיה',
+  'polska':'פולין','hrvatska':'קרואטיה',
+  'norge':'נורווגיה','sverige':'שוודיה','suomi':'פינלנד','danmark':'דנמרק',
+  'éire':'אירלנד','eire':'אירלנד',
+  'ישראל':'ישראל','גרמניה':'גרמניה','צרפת':'צרפת','איטליה':'איטליה',
+  'ספרד':'ספרד','שווייץ':'שווייץ','הולנד':'הולנד','אוסטריה':'אוסטריה',
+  'בלגיה':'בלגיה','הונגריה':'הונגריה','פולין':'פולין','קרואטיה':'קרואטיה',
+  'יוון':'יוון','פורטוגל':'פורטוגל','בריטניה':'בריטניה','ארצות הברית':'ארצות הברית',
+  'טורקיה':'טורקיה','ירדן':'ירדן','מצרים':'מצרים','צ\'כיה':'צ\'כיה',
+  'רומניה':'רומניה','בולגריה':'בולגריה','סרביה':'סרביה','סלובקיה':'סלובקיה',
+  'סלובניה':'סלובניה','שוודיה':'שוודיה','נורווגיה':'נורווגיה','דנמרק':'דנמרק',
+  'פינלנד':'פינלנד','לוקסמבורג':'לוקסמבורג','אירלנד':'אירלנד','איסלנד':'איסלנד',
+  'קנדה':'קנדה','אוסטרליה':'אוסטרליה','יפן':'יפן','סין':'סין','הודו':'הודו',
+  'תאילנד':'תאילנד','מרוקו':'מרוקו','רוסיה':'רוסיה','אוקראינה':'אוקראינה',
+  'קפריסין':'קפריסין','מלטה':'מלטה','גיאורגיה':'גיאורגיה','ארמניה':'ארמניה',
+  'ברזיל':'ברזיל','ארגנטינה':'ארגנטינה','מקסיקו':'מקסיקו','דרום אפריקה':'דרום אפריקה',
+  'אלבניה':'אלבניה','מקדוניה':'מקדוניה','בוסניה':'בוסניה','מונטנגרו':'מונטנגרו',
+  'אסטוניה':'אסטוניה','לטביה':'לטביה','ליטא':'ליטא',
+};
+const ISRAEL_CITIES=new Set([
+  'jerusalem','tel aviv','tel aviv-jaffa','haifa','eilat','netanya',
+  'beer sheva',"be'er sheva",'beersheba','herzliya','ramat gan','bnei brak',
+  'petah tikva','rishon lezion','rehovot','holon','bat yam','ashdod','ashkelon',
+  'nahariya','acre','akko','nazareth','tiberias','safed','tzfat','kfar saba',
+  'modiin','caesarea','jaffa','yafo','afula','dimona','hadera','lod','ramla','raanana',
+  'ירושלים','תל אביב','תל אביב-יפו','חיפה','אילת','נתניה','באר שבע',
+  'הרצליה','רמת גן','בני ברק','פתח תקווה','ראשון לציון','רחובות','חולון',
+  'בת ים','אשדוד','אשקלון','נהריה','עכו','נצרת','טבריה','צפת','כפר סבא',
+  'מודיעין','קיסריה','יפו','רמת השרון','הוד השרון','נס ציונה','גבעתיים','לוד','רמלה','רעננה',
+]);
+const normalizeCountry=(raw,fullAddr)=>{
+  if(!raw)return'ללא כתובת';
+  const lo=raw.toLowerCase().trim();
+  if(COUNTRY_HE[lo])return COUNTRY_HE[lo];
+  for(const[en,he] of Object.entries(COUNTRY_HE)){if(lo.includes(en))return he;}
+  if(ISRAEL_CITIES.has(lo))return'ישראל';
+  if(/israel/i.test(fullAddr)||/ישראל/.test(fullAddr))return'ישראל';
+  return raw;
+};
+const getCountry=item=>{
+  if(item.country)return normalizeCountry(item.country,item.address||'');
+  const addr=(item.address||'').trim();
+  if(!addr)return'ללא כתובת';
+  const parts=addr.split(',').map(s=>s.trim()).filter(Boolean);
+  if(parts.length<2)return normalizeCountry(parts[0]||'ללא כתובת',addr);
+  let last=parts[parts.length-1];
+  last=last.replace(/^\d[\d\s\-]{0,9}\s+/,'').trim();
+  last=last.replace(/\s+\d[\d\s\-]{0,9}$/,'').trim();
+  if(!last||/^\d+$/.test(last)){
+    last=parts[parts.length-2]||'';
+    last=last.replace(/^\d[\d\s\-]{0,9}\s+/,'').replace(/\s+\d[\d\s\-]{0,9}$/,'').trim();
+  }
+  return normalizeCountry(last||'ללא כתובת',addr);
+};
 const uid=()=>Math.random().toString(36).slice(2,10);
 
 const EXPENSE_CATS=['דלק','מזון','לינה','כניסות','קניות','שונות'];
@@ -642,57 +720,141 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate}){
 /* ════════════════════════════════
    BANK SCREEN
 ════════════════════════════════ */
+const haversineKm=(lat1,lng1,lat2,lng2)=>{
+  const R=6371,toR=x=>x*Math.PI/180;
+  const dLat=toR(lat2-lat1),dLng=toR(lng2-lng1);
+  const a=Math.sin(dLat/2)**2+Math.cos(toR(lat1))*Math.cos(toR(lat2))*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+};
+const fmtDist=km=>km===Infinity?'':km<1?`${Math.round(km*1000)}מ׳`:`${km<10?km.toFixed(1):Math.round(km)}ק"מ`;
+
 function BankScreen({trip,active,onShowOnMap}){
   const[search,setSearch]=useState('');
+  const[sortMode,setSortMode]=useState('default'); // 'default'|'name'|'distance'
+  const[userPos,setUserPos]=useState(null); // {lat,lng}
   const bank=trip?.interestBank||[];
-  const filtered=useMemo(()=>{
+
+  const getDistPos=()=>{
+    if(!navigator.geolocation){toast('GPS לא זמין','e');return;}
+    navigator.geolocation.getCurrentPosition(
+      p=>{setUserPos({lat:p.coords.latitude,lng:p.coords.longitude});setSortMode('distance');},
+      ()=>toast('לא ניתן לגשת למיקום','e'),
+      {timeout:8000}
+    );
+  };
+
+  const handleSortClick=mode=>{
+    if(mode==='distance'){
+      if(sortMode==='distance'){setSortMode('default');return;}
+      getDistPos();
+    } else {
+      setSortMode(s=>s===mode?'default':mode);
+    }
+  };
+
+  /* filtered + sorted flat list */
+  const displayItems=useMemo(()=>{
+    let items=[...bank];
     const q=search.trim().toLowerCase();
-    if(!q)return bank;
-    return bank.filter(i=>(i.name||'').toLowerCase().includes(q)||(i.address||'').toLowerCase().includes(q));
-  },[bank,search]);
+    if(q)items=items.filter(i=>(i.name||'').toLowerCase().includes(q)||(i.address||'').toLowerCase().includes(q));
+    if(sortMode==='name'){
+      items.sort((a,b)=>(a.name||'').localeCompare(b.name||'','he'));
+    } else if(sortMode==='distance'&&userPos){
+      items=items.map(i=>({...i,_dist:i.lat&&i.lng?haversineKm(userPos.lat,userPos.lng,i.lat,i.lng):Infinity}));
+      items.sort((a,b)=>a._dist-b._dist);
+    }
+    return items;
+  },[bank,search,sortMode,userPos]);
+
+  /* grouped (used when not searching and not distance-sorting) */
   const grouped=useMemo(()=>{
-    const src=search.trim()?filtered:bank;
-    const m={};for(const i of src){const c=getCountry(i);if(!m[c])m[c]=[];m[c].push(i);}
-    return Object.entries(m).sort((a,b)=>a[0].localeCompare(b[0],'he'));
-  },[bank,filtered,search]);
+    const m={};
+    for(const i of bank){const c=getCountry(i);if(!m[c])m[c]=[];m[c].push(i);}
+    const entries=Object.entries(m).sort((a,b)=>a[0].localeCompare(b[0],'he'));
+    if(sortMode==='name')entries.forEach(([,items])=>items.sort((a,b)=>(a.name||'').localeCompare(b.name||'','he')));
+    return entries;
+  },[bank,sortMode]);
+
+  const showFlat=!!(search.trim())||sortMode==='distance';
+
+  const BankItem=({item})=>{
+    const lbl=getTypeLabel(item.types||(item.placeType?[item.placeType]:[]));
+    const ic=lbl?lbl.split(' ')[0]:'📍';
+    const hasLoc=!!(item.lat&&item.lng);
+    return(
+      <div className="bitem">
+        <div style={{fontSize:20,flexShrink:0}}>{ic}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:14,fontWeight:600}}>{item.name||'—'}</div>
+          {(item.address||lbl)&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>{lbl}{item.address&&<span> · {item.address}</span>}</div>}
+          {item._dist!==undefined&&<div style={{fontSize:11,color:'var(--accent2)',marginTop:2}}>📍 {fmtDist(item._dist)}</div>}
+          {item.note&&<div style={{fontSize:11,color:'var(--accent2)',marginTop:2}}>📝 {item.note}</div>}
+        </div>
+        {item.rating&&<div style={{fontSize:11,color:'var(--amber)',flexShrink:0,marginLeft:4}}>⭐ {item.rating}</div>}
+        {hasLoc&&<button className="map-btn" onClick={()=>onShowOnMap&&onShowOnMap({lat:item.lat,lng:item.lng,placeId:item.placeId,name:item.name,address:item.address||''})}>🗺️</button>}
+      </div>
+    );
+  };
+
   return(
     <div className={`screen${active?'':' h'}`}>
       <div className="sh"><div className="stitle">⭐ בנק אטרקציות</div>{trip&&<div className="ssub">{bank.length} מקומות שמורים</div>}</div>
-      {bank.length>0&&<div style={{padding:'9px 14px',background:'var(--bg2)',borderBottom:'1px solid var(--border)',flexShrink:0}}>
-        <div style={{display:'flex',alignItems:'center',gap:8,background:'var(--bg3)',borderRadius:9,padding:'8px 12px',border:'1px solid var(--border)'}}>
-          <span style={{fontSize:15}}>🔍</span>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="חיפוש אטרקציה..." style={{flex:1,background:'none',border:'none',outline:'none',color:'var(--text)',fontSize:14,fontFamily:'Heebo,sans-serif',direction:'rtl'}}/>
-          {search&&<button onClick={()=>setSearch('')} style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:15,padding:0}}>✕</button>}
-        </div>
-      </div>}
-      {!trip&&<div className="empty"><div className="eicon">⭐</div><div className="etitle">אין טיול פעיל</div></div>}
-      {trip&&bank.length===0&&<div className="empty"><div className="eicon">⭐</div><div className="etitle">בנק האטרקציות ריק</div><div className="edesc">הוסף אטרקציות דרך אפליקציית המחשב או מהמפה</div></div>}
-      {search&&filtered.length===0&&<div className="empty"><div className="eicon">🔍</div><div className="etitle">אין תוצאות</div></div>}
-      {grouped.map(([country,items])=>(
-        <div key={country}>
-          <div className="slabel">{country} ({items.length})</div>
-          <div className="card" style={{margin:'0 14px'}}>
-            {items.map(item=>{
-              const lbl=getTypeLabel(item.types||(item.placeType?[item.placeType]:[]));
-              const ic=lbl?lbl.split(' ')[0]:'📍';
-              const hasLoc=!!(item.lat&&item.lng);
-              return(
-                <div key={item.id} className="bitem">
-                  <div style={{fontSize:20,flexShrink:0}}>{ic}</div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:14,fontWeight:600}}>{item.name||'—'}</div>
-                    {(item.address||lbl)&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>{lbl}{item.address&&<span> · {item.address}</span>}</div>}
-                    {item.note&&<div style={{fontSize:11,color:'var(--accent2)',marginTop:2}}>📝 {item.note}</div>}
-                  </div>
-                  {item.rating&&<div style={{fontSize:11,color:'var(--amber)',flexShrink:0,marginLeft:4}}>⭐ {item.rating}</div>}
-                  {hasLoc&&<button className="map-btn" onClick={()=>onShowOnMap&&onShowOnMap({lat:item.lat,lng:item.lng,placeId:item.placeId,name:item.name,address:item.address||''})}>🗺️</button>}
-                </div>
-              );
-            })}
+
+      {bank.length>0&&<>
+        {/* search bar */}
+        <div style={{padding:'9px 14px 7px',background:'var(--bg2)',borderBottom:'1px solid var(--border)',flexShrink:0}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,background:'var(--bg3)',borderRadius:9,padding:'8px 12px',border:'1px solid var(--border)'}}>
+            <span style={{fontSize:15}}>🔍</span>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="חיפוש אטרקציה..." style={{flex:1,background:'none',border:'none',outline:'none',color:'var(--text)',fontSize:14,fontFamily:'Heebo,sans-serif',direction:'rtl'}}/>
+            {search&&<button onClick={()=>setSearch('')} style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:15,padding:0}}>✕</button>}
           </div>
         </div>
-      ))}
-      <div style={{height:16}}/>
+        {/* sort bar */}
+        <div style={{display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'var(--bg2)',borderBottom:'1px solid var(--border)',flexShrink:0}}>
+          <span style={{fontSize:11,color:'var(--text3)',flexShrink:0}}>מיון:</span>
+          {[['default','📋 ברירת מחדל'],['name','א-ת שם'],['distance','📍 מרחק']].map(([mode,label])=>(
+            <button key={mode} onClick={()=>handleSortClick(mode)}
+              style={{padding:'5px 10px',borderRadius:8,border:`1px solid ${sortMode===mode?'var(--accent2)':'var(--border)'}`,
+                background:sortMode===mode?'rgba(79,142,247,.15)':'var(--bg3)',
+                color:sortMode===mode?'var(--accent2)':'var(--text3)',
+                fontSize:11,fontWeight:600,fontFamily:'Heebo,sans-serif',cursor:'pointer',whiteSpace:'nowrap'}}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {sortMode==='distance'&&userPos&&<div style={{padding:'4px 14px',fontSize:10,color:'var(--text3)',background:'var(--bg3)',borderBottom:'1px solid var(--border)',flexShrink:0}}>
+          ממיקומך הנוכחי · לחץ "מרחק" שוב לביטול
+        </div>}
+      </>}
+
+      {!trip&&<div className="empty"><div className="eicon">⭐</div><div className="etitle">אין טיול פעיל</div></div>}
+      {trip&&bank.length===0&&<div className="empty"><div className="eicon">⭐</div><div className="etitle">בנק האטרקציות ריק</div><div className="edesc">הוסף אטרקציות דרך אפליקציית המחשב או מהמפה</div></div>}
+      {search&&displayItems.length===0&&<div className="empty"><div className="eicon">🔍</div><div className="etitle">אין תוצאות</div></div>}
+
+      {/* flat list — search results or distance sort */}
+      {showFlat&&displayItems.length>0&&(
+        <div style={{flex:1,overflowY:'auto'}}>
+          <div className="card" style={{margin:'12px 14px'}}>
+            {displayItems.map(item=><BankItem key={item.id} item={item}/>)}
+          </div>
+          <div style={{height:16}}/>
+        </div>
+      )}
+
+      {/* grouped by country — default & name sort */}
+      {!showFlat&&grouped.length>0&&(
+        <div style={{flex:1,overflowY:'auto'}}>
+          {grouped.map(([country,items])=>(
+            <div key={country}>
+              <div className="slabel">{country} ({items.length})</div>
+              <div className="card" style={{margin:'0 14px'}}>
+                {items.map(item=><BankItem key={item.id} item={item}/>)}
+              </div>
+            </div>
+          ))}
+          <div style={{height:16}}/>
+        </div>
+      )}
     </div>
   );
 }
