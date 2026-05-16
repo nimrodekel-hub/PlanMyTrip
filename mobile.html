@@ -7,6 +7,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="theme-color" content="#0f1117" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon.svg" />
   <title>PlanMyTrip</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -193,6 +195,23 @@
     /* ── Map button on bank items ── */
     .map-btn { padding:7px 11px; border:1px solid var(--border); border-radius:8px; background:none; color:var(--accent2); font-size:12px; cursor:pointer; flex-shrink:0; }
 
+    /* ── Version badge ── */
+    .ver-badge { display:inline-flex; align-items:center; gap:5px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:3px 9px; font-size:11px; font-weight:600; color:var(--text3); }
+    .ver-badge .v-app { color:var(--accent2); }
+    .ver-badge .v-mob { color:var(--green); }
+
+    /* ── Map day legend ── */
+    .map-legend { position:absolute; bottom:calc(64px); right:12px; z-index:10; display:flex; flex-direction:column; gap:5px; }
+    .map-legend-item { display:flex; align-items:center; gap:6px; background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:5px 9px; font-size:11px; font-weight:600; box-shadow:0 2px 8px rgba(0,0,0,.4); }
+    .map-legend-dot { width:11px; height:11px; border-radius:50%; border:2px solid #fff; flex-shrink:0; }
+
+    /* ── Block complete toggle ── */
+    .blk-circle.done { opacity:.5; }
+    .blk-title.done { text-decoration:line-through; opacity:.55; }
+
+    /* ── Inline note editor ── */
+    .note-inline { background:var(--bg3); border:1px solid var(--border); border-radius:7px; padding:7px 10px; font-size:12px; font-family:'Heebo',sans-serif; color:var(--text); direction:rtl; resize:none; outline:none; width:100%; margin-top:5px; line-height:1.5; }
+
     /* ── Expense row ── */
     .exp-row { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--border); }
     .exp-row:last-child { border-bottom:none; }
@@ -210,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m3';
+const MOB_VER='m4';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -226,6 +245,7 @@ const getCountry=item=>item.country||item.address?.split(',').slice(-1)[0]?.trim
 const uid=()=>Math.random().toString(36).slice(2,10);
 
 const EXPENSE_CATS=['דלק','מזון','לינה','כניסות','קניות','שונות'];
+const DAY_COLORS_MAP=['#4f8ef7','#22c55e','#f59e0b','#a855f7','#ef4444','#14b8a6','#f97316','#ec4899'];
 const CAT_COLORS={דלק:'#f97316',מזון:'#22c55e',לינה:'#4f8ef7',כניסות:'#a855f7',קניות:'#ec4899',שונות:'#64748b'};
 const fmtSize=b=>b>=1048576?`${(b/1048576).toFixed(1)}MB`:b>=1024?`${Math.round(b/1024)}KB`:`${b}B`;
 const docIcon=t=>t?.includes('pdf')?'📄':t?.startsWith('image')?'🖼️':t?.includes('word')||t?.includes('document')?'📝':t?.includes('sheet')||t?.includes('excel')?'📊':'📎';
@@ -290,13 +310,15 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
   const mapDivRef=useRef(null);
   const mapRef=useRef(null);
   const bankMkRef=useRef([]);
+  const dayMkRef=useRef([]);
   const srchMkRef=useRef([]);
   const svcRef=useRef(null);
   const iwRef=useRef(null);
   const srchInputRef=useRef(null);
-  const[sheet,setSheet]=useState(null); // {placeId,lat,lng,name,address,rating,website,types,inBank}
+  const[sheet,setSheet]=useState(null);
   const[daySelPlace,setDaySelPlace]=useState(null);
   const[loading,setLoading]=useState(false);
+  const[showDayLegend,setShowDayLegend]=useState(true);
 
   /* init map */
   useEffect(()=>{
@@ -330,7 +352,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
     return()=>clearTimeout(t);
   },[active,mapsReady]);// eslint-disable-line
 
-  /* bank markers */
+  /* bank markers — gold dots */
   useEffect(()=>{
     if(!mapsReady||!mapRef.current)return;
     bankMkRef.current.forEach(m=>m.setMap(null));
@@ -345,6 +367,29 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
       bankMkRef.current.push(mk);
     });
   },[trip?.interestBank,mapsReady]);
+
+  /* day route markers — colored circles per day */
+  useEffect(()=>{
+    if(!mapsReady||!mapRef.current)return;
+    dayMkRef.current.forEach(m=>m.setMap(null));
+    dayMkRef.current=[];
+    (trip?.days||[]).forEach((day,di)=>{
+      const color=DAY_COLORS_MAP[di%DAY_COLORS_MAP.length];
+      (day.blocks||[]).forEach(b=>{
+        // get coordinates: from block directly, or look up bank item
+        const lat=b.lat||(b.placeId?(trip.interestBank||[]).find(i=>i.placeId===b.placeId)?.lat:null);
+        const lng=b.lng||(b.placeId?(trip.interestBank||[]).find(i=>i.placeId===b.placeId)?.lng:null);
+        if(!lat||!lng)return;
+        const mk=new window.google.maps.Marker({
+          position:{lat,lng},map:mapRef.current,title:`יום ${di+1}: ${b.title||''}`,zIndex:8,
+          icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:10,fillColor:color,fillOpacity:.92,strokeColor:'#fff',strokeWeight:2},
+          label:{text:String(di+1),color:'#fff',fontSize:'10px',fontWeight:'bold'},
+        });
+        mk.addListener('click',()=>setSheet({lat,lng,name:b.title||BLOCK_HE[b.type]||'פעילות',address:b.address||'',inBank:false,placeId:b.placeId||null,website:'',dayLabel:`יום ${di+1}`}));
+        dayMkRef.current.push(mk);
+      });
+    });
+  },[trip?.days,trip?.interestBank,mapsReady]);
 
   const loadPlace=(placeId,lat,lng,bankItem=null)=>{
     if(!svcRef.current){return;}
@@ -411,7 +456,8 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
   const addToSchedule=(dayId)=>{
     if(!sheet||!onUpdate||!trip)return;
     const block={id:uid(),type:'activity',title:sheet.name||'',startTime:'10:00',endTime:'12:00',
-      note:'',placeId:sheet.placeId||'',address:sheet.address||''};
+      note:'',placeId:sheet.placeId||'',address:sheet.address||'',
+      lat:sheet.lat||null,lng:sheet.lng||null};
     onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,blocks:[...(d.blocks||[]),block]}:d)});
     toast(`"${sheet.name}" נוסף ליום ✓`,'s');
     setDaySelPlace(null);
@@ -471,8 +517,9 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
 /* ════════════════════════════════
    SCHEDULE SCREEN — day-by-day
 ════════════════════════════════ */
-function ScheduleScreen({trip,active,onShowOnMap}){
+function ScheduleScreen({trip,active,onShowOnMap,onUpdate}){
   const[dayIdx,setDayIdx]=useState(0);
+  const[expandedId,setExpandedId]=useState(null);
   const days=trip?.days||[];
   const safeIdx=Math.min(dayIdx,Math.max(0,days.length-1));
   const day=days[safeIdx];
@@ -495,6 +542,20 @@ function ScheduleScreen({trip,active,onShowOnMap}){
     const[sh,sm]=b.startTime.split(':').map(Number),[eh,em]=b.endTime.split(':').map(Number);
     const m=(eh*60+em)-(sh*60+sm);if(m<=0)return null;
     return m>=60?`${Math.floor(m/60)}ש'${m%60?` ${m%60}ד`:''}`:` ${m}ד`;
+  };
+
+  const toggleComplete=(dayId,blockId)=>{
+    if(!onUpdate||!trip)return;
+    onUpdate({...trip,days:trip.days.map(d=>d.id!==dayId?d:{
+      ...d,blocks:(d.blocks||[]).map(b=>b.id!==blockId?b:{...b,isCompleted:!b.isCompleted})
+    })});
+  };
+
+  const updateNote=(dayId,blockId,note)=>{
+    if(!onUpdate||!trip)return;
+    onUpdate({...trip,days:trip.days.map(d=>d.id!==dayId?d:{
+      ...d,blocks:(d.blocks||[]).map(b=>b.id!==blockId?b:{...b,note})
+    })});
   };
 
   return(
@@ -533,23 +594,41 @@ function ScheduleScreen({trip,active,onShowOnMap}){
         <div style={{flex:1,overflowY:'auto'}}>
           {(day.blocks||[]).map((b,bi,arr)=>{
             const hasLoc=!!(b.placeId||(b.lat&&b.lng));
+            const isExp=expandedId===b.id;
+            const done=!!b.isCompleted;
             return(
-              <div key={b.id} className="blk-row" onClick={()=>hasLoc&&onShowOnMap&&onShowOnMap({lat:b.lat,lng:b.lng,placeId:b.placeId,name:b.title||BLOCK_HE[b.type],address:b.address||''})}>
-                <div className="blk-left">
-                  <div className="blk-circle" style={{background:BLOCK_COLOR[b.type]||'#555'}}>
-                    {BLOCK_EMOJI[b.type]||'📌'}
+              <div key={b.id}>
+                <div className="blk-row" onClick={()=>setExpandedId(isExp?null:b.id)}>
+                  <div className="blk-left">
+                    <div
+                      className={`blk-circle${done?' done':''}`}
+                      style={{background:BLOCK_COLOR[b.type]||'#555',cursor:'pointer'}}
+                      onClick={e=>{e.stopPropagation();toggleComplete(day.id,b.id);}}
+                      title={done?'סמן כלא הושלם':'סמן כהושלם'}
+                    >
+                      {done?'✓':BLOCK_EMOJI[b.type]||'📌'}
+                    </div>
+                    {bi<arr.length-1&&<div className="blk-line"/>}
                   </div>
-                  {bi<arr.length-1&&<div className="blk-line"/>}
-                </div>
-                <div className="blk-content">
-                  <div className="blk-title">{b.title||BLOCK_HE[b.type]||b.type}</div>
-                  <div className="blk-meta">
-                    {b.startTime&&`${b.startTime}${b.endTime?` — ${b.endTime}`:''}`}
-                    {blockDur(b)&&<span style={{color:'var(--text3)'}}> · {blockDur(b)}</span>}
-                    {b.note&&<span style={{color:'var(--accent2)',display:'block',marginTop:2}}>📝 {b.note}</span>}
+                  <div className="blk-content">
+                    <div className={`blk-title${done?' done':''}`}>{b.title||BLOCK_HE[b.type]||b.type}</div>
+                    <div className="blk-meta">
+                      {b.startTime&&`${b.startTime}${b.endTime?` — ${b.endTime}`:''}`}
+                      {blockDur(b)&&<span style={{color:'var(--text3)'}}> · {blockDur(b)}</span>}
+                      {!isExp&&b.note&&<span style={{color:'var(--accent2)',display:'block',marginTop:2}}>📝 {b.note}</span>}
+                    </div>
+                    {/* inline note editor — shown when expanded */}
+                    {isExp&&<textarea
+                      className="note-inline"
+                      rows={3}
+                      defaultValue={b.note||''}
+                      placeholder="הוסף הערה לפעילות..."
+                      onClick={e=>e.stopPropagation()}
+                      onBlur={e=>updateNote(day.id,b.id,e.target.value.trim())}
+                    />}
                   </div>
+                  {hasLoc&&<button className="blk-map-btn" onClick={e=>{e.stopPropagation();onShowOnMap&&onShowOnMap({lat:b.lat,lng:b.lng,placeId:b.placeId,name:b.title||BLOCK_HE[b.type],address:b.address||''});}}>🗺️</button>}
                 </div>
-                {hasLoc&&<button className="blk-map-btn" onClick={e=>{e.stopPropagation();onShowOnMap&&onShowOnMap({lat:b.lat,lng:b.lng,placeId:b.placeId,name:b.title||BLOCK_HE[b.type],address:b.address||''});}}>🗺️</button>}
               </div>
             );
           })}
@@ -874,8 +953,12 @@ function TripScreen({trips,activeId,onSelectTrip,syncStatus,onRefresh,active}){
           </div>
         </div>
       </>:<div className="empty"><div className="eicon">✈️</div><div className="etitle">לא נמצאו טיולים</div><div className="edesc">צור טיול דרך אפליקציית המחשב</div></div>}
-      <div style={{margin:'20px 14px 0',padding:'11px',background:'var(--bg3)',borderRadius:10,textAlign:'center',color:'var(--text3)',fontSize:11}}>
-        PlanMyTrip Mobile {MOB_VER}
+      <div style={{margin:'20px 14px 0',padding:'12px 14px',background:'var(--bg3)',borderRadius:10,display:'flex',flexDirection:'column',alignItems:'center',gap:7}}>
+        <div style={{fontSize:11,color:'var(--text3)',fontWeight:600}}>PlanMyTrip</div>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',justifyContent:'center'}}>
+          <span className="ver-badge"><span className="v-mob">📱 Mobile</span><span className="v-mob">{MOB_VER}</span></span>
+        </div>
+        <div style={{fontSize:10,color:'var(--text3)',opacity:.6}}>© {new Date().getFullYear()} PlanMyTrip</div>
       </div>
       <div style={{height:16}}/>
     </div>
@@ -889,6 +972,21 @@ const NAV=[{id:'map',icon:'🗺️',label:'מפה'},{id:'schedule',icon:'📅',l
 function BottomNav({active,onChange}){
   return<nav className="bnav">{NAV.map(n=><button key={n.id} className={`nbtn${active===n.id?' active':''}`} onClick={()=>onChange(n.id)}><span className="nicon">{n.icon}</span><span className="nlabel">{n.label}</span></button>)}</nav>;
 }
+
+/* ════════════════════════════════
+   URL ?key= PARAM — auto-connect on first visit
+════════════════════════════════ */
+(()=>{
+  try{
+    const urlKey=new URLSearchParams(window.location.search).get('key');
+    if(urlKey){
+      const cur=loadState()||{};
+      saveState({...cur,settings:{...(cur.settings||{}),syncKey:urlKey,firebaseUrl:FB_URL}});
+      window.history.replaceState({},'',window.location.pathname);
+      location.reload();
+    }
+  }catch{}
+})();
 
 /* ════════════════════════════════
    APP
@@ -981,7 +1079,7 @@ function App(){
       <ToastLayer/>
       <div className="sw">
         <MapScreen trip={trip} active={screen==='map'} mapsReady={mapsReady} onUpdate={updateTrip} mapFocusRef={mapFocusRef}/>
-        <ScheduleScreen trip={trip} active={screen==='schedule'} onShowOnMap={showOnMap}/>
+        <ScheduleScreen trip={trip} active={screen==='schedule'} onShowOnMap={showOnMap} onUpdate={updateTrip}/>
         <BankScreen trip={trip} active={screen==='bank'} onShowOnMap={showOnMap}/>
         <ListsScreen trip={trip} active={screen==='lists'} onUpdate={updateTrip}/>
         <TripScreen trips={trips} activeId={activeId} onSelectTrip={setActiveId} syncStatus={syncStatus} onRefresh={loadFromFirebase} active={screen==='trip'}/>

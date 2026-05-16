@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v71';
+const APP_VERSION = 'v72';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -677,7 +677,7 @@ function TrackerBtn({label,date,color,warnDays,log,onSave}){
 /* ══════════════════════════════════
    כותרת רכב
 ══════════════════════════════════ */
-function VehicleHeader({trip,theme,syncStatus,hasGh,hasFb,onThemeToggle,onUpdate,onGoSettings}){
+function VehicleHeader({trip,theme,syncStatus,hasGh,hasFb,syncKey,onThemeToggle,onUpdate,onGoSettings}){
   const v=trip?.vehicle||{};
   const hasSync=hasGh||hasFb;
   const syncLabel=hasFb?'Firebase':hasGh?'גיטהאב':'';
@@ -687,6 +687,12 @@ function VehicleHeader({trip,theme,syncStatus,hasGh,hasFb,onThemeToggle,onUpdate
     :syncStatus==='error'  ?{i:'⚠️',c:'var(--red)',  t:'שגיאת סנכרון — עבור לחיבוריות 🔗'}
     :{i:'☁️',c:'var(--text3)',t:'ממתין לסנכרון...'}
     :{i:'🔴',c:'var(--red)',t:'סנכרון לא מוגדר — לחץ להגדרה'};
+
+  const[showQR,setShowQR]=useState(false);
+
+  const mobileUrl=syncKey
+    ?(window.location.origin+window.location.pathname.replace(/[^/]+$/,'')+`mobile.html?key=${syncKey}`)
+    :null;
 
   const saveTracker=(dateKey,logKey,newDate)=>{
     if(!trip) return;
@@ -699,6 +705,21 @@ function VehicleHeader({trip,theme,syncStatus,hasGh,hasFb,onThemeToggle,onUpdate
   };
 
   return <div className="vehicle-banner">
+    {/* QR Modal */}
+    {showQR&&mobileUrl&&<div onClick={()=>setShowQR(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:16,padding:'24px',display:'flex',flexDirection:'column',alignItems:'center',gap:14,minWidth:260,boxShadow:'0 8px 40px rgba(0,0,0,.6)'}}>
+        <div style={{fontSize:16,fontWeight:700}}>📱 פתח במובייל</div>
+        <div style={{fontSize:12,color:'var(--text3)',textAlign:'center',lineHeight:1.6}}>סרוק עם הטלפון כדי לפתוח<br/>PlanMyTrip Mobile עם הסנכרון שלך</div>
+        <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&color=e8eaf0&bgcolor=1a1d27&data=${encodeURIComponent(mobileUrl)}`}
+          alt="QR Code" style={{width:200,height:200,borderRadius:8,border:'1px solid var(--border)'}}/>
+        <div style={{fontSize:10,color:'var(--text3)',textAlign:'center',wordBreak:'break-all',maxWidth:240,opacity:.7}}>{mobileUrl}</div>
+        <div style={{display:'flex',gap:8}}>
+          <button className="btn btn-secondary btn-sm" onClick={()=>{navigator.clipboard?.writeText(mobileUrl);}} style={{fontSize:12}}>📋 העתק קישור</button>
+          <button className="btn btn-secondary btn-sm" onClick={()=>setShowQR(false)}>סגור</button>
+        </div>
+      </div>
+    </div>}
+
     <div style={{display:'flex',alignItems:'center',gap:8}}>
       <span style={{fontSize:24}}>🚐</span>
       <div>
@@ -717,6 +738,7 @@ function VehicleHeader({trip,theme,syncStatus,hasGh,hasFb,onThemeToggle,onUpdate
         <div style={{fontWeight:600}}>{trip.name}</div>
         <div style={{color:'var(--text3)'}}>{trip.startDate||'—'} ← {trip.endDate||'—'}</div>
       </div>}
+      {syncKey&&<button className="btn btn-secondary btn-icon btn-sm" title="פתח במובייל" onClick={()=>setShowQR(true)} style={{fontSize:14,padding:'5px 8px'}}>📱</button>}
       <span title={syncIcon.t} onClick={!hasSync?onGoSettings:undefined}
         style={{fontSize:14,cursor:hasSync?'default':'pointer',userSelect:'none',color:syncIcon.c,
         animation:syncStatus==='syncing'?'spin 1s linear infinite':''}}>{syncIcon.i}</span>
@@ -4408,7 +4430,7 @@ function App(){
 
   return <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
     <div className="app-header">
-      <VehicleHeader trip={trip} theme={settings.theme} syncStatus={syncStatus} hasGh={!!settings.githubToken} hasFb={!!(settings.firebaseUrl&&settings.syncKey)} onThemeToggle={()=>setSettings(s=>({...s,theme:s.theme==='dark'?'light':'dark'}))} onUpdate={updTrip} onGoSettings={()=>setTab('connectivity')}/>
+      <VehicleHeader trip={trip} theme={settings.theme} syncStatus={syncStatus} hasGh={!!settings.githubToken} hasFb={!!(settings.firebaseUrl&&settings.syncKey)} syncKey={settings.syncKey||''} onThemeToggle={()=>setSettings(s=>({...s,theme:s.theme==='dark'?'light':'dark'}))} onUpdate={updTrip} onGoSettings={()=>setTab('connectivity')}/>
       <div className="tab-bar">
         {TABS.map(t=>(
           <button key={t.id} className={`tab-btn${tab===t.id?' active':''}`} onClick={()=>setTab(t.id)}>{t.label}</button>
