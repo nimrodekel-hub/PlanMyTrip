@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m5';
+const MOB_VER='m6';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -732,7 +732,14 @@ function BankScreen({trip,active,onShowOnMap}){
   const[search,setSearch]=useState('');
   const[sortMode,setSortMode]=useState('default'); // 'default'|'name'|'distance'
   const[userPos,setUserPos]=useState(null); // {lat,lng}
+  const[expanded,setExpanded]=useState(new Set()); // מדינות פתוחות — ברירת מחדל: סגורות
   const bank=trip?.interestBank||[];
+
+  const toggleCountry=country=>setExpanded(prev=>{
+    const s=new Set(prev);
+    s.has(country)?s.delete(country):s.add(country);
+    return s;
+  });
 
   const getDistPos=()=>{
     if(!navigator.geolocation){toast('GPS לא זמין','e');return;}
@@ -841,17 +848,40 @@ function BankScreen({trip,active,onShowOnMap}){
         </div>
       )}
 
-      {/* grouped by country — default & name sort */}
+      {/* grouped by country — collapsible, default closed */}
       {!showFlat&&grouped.length>0&&(
         <div style={{flex:1,overflowY:'auto'}}>
-          {grouped.map(([country,items])=>(
-            <div key={country}>
-              <div className="slabel">{country} ({items.length})</div>
-              <div className="card" style={{margin:'0 14px'}}>
-                {items.map(item=><BankItem key={item.id} item={item}/>)}
+          {grouped.map(([country,items])=>{
+            const isOpen=expanded.has(country);
+            return(
+              <div key={country}>
+                {/* country header — tap to expand/collapse */}
+                <div onClick={()=>toggleCountry(country)}
+                  style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+                    padding:'11px 16px',cursor:'pointer',userSelect:'none',
+                    background:'var(--bg2)',borderBottom:'1px solid var(--border)',
+                    borderTop:'1px solid var(--border)',marginTop:0}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8}}>
+                    <span style={{fontSize:13,fontWeight:700,color:'var(--text2)'}}>{country}</span>
+                    <span style={{fontSize:11,color:'var(--text3)',background:'var(--surface)',
+                      border:'1px solid var(--border)',borderRadius:10,padding:'1px 7px'}}>
+                      {items.length}
+                    </span>
+                  </div>
+                  <span style={{fontSize:14,color:'var(--text3)',transition:'transform .2s',
+                    display:'inline-block',transform:isOpen?'rotate(180deg)':'rotate(0deg)'}}>
+                    ›
+                  </span>
+                </div>
+                {/* items — shown only when expanded */}
+                {isOpen&&(
+                  <div className="card" style={{margin:'0 14px 10px',borderRadius:'0 0 10px 10px'}}>
+                    {items.map(item=><BankItem key={item.id} item={item}/>)}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
           <div style={{height:16}}/>
         </div>
       )}
