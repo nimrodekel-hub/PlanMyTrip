@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v85';
+const APP_VERSION = 'v86';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -836,7 +836,7 @@ const makeSearchMarkerIcon=types=>{
 /* ══════════════════════════════════
    מפת גוגל
 ══════════════════════════════════ */
-function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem,mapPickCallbackRef,mapPickLabel,onCancelMapPick}){
+function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,highlightDay,highlightItem,mapPickCallbackRef,mapPickLabel,onCancelMapPick}){
   const mapRef=useRef(null), mapInst=useRef(null), markers=useRef([]);
   const hlDayMarkers=useRef([]), hlItemMarker=useRef(null);
   const [ready,setReady]=useState(false);
@@ -850,10 +850,12 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
   const tripRef=useRef(trip);
   const onAddToBankRef=useRef(onAddToBank);
   const onAddToDayRef=useRef(onAddToDay);
+  const onSetDayLocationRef=useRef(onSetDayLocation);
   const mapsKeyRef=useRef(mapsKey);
   useEffect(()=>{tripRef.current=trip;},[trip]);
   useEffect(()=>{onAddToBankRef.current=onAddToBank;},[onAddToBank]);
   useEffect(()=>{onAddToDayRef.current=onAddToDay;},[onAddToDay]);
+  useEffect(()=>{onSetDayLocationRef.current=onSetDayLocation;},[onSetDayLocation]);
   useEffect(()=>{mapsKeyRef.current=mapsKey;},[mapsKey]);
 
   useEffect(()=>{
@@ -1039,6 +1041,20 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
               הוסף
             </button>
           </div>
+          <div style="display:flex;gap:5px;align-items:center">
+            <select id="gm-loc-sel" style="flex:1;border:1px solid #ddd;border-radius:6px;padding:5px 6px;font-size:11px;font-family:Heebo,Arial,sans-serif;direction:rtl;min-width:0">
+              <option value="">📍 קבע מוצא/יעד ליום...</option>
+              ${daysHtml}
+            </select>
+            <button onclick="window.__gmSetStart()" title="קבע כנקודת מוצא"
+              style="background:#22c55e;color:#fff;border:none;border-radius:6px;padding:6px 8px;font-size:13px;cursor:pointer;font-family:Heebo,Arial,sans-serif;font-weight:700;flex-shrink:0">
+              🟢
+            </button>
+            <button onclick="window.__gmSetEnd()" title="קבע כנקודת יעד"
+              style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 8px;font-size:13px;cursor:pointer;font-family:Heebo,Arial,sans-serif;font-weight:700;flex-shrink:0">
+              🔴
+            </button>
+          </div>
         </div>
       </div>`;
     };
@@ -1130,6 +1146,26 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
         todayHours:p.todayHours,allHours:p.allHours,phone:p.phone,website:p.website,photoUrl:p.photoUrl,placeType:p.placeType||''});
       iw.close();
       toast(`"${name}" נוסף ליום`,'success');
+    };
+    window.__gmSetStart=()=>{
+      const sel=document.getElementById('gm-loc-sel');
+      if(!sel||!sel.value||!iwPlace.data)return;
+      const p=iwPlace.data;
+      const nameEl=document.getElementById('gm-name-edit');
+      const name=nameEl?.value?.trim()||p.name;
+      onSetDayLocationRef.current(sel.value,'start',name,p.lat,p.lng);
+      iw.close();
+      toast(`"${name}" הוגדר כנקודת מוצא ✓`,'success');
+    };
+    window.__gmSetEnd=()=>{
+      const sel=document.getElementById('gm-loc-sel');
+      if(!sel||!sel.value||!iwPlace.data)return;
+      const p=iwPlace.data;
+      const nameEl=document.getElementById('gm-name-edit');
+      const name=nameEl?.value?.trim()||p.name;
+      onSetDayLocationRef.current(sel.value,'end',name,p.lat,p.lng);
+      iw.close();
+      toast(`"${name}" הוגדר כנקודת יעד ✓`,'success');
     };
 
     map.addListener('click',async e=>{
@@ -4855,6 +4891,14 @@ function App(){
     updTrip({...trip,interestBank:[...trip.interestBank,{...item,id:uid()}]});
   },[trip,updTrip]);
 
+  const setDayLocation=useCallback((dayId,field,name,lat,lng)=>{
+    if(!trip)return;
+    const patch=field==='start'
+      ?{startLocation:name,startLat:lat,startLng:lng}
+      :{endLocation:name,endLat:lat,endLng:lng};
+    updTrip({...trip,days:trip.days.map(d=>d.id===dayId?{...d,...patch}:d)});
+  },[trip,updTrip]);
+
   const addToDay=useCallback((dayId,item)=>{
     if (!trip) return;
     const day=trip.days.find(d=>d.id===dayId);
@@ -4948,6 +4992,7 @@ function App(){
           {/* עמודה 1: מפה */}
           <div className="map-col map-col-map">
             <MapView mapsKey={settings.googleMapsKey} trip={trip} onAddToBank={addToBank} onAddToDay={addToDay}
+              onSetDayLocation={setDayLocation}
               highlightDay={hlDay} highlightItem={hlItem}
               mapPickCallbackRef={mapPickCallbackRef} mapPickLabel={mapPickLabel} onCancelMapPick={cancelMapPick}/>
           </div>

@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m27';
+const MOB_VER='m28';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -463,10 +463,10 @@ function ToastLayer(){
 /* ════════════════════════════════
    DAY SELECTOR (for "add to schedule")
 ════════════════════════════════ */
-function DaySelector({days,onSelect,onClose}){
+function DaySelector({days,onSelect,onClose,title='הוסף לאיזה יום?'}){
   return<div className="day-ov" onClick={e=>e.target===e.currentTarget&&onClose()}>
     <div className="day-panel">
-      <div className="day-panel-title">הוסף לאיזה יום?</div>
+      <div className="day-panel-title">{title}</div>
       {days.map((d,i)=>(
         <div key={d.id} className="day-opt" onClick={()=>onSelect(d.id)}>
           <span style={{fontSize:18}}>📅</span>
@@ -495,6 +495,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
   const srchInputRef=useRef(null);
   const[sheet,setSheet]=useState(null);
   const[daySelPlace,setDaySelPlace]=useState(null);
+  const[daySelMode,setDaySelMode]=useState(null); // 'sched'|'start'|'end'
   const[loading,setLoading]=useState(false);
   const[showDayLegend,setShowDayLegend]=useState(true);
 
@@ -712,7 +713,21 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
       placeType:sheet.types?.length?getTypeLabel(sheet.types):''};
     onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,blocks:[...(d.blocks||[]),block]}:d)});
     toast(`"${sheet.name}" נוסף ליום ✓`,'s');
-    setDaySelPlace(null);
+    setDaySelPlace(null);setDaySelMode(null);
+  };
+  const setDayStart=(dayId)=>{
+    if(!sheet||!onUpdate||!trip)return;
+    onUpdate({...trip,days:trip.days.map(d=>d.id===dayId
+      ?{...d,startLocation:sheet.name||'',startLat:sheet.lat||null,startLng:sheet.lng||null}:d)});
+    toast(`"${sheet.name}" הוגדר כנקודת מוצא ✓`,'s');
+    setDaySelPlace(null);setDaySelMode(null);
+  };
+  const setDayEnd=(dayId)=>{
+    if(!sheet||!onUpdate||!trip)return;
+    onUpdate({...trip,days:trip.days.map(d=>d.id===dayId
+      ?{...d,endLocation:sheet.name||'',endLat:sheet.lat||null,endLng:sheet.lng||null}:d)});
+    toast(`"${sheet.name}" הוגדר כנקודת יעד ✓`,'s');
+    setDaySelPlace(null);setDaySelMode(null);
   };
 
   return(
@@ -783,13 +798,23 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
             </a>}
             {!sheet.inBank&&<button className="bsheet-btn bank" onClick={addToBank}>⭐ שמור לבנק</button>}
             {sheet.inBank&&<div style={{padding:'11px 10px',fontSize:12,color:'var(--amber)',fontWeight:600}}>⭐ כבר בבנק</div>}
-            {(trip?.days||[]).length>0&&<button className="bsheet-btn sched" onClick={()=>setDaySelPlace(sheet)}>📅 הוסף ללוז</button>}
+            {(trip?.days||[]).length>0&&<button className="bsheet-btn sched" onClick={()=>{setDaySelPlace(sheet);setDaySelMode('sched');}}>📅 הוסף ללוז</button>}
+            {(trip?.days||[]).length>0&&<button className="bsheet-btn"
+              style={{background:'rgba(34,197,94,.12)',color:'var(--green)',border:'1px solid rgba(34,197,94,.3)',minWidth:120}}
+              onClick={()=>{setDaySelPlace(sheet);setDaySelMode('start');}}>🟢 מוצא ליום</button>}
+            {(trip?.days||[]).length>0&&<button className="bsheet-btn"
+              style={{background:'rgba(239,68,68,.1)',color:'var(--red)',border:'1px solid rgba(239,68,68,.25)',minWidth:120}}
+              onClick={()=>{setDaySelPlace(sheet);setDaySelMode('end');}}>🔴 יעד ליום</button>}
           </div>
         </>}
       </div>
 
       {/* day selector */}
-      {daySelPlace&&<DaySelector days={trip?.days||[]} onSelect={addToSchedule} onClose={()=>setDaySelPlace(null)}/>}
+      {daySelPlace&&<DaySelector
+        days={trip?.days||[]}
+        title={daySelMode==='start'?'🟢 קבע כנקודת מוצא ליום:':daySelMode==='end'?'🔴 קבע כנקודת יעד ליום:':'📅 הוסף לאיזה יום?'}
+        onSelect={daySelMode==='start'?setDayStart:daySelMode==='end'?setDayEnd:addToSchedule}
+        onClose={()=>{setDaySelPlace(null);setDaySelMode(null);}}/>}
     </div>
   );
 }
