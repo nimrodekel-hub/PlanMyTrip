@@ -2010,6 +2010,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
   const[mapCenter,setMapCenter]=useState(null); // {lat,lng} לשימוש במיון לפי מרחק
   // expanded = קבוצות פתוחות; ברירת מחדל: ריק = כולן סגורות
   const[expanded,setExpanded]=useState(()=>new Set());
+  const[filterSrc,setFilterSrc]=useState(null);
   const takeoutRef=useRef(null);
   // ref לטיול — מונע stale-closure בלולאות async
   const tripRef=useRef(trip);
@@ -2150,9 +2151,11 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
   };
 
   /* קיבוץ לפי מדינה — ממויין לפי א-ת בתוך כל קבוצה כשנבחר מיון שם */
+  const matchesSrc=(item,f)=>!f||(item._listSource||'saved')===f;
   const grouped=useMemo(()=>{
     const map={};
     for(const item of trip.interestBank){
+      if(!matchesSrc(item,filterSrc))continue;
       const c=getCountry(item);
       if(!map[c]) map[c]=[];
       map[c].push(item);
@@ -2162,7 +2165,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
       entries.forEach(([,items])=>items.sort((a,b)=>(a.name||'').localeCompare(b.name||'','he')));
     }
     return entries;
-  },[trip.interestBank,sortMode]);
+  },[trip.interestBank,sortMode,filterSrc]);
 
   /* מרחק בין שתי נקודות (ק"מ) — Haversine */
   const haversineKm=(lat1,lng1,lat2,lng2)=>{
@@ -2175,7 +2178,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
 
   /* פריטים מסוננים + ממוינים */
   const displayItems=useMemo(()=>{
-    let items=[...trip.interestBank];
+    let items=trip.interestBank.filter(i=>matchesSrc(i,filterSrc));
     // סינון לפי חיפוש
     const q=bankSearch.trim().toLowerCase();
     if(q) items=items.filter(i=>(i.name||'').toLowerCase().includes(q)||(i.address||'').toLowerCase().includes(q)||(i.placeType||'').toLowerCase().includes(q));
@@ -2187,7 +2190,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
       items.sort((a,b)=>a._dist-b._dist);
     }
     return items;
-  },[bankSearch,sortMode,mapCenter,trip.interestBank]);
+  },[bankSearch,sortMode,mapCenter,trip.interestBank,filterSrc]);
   // תצוגה שטוחה: רק בחיפוש או מיון לפי מרחק — א-ת נשאר בתוך קבוצות מדינה
   const showFlat=!!(bankSearch.trim())||sortMode==='distance';
 
@@ -2668,6 +2671,38 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
       {sortMode==='distance'&&mapCenter&&<div style={{fontSize:10,color:'var(--text3)',textAlign:'center'}}>
         ממרכז המפה · לחץ "מרחק" שוב לעדכן מיקום
       </div>}
+      {/* filter chips by listSource */}
+      {(()=>{
+        const DSRC={
+          liked:    {color:'#ec4899',emoji:'❤️',label:'מועדפים'},
+          wantToGo: {color:'#22c55e',emoji:'🏴',label:'רוצה לבקר'},
+          saved:    {color:'#f59e0b',emoji:'⭐',label:'שמור'},
+          list:     {color:'#6366f1',emoji:'📋',label:'רשימה'},
+          itinerary:{color:'#16a34a',emoji:'🧳',label:'תוכנית נסיעה'},
+        };
+        const existing=new Set(trip.interestBank.map(i=>i._listSource||'saved'));
+        const chips=Object.entries(DSRC).filter(([k])=>existing.has(k));
+        if(chips.length<2)return null;
+        return(
+          <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
+            <span style={{fontSize:10,color:'var(--text3)',flexShrink:0}}>סוג:</span>
+            <button className="btn btn-sm"
+              style={{fontSize:10,padding:'2px 7px',background:!filterSrc?'var(--accent)':'var(--bg3)',
+                color:!filterSrc?'#fff':'var(--text2)',border:`1px solid ${!filterSrc?'var(--accent)':'var(--border)'}`}}
+              onClick={()=>setFilterSrc(null)}>הכל</button>
+            {chips.map(([k,v])=>(
+              <button key={k} className="btn btn-sm"
+                style={{fontSize:10,padding:'2px 7px',
+                  background:filterSrc===k?v.color+'33':'var(--bg3)',
+                  color:filterSrc===k?v.color:'var(--text2)',
+                  border:`1px solid ${filterSrc===k?v.color:'var(--border)'}`}}
+                onClick={()=>setFilterSrc(f=>f===k?null:k)}>
+                {v.emoji} {v.label}
+              </button>
+            ))}
+          </div>
+        );
+      })()}
     </div>}
 
     {/* רשימה מקובצת / תצוגה שטוחה */}

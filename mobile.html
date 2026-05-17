@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m8';
+const MOB_VER='m9';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -807,6 +807,7 @@ function BankScreen({trip,active,onShowOnMap}){
   const[sortMode,setSortMode]=useState('default'); // 'default'|'name'|'distance'
   const[userPos,setUserPos]=useState(null); // {lat,lng}
   const[expanded,setExpanded]=useState(new Set()); // מדינות פתוחות — ברירת מחדל: סגורות
+  const[filterSrc,setFilterSrc]=useState(null);
   const bank=trip?.interestBank||[];
 
   const toggleCountry=country=>setExpanded(prev=>{
@@ -834,8 +835,9 @@ function BankScreen({trip,active,onShowOnMap}){
   };
 
   /* filtered + sorted flat list */
+  const matchesSrc=(item,f)=>!f||(item._listSource||'saved')===f;
   const displayItems=useMemo(()=>{
-    let items=[...bank];
+    let items=bank.filter(i=>matchesSrc(i,filterSrc));
     const q=search.trim().toLowerCase();
     if(q)items=items.filter(i=>(i.name||'').toLowerCase().includes(q)||(i.address||'').toLowerCase().includes(q));
     if(sortMode==='name'){
@@ -845,16 +847,19 @@ function BankScreen({trip,active,onShowOnMap}){
       items.sort((a,b)=>a._dist-b._dist);
     }
     return items;
-  },[bank,search,sortMode,userPos]);
+  },[bank,search,sortMode,userPos,filterSrc]);
 
   /* grouped (used when not searching and not distance-sorting) */
   const grouped=useMemo(()=>{
     const m={};
-    for(const i of bank){const c=getCountry(i);if(!m[c])m[c]=[];m[c].push(i);}
+    for(const i of bank){
+      if(!matchesSrc(i,filterSrc))continue;
+      const c=getCountry(i);if(!m[c])m[c]=[];m[c].push(i);
+    }
     const entries=Object.entries(m).sort((a,b)=>a[0].localeCompare(b[0],'he'));
     if(sortMode==='name')entries.forEach(([,items])=>items.sort((a,b)=>(a.name||'').localeCompare(b.name||'','he')));
     return entries;
-  },[bank,sortMode]);
+  },[bank,sortMode,filterSrc]);
 
   const showFlat=!!(search.trim())||sortMode==='distance';
 
@@ -918,6 +923,33 @@ function BankScreen({trip,active,onShowOnMap}){
           ממיקומך הנוכחי · לחץ "מרחק" שוב לביטול
         </div>}
       </>}
+
+      {/* filter by listSource — only show types that exist in data */}
+      {bank.length>0&&(()=>{
+        const existing=new Set(bank.map(i=>i._listSource||'saved'));
+        const chips=Object.entries(BANK_SRC).filter(([k])=>existing.has(k));
+        if(chips.length<2)return null;
+        return(
+          <div style={{display:'flex',alignItems:'center',gap:5,padding:'6px 14px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',flexShrink:0,overflowX:'auto'}}>
+            <button onClick={()=>setFilterSrc(null)}
+              style={{padding:'4px 10px',borderRadius:10,border:`1px solid ${!filterSrc?'var(--accent2)':'var(--border)'}`,
+                background:!filterSrc?'rgba(79,142,247,.15)':'transparent',
+                color:!filterSrc?'var(--accent2)':'var(--text3)',
+                fontSize:11,fontWeight:600,fontFamily:'Heebo,sans-serif',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>
+              הכל
+            </button>
+            {chips.map(([k,v])=>(
+              <button key={k} onClick={()=>setFilterSrc(f=>f===k?null:k)}
+                style={{padding:'4px 10px',borderRadius:10,border:`1px solid ${filterSrc===k?v.color:'var(--border)'}`,
+                  background:filterSrc===k?v.color+'22':'transparent',
+                  color:filterSrc===k?v.color:'var(--text3)',
+                  fontSize:11,fontWeight:600,fontFamily:'Heebo,sans-serif',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>
+                {v.emoji} {v.label}
+              </button>
+            ))}
+          </div>
+        );
+      })()}
 
       {!trip&&<div className="empty"><div className="eicon">⭐</div><div className="etitle">אין טיול פעיל</div></div>}
       {trip&&bank.length===0&&<div className="empty"><div className="eicon">⭐</div><div className="etitle">בנק האטרקציות ריק</div><div className="edesc">הוסף אטרקציות דרך אפליקציית המחשב או מהמפה</div></div>}
