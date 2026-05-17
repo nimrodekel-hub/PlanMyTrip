@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m12';
+const MOB_VER='m13';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -345,15 +345,32 @@ const normTrip=t=>{
     interestBank:t.interestBank||[],expenses:t.expenses||[],packingList:t.packingList||[],shoppingList:t.shoppingList||[],documents:t.documents||[],quickNotes:t.quickNotes||[]};
 };
 
-/* ── bank item list-source styles (same as desktop) ── */
+/* ── bank item list-source styles ── */
 const BANK_SRC={
-  liked:    {color:'#ec4899',emoji:'❤️',label:'מועדפים',  sym:'♥', scale:9},
-  wantToGo: {color:'#22c55e',emoji:'🏴',label:'רוצה לבקר',sym:'⚑', scale:9},
-  saved:    {color:'#f59e0b',emoji:'⭐',label:'שמור',      sym:'★', scale:8},
-  list:     {color:'#6366f1',emoji:'📋',label:'רשימה',    sym:'♦', scale:8},
-  itinerary:{color:'#16a34a',emoji:'🧳',label:'תוכנית נסיעה',sym:'✈',scale:8},
+  liked:    {color:'#e91e63',emoji:'❤️',label:'מועדפים'},
+  wantToGo: {color:'#1b8a3e',emoji:'🚩',label:'רוצה לבקר'},
+  saved:    {color:'#f59e0b',emoji:'⭐',label:'שמור'},
+  list:     {color:'#7c3aed',emoji:'📋',label:'רשימה'},
+  itinerary:{color:'#1565c0',emoji:'🧳',label:'תוכנית נסיעה'},
 };
-const getBankSrc=item=>BANK_SRC[item._listSource]||BANK_SRC.saved;
+const getBankSrc=item=>BANK_SRC[item._listSource]||null;
+
+/* build a round SVG marker (circle + emoji) — like Google Maps saved-list pins */
+const makeBankIcon=src=>{
+  if(!window.google?.maps||!src)return null;
+  const svg=
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 44" width="44" height="44">`+
+    `<circle cx="22" cy="22" r="20" fill="${src.color}" stroke="white" stroke-width="2.5"/>`+
+    `<text x="22" y="30" text-anchor="middle" `+
+      `font-family="Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif" `+
+      `font-size="19">${src.emoji}</text>`+
+    `</svg>`;
+  return{
+    url:'data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(svg),
+    scaledSize:new window.google.maps.Size(38,38),
+    anchor:new window.google.maps.Point(19,19),
+  };
+};
 
 /* ── marker icon map (same as desktop) ── */
 const SEARCH_ICON_MAP=[
@@ -491,27 +508,21 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
     return()=>clearTimeout(t);
   },[active,mapsReady]);// eslint-disable-line
 
-  /* bank markers — colored by _listSource; plain red pin if no known status */
+  /* bank markers — SVG circle icons by _listSource; plain red pin if no known status */
   useEffect(()=>{
     if(!mapsReady||!mapRef.current)return;
     bankMkRef.current.forEach(m=>m.setMap(null));
     bankMkRef.current=[];
     (trip?.interestBank||[]).forEach(item=>{
       if(!item.lat||!item.lng)return;
-      const hasStatus=item._listSource&&BANK_SRC[item._listSource];
-      const opts={
+      const src=getBankSrc(item);
+      const icon=makeBankIcon(src); // null → default red pin
+      const mk=new window.google.maps.Marker({
         position:{lat:item.lat,lng:item.lng},map:mapRef.current,
-        title:item.name||'',zIndex:5,
-      };
-      if(hasStatus){
-        const src=BANK_SRC[item._listSource];
-        opts.title=`${src.emoji} ${item.name||''}`;
-        opts.icon={path:window.google.maps.SymbolPath.CIRCLE,scale:src.scale,
-          fillColor:src.color,fillOpacity:.92,strokeColor:'#fff',strokeWeight:1.5};
-        opts.label={text:src.sym,color:'#fff',fontSize:'11px',fontWeight:'bold'};
-      }
-      // no icon/label → default Google red pin
-      const mk=new window.google.maps.Marker(opts);
+        title:src?`${src.emoji} ${item.name||''}`:item.name||'',
+        zIndex:5,
+        ...(icon?{icon}:{}),
+      });
       mk.addListener('click',()=>loadPlace(item.placeId,item.lat,item.lng,item));
       bankMkRef.current.push(mk);
     });
@@ -893,22 +904,29 @@ function BankScreen({trip,active,onShowOnMap}){
   const showFlat=!!(search.trim())||sortMode==='distance';
 
   const BankItem=({item})=>{
-    const src=getBankSrc(item); // ❤️/🏴/⭐/📋/🧳 + color by _listSource
+    const src=getBankSrc(item); // null if no known _listSource
     const types=item.types||(item.placeType?[item.placeType]:[]);
-    const catEmoji=getTypeEmoji(types); // ⛺🍽🛏... category emoji
+    const catEmoji=getTypeEmoji(types);
     const lbl=getTypeLabel(types);
     const hasLoc=!!(item.lat&&item.lng);
     return(
       <div className="bitem">
-        {/* status icon (left) */}
-        <div style={{fontSize:20,flexShrink:0,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-          <span style={{fontSize:18}}>{src.emoji}</span>
-          <span style={{fontSize:13}}>{catEmoji}</span>
+        {/* status circle — matches map marker */}
+        <div style={{
+          width:36,height:36,borderRadius:'50%',flexShrink:0,
+          background:src?src.color:'#e53935',
+          border:'2.5px solid #fff',
+          boxShadow:'0 1px 4px rgba(0,0,0,.25)',
+          display:'flex',alignItems:'center',justifyContent:'center',
+          fontSize:src?17:14,
+        }}>
+          {src?src.emoji:'📍'}
         </div>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:14,fontWeight:600}}>{item.name||'—'}</div>
-          <div style={{fontSize:11,color:src.color,fontWeight:600,marginTop:1}}>{src.label}</div>
+          {src&&<div style={{fontSize:11,color:src.color,fontWeight:600,marginTop:1}}>{src.label}</div>}
           {(lbl||item.address)&&<div style={{fontSize:11,color:'var(--text3)',marginTop:1}}>
+            {catEmoji!=='📍'&&<span>{catEmoji} </span>}
             {lbl&&<span>{lbl}</span>}
             {lbl&&item.address&&<span> · </span>}
             {item.address&&<span>{item.address}</span>}
