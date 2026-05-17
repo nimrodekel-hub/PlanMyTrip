@@ -315,7 +315,33 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v73';
+const APP_VERSION = 'v75';
+
+/* ─── OSRM travel time (100% free, no Google, no billing) ─── */
+const _osrmCache={};
+const fetchOsrmMinutes=async(fromLat,fromLng,toLat,toLng)=>{
+  const key=`${fromLng.toFixed(4)},${fromLat.toFixed(4)}|${toLng.toFixed(4)},${toLat.toFixed(4)}`;
+  if(key in _osrmCache)return _osrmCache[key];
+  try{
+    const ctrl=new AbortController();
+    const tid=setTimeout(()=>ctrl.abort(),9000);
+    const url=`https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=false`;
+    const r=await fetch(url,{signal:ctrl.signal});
+    clearTimeout(tid);
+    if(!r.ok){_osrmCache[key]=null;return null;}
+    const d=await r.json();
+    const sec=d?.routes?.[0]?.duration;
+    const min=sec!=null?Math.round(sec/60):null;
+    _osrmCache[key]=min;
+    return min;
+  }catch{_osrmCache[key]=null;return null;}
+};
+const fmtTravelMin=m=>{
+  if(m==null)return'?';
+  if(m<60)return`${m} דק'`;
+  const h=Math.floor(m/60),mn=m%60;
+  return mn?`${h}ש' ${mn}דק'`:`${h} שעות`;
+};
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -1508,8 +1534,9 @@ function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem,dragging,drag
 /* ══════════════════════════════════
    פאנל יום
 ══════════════════════════════════ */
-function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank}){
+function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank,settings}){
   const[open,setOpen]=useState(true),[editing,setEd]=useState(null);
+  const[travelTimes,setTravelTimes]=useState({});
   const dragIdxRef=useRef(null);
   const[dragOver,setDragOver]=useState(null);
   const updBlock=upd=>onUpdate({...day,blocks:day.blocks.map(b=>b.id===upd.id?upd:b)});
@@ -1537,6 +1564,29 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
   const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
   const dayColor=DAY_COLORS[idx%DAY_COLORS.length];
   const hasMapBlocks=day.blocks.some(b=>b.lat&&b.lng);
+
+  /* ── OSRM travel times between consecutive located blocks ── */
+  const blocksKey=sorted.map(b=>b.id).join(',');
+  useEffect(()=>{
+    setTravelTimes({});
+    if(sorted.length<2)return;
+    let cancelled=false;
+    const getC=b=>(b.lat&&b.lng?{lat:b.lat,lng:b.lng}:null);
+    (async()=>{
+      for(let i=0;i<sorted.length-1;i++){
+        if(cancelled)break;
+        const a=sorted[i],nb=sorted[i+1];
+        if(a.type==='travel'||nb.type==='travel')continue;
+        const ac=getC(a),bc=getC(nb);
+        if(!ac||!bc)continue;
+        const key=`${a.id}->${nb.id}`;
+        setTravelTimes(prev=>({...prev,[key]:{loading:true,min:null}}));
+        const min=await fetchOsrmMinutes(ac.lat,ac.lng,bc.lat,bc.lng);
+        if(!cancelled)setTravelTimes(prev=>({...prev,[key]:{loading:false,min}}));
+      }
+    })();
+    return()=>{cancelled=true;};
+  },[blocksKey]);// eslint-disable-next-line react-hooks/exhaustive-deps
 
   return <div className="card" style={{marginBottom:12,animation:'fadeIn .3s ease'}}>
     <div className="day-header" onClick={()=>setOpen(o=>!o)}>
@@ -1684,6 +1734,61 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
               onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move';if(dragOver!==si)setDragOver(si);}}
               onDrop={e=>{e.preventDefault();handleDrop(si);}}
               onDragEnd={()=>{dragIdxRef.current=null;setDragOver(null);}}/>,
+            /* ── travel time connector to next block ── */
+            (()=>{
+              if(si>=sorted.length-1||bl.type==='travel'||sorted[si+1].type==='travel')return null;
+              const ttKey=`${bl.id}->${sorted[si+1].id}`;
+              const tt=travelTimes[ttKey];
+              if(!tt||tt.loading||tt.min==null)return null;
+              /* ── 10h cap ── */
+              if(tt.min>600){
+                return(
+                  <div key={`tt-${ttKey}`} style={{
+                    display:'flex',alignItems:'center',gap:8,
+                    padding:'4px 8px 4px 40px',margin:'0 0 4px',
+                    background:'rgba(239,68,68,.07)',
+                    borderRadius:8,border:'1px solid rgba(239,68,68,.25)',
+                    marginRight:36,
+                  }}>
+                    <span style={{fontSize:11,color:'var(--red)',flex:1}}>
+                      🚨 נסיעה ארוכה מ-10 שעות ({fmtTravelMin(tt.min)}) — בדוק שהאתרים באותה מדינה / יבשת
+                    </span>
+                  </div>
+                );
+              }
+              const buf=settings?.travelBuffer??1.2;
+              const buffered=Math.round(tt.min*buf);
+              const insertTravel=()=>{
+                const nb2={id:uid(),type:'travel',
+                  title:`🚗 נסיעה (~${fmtTravelMin(buffered)})`,
+                  startTime:'',durationMins:buffered,notes:'',isAutoTravel:true};
+                const newArr=[...sorted.slice(0,si+1),nb2,...sorted.slice(si+1)];
+                let t=newArr[0].startTime;
+                const reordered=newArr.map(b2=>{const s={...b2,startTime:t};t=addMins(t,b2.durationMins||60);return s;});
+                onUpdate({...day,blocks:reordered});
+                toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה`,'success');
+              };
+              return(
+                <div key={`tt-${ttKey}`} style={{
+                  display:'flex',alignItems:'center',gap:8,
+                  padding:'4px 8px 4px 40px',margin:'0 0 4px',
+                  background:'rgba(79,142,247,.06)',
+                  borderRadius:8,border:'1px solid rgba(79,142,247,.18)',
+                  marginRight:36,
+                }}>
+                  <span style={{fontSize:11,color:'var(--text3)',flex:1}}>
+                    🚗 {fmtTravelMin(tt.min)} נסיעה
+                    {buf>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf-1))} דק' התארגנות = <b style={{color:'var(--text2)'}}>{fmtTravelMin(buffered)}</b></span>}
+                  </span>
+                  <button onClick={insertTravel}
+                    style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(79,142,247,.4)',
+                      borderRadius:6,background:'rgba(79,142,247,.12)',color:'var(--accent)',
+                      cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
+                    + הוסף ללוז
+                  </button>
+                </div>
+              );
+            })(),
             nowInsert===sorted.length&&si===sorted.length-1&&nowLine,
           ]);
         })()}
@@ -1857,7 +1962,7 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=fals
           :trip.days.map((day,i)=>(
             <DayPanel key={day.id} day={day} idx={i} onUpdate={updDay} onDelete={()=>delDay(day.id)}
               onFocusDay={onFocusDay} onFocusItem={onFocusItem}
-              onMoveToBank={(block)=>moveBlockToBank(block,day.id)}/>
+              onMoveToBank={(block)=>moveBlockToBank(block,day.id)} settings={settings}/>
           ))
         }
       </div>
@@ -1915,7 +2020,7 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=fals
             <div className="scroll-y flex-1" style={{padding:'8px'}}>
               <DayPanel day={day} idx={clampedOffset+i} onUpdate={updDay} onDelete={()=>delDay(day.id)}
                 onFocusDay={onFocusDay} onFocusItem={onFocusItem}
-                onMoveToBank={(block)=>moveBlockToBank(block,day.id)}/>
+                onMoveToBank={(block)=>moveBlockToBank(block,day.id)} settings={settings}/>
             </div>
           </div>
         ))
@@ -3446,6 +3551,31 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
         </div>
       </div>}
 
+      {/* ── travel buffer setting ── */}
+      <div className="card">
+        <div className="card-header"><span style={{fontWeight:700}}>⚙️ הגדרות כלליות</span></div>
+        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10}}>
+          <div>
+            <label className="label">🚗 פקטור זמן נסיעה + התארגנות</label>
+            <select className="input" style={{maxWidth:240,marginTop:4}}
+              value={settings?.travelBuffer??1.2}
+              onChange={e=>onSettings({...settings,travelBuffer:parseFloat(e.target.value)})}>
+              <option value={1.0}>×1.0 — ללא תוספת</option>
+              <option value={1.1}>×1.1 — +10%</option>
+              <option value={1.2}>×1.2 — +20% (מומלץ)</option>
+              <option value={1.3}>×1.3 — +30%</option>
+              <option value={1.5}>×1.5 — +50%</option>
+              <option value={2.0}>×2.0 — כפול</option>
+            </select>
+            <div style={{fontSize:12,color:'var(--text3)',marginTop:7,lineHeight:1.65}}>
+              כפיל לזמן הנסיעה המחושב בלוח הזמנים — מוסיף זמן התארגנות אוטומטי.
+              לדוגמה <b>×1.2</b> = נסיעה של 30 דק' תוצג כ-36 דק'.
+              זמן הנסיעה מחושב בחינם דרך OpenStreetMap (OSRM) — ללא עלות וללא גוגל.
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>;
 }
@@ -4206,7 +4336,7 @@ function App(){
   const[settings,setSettings]=useState(()=>{
     const def={githubToken:'',githubUsername:'nimrodekel-hub',githubRepo:'PlanMyTrip',
       googleMapsKey:'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw',theme:'dark',
-      firebaseUrl:FB_URL, syncKey:'', proxyUrl:''};
+      firebaseUrl:FB_URL, syncKey:'', proxyUrl:'', travelBuffer:1.2};
     const merged={...def,...(saved?.settings||{})};
     // אם אין Firebase URL — הכנס את ברירת המחדל
     // תמיד השתמש בכתובת הנכונה — לא כתובת הקונסול

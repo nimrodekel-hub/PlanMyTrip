@@ -229,14 +229,21 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m14';
+const MOB_VER='m17';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
+const BLOCK_TYPES=['travel','activity','stop','rest','games','free'];
 const BLOCK_EMOJI={travel:'🚗',activity:'🎯',stop:'⏸️',rest:'😴',games:'🎮',free:'🕐'};
 const BLOCK_HE={travel:'נסיעה',activity:'פעילות',stop:'עצירה',rest:'מנוחה',games:'משחקים',free:'זמן פנוי'};
 const BLOCK_COLOR={travel:'#4f8ef7',activity:'#22c55e',stop:'#f59e0b',rest:'#94a3b8',games:'#a855f7',free:'#64748b'};
+const MAX_TRAVEL_MINS=600; // 10 שעות — גבול לזיהוי שגיאה (אתרים ביבשות שונות)
+const fmt2=n=>String(n).padStart(2,'0');
+const addMins=(t,m)=>{const[h,mi]=(t||'00:00').split(':').map(Number),tot=h*60+mi+(m||0);return`${fmt2(Math.floor(tot/60)%24)}:${fmt2(tot%60)}`;};
+const nowTimeStr=()=>{const n=new Date();return`${fmt2(n.getHours())}:${fmt2(n.getMinutes())}`;};
+const toMinsStr=t=>{const[h,m]=(t||'00:00').split(':').map(Number);return h*60+m;};
+const todayISO=()=>new Date().toISOString().slice(0,10);
 
 const PLACE_TYPE_PRIORITY=['campground','rv_park','bakery','winery','cafe','bar','lodging','restaurant','shopping_mall','supermarket','grocery_or_supermarket','clothing_store','store','zoo','aquarium','museum','amusement_park','playground','park','beach','tourist_attraction','gym','stadium','airport','train_station','bus_station','gas_station','hospital','pharmacy','synagogue','church','mosque','natural_feature','food','point_of_interest','establishment'];
 const PLACE_TYPE_HE={campground:'⛺ קמפינג',rv_park:'🏕️ קרוואנים',lodging:'🏨 מלון',bakery:'🥐 מאפייה',winery:'🍷 יקב',cafe:'☕ קפה',bar:'🍺 בר',restaurant:'🍽️ מסעדה',food:'🍽️ אוכל',shopping_mall:'🛍️ קניון',supermarket:'🛒 סופר',grocery_or_supermarket:'🛒 סופר',clothing_store:'👕 ביגוד',store:'🏪 חנות',zoo:'🦁 גן חיות',aquarium:'🐟 אקווריום',museum:'🏛️ מוזיאון',amusement_park:'🎡 פארק שעשועים',playground:'🎠 גן משחקים',park:'🌳 פארק',beach:'🏖️ חוף',tourist_attraction:'📸 אטרקציה',gym:'💪 כושר',stadium:'🏟️ אצטדיון',airport:'✈️ שדה תעופה',train_station:'🚂 רכבת',bus_station:'🚌 אוטובוס',gas_station:'⛽ דלק',hospital:'🏥 בית חולים',pharmacy:'💊 בית מרקחת',synagogue:'🕍 בית כנסת',church:'⛪ כנסייה',mosque:'🕌 מסגד',natural_feature:'⛰️ טבע',point_of_interest:'📍 אטרקציה',establishment:'🏢 עסק'};
@@ -410,6 +417,32 @@ const makePinIcon=(types,opts={})=>{
 const getTypeEmoji=types=>{
   const row=SEARCH_ICON_MAP.find(([t])=>(types||[]).includes(t));
   return row?row[1]:'📍';
+};
+
+/* ─── OSRM travel time (100% free, no Google, no billing) ─── */
+const _osrmCache={};
+const fetchOsrmMinutes=async(fromLat,fromLng,toLat,toLng)=>{
+  const key=`${fromLng.toFixed(4)},${fromLat.toFixed(4)}|${toLng.toFixed(4)},${toLat.toFixed(4)}`;
+  if(key in _osrmCache)return _osrmCache[key];
+  try{
+    const ctrl=new AbortController();
+    const tid=setTimeout(()=>ctrl.abort(),9000);
+    const url=`https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=false`;
+    const r=await fetch(url,{signal:ctrl.signal});
+    clearTimeout(tid);
+    if(!r.ok){_osrmCache[key]=null;return null;}
+    const d=await r.json();
+    const sec=d?.routes?.[0]?.duration;
+    const min=sec!=null?Math.round(sec/60):null;
+    _osrmCache[key]=min;
+    return min;
+  }catch{_osrmCache[key]=null;return null;}
+};
+const fmtTravelMin=m=>{
+  if(m==null)return'?';
+  if(m<60)return`${m} דק'`;
+  const h=Math.floor(m/60),mn=m%60;
+  return mn?`${h}ש' ${mn}דק'`:`${h} שעות`;
 };
 
 /* ─── dark map styles ─── */
@@ -635,9 +668,17 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
 
   const addToSchedule=(dayId)=>{
     if(!sheet||!onUpdate||!trip)return;
-    const block={id:uid(),type:'activity',title:sheet.name||'',startTime:'10:00',endTime:'12:00',
+    // smart time: append after last block of the day
+    const dayObj=trip.days.find(d=>d.id===dayId);
+    const dayBlks=[...(dayObj?.blocks||[])].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
+    const lastBlk=dayBlks[dayBlks.length-1];
+    const startTime=lastBlk?.endTime||dayObj?.startTime||'10:00';
+    const endTime=addMins(startTime,90);
+    const block={id:uid(),type:'activity',title:sheet.name||'',startTime,endTime,
       note:'',placeId:sheet.placeId||'',address:sheet.address||'',
-      lat:sheet.lat||null,lng:sheet.lng||null};
+      lat:sheet.lat||null,lng:sheet.lng||null,
+      placeRating:sheet.rating||null,placeWebsite:sheet.website||'',
+      placeType:sheet.types?.length?getTypeLabel(sheet.types):''};
     onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,blocks:[...(d.blocks||[]),block]}:d)});
     toast(`"${sheet.name}" נוסף ליום ✓`,'s');
     setDaySelPlace(null);
@@ -707,16 +748,159 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
 }
 
 /* ════════════════════════════════
+   BLOCK EDIT SHEET (mobile)
+════════════════════════════════ */
+function BlockEditSheet({block,onSave,onDelete,onClose}){
+  const[b,setB]=useState({...block});
+  const upd=(k,v)=>setB(p=>({...p,[k]:v}));
+  const inp={background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:8,
+    padding:'9px 11px',color:'var(--text)',fontFamily:'Heebo,sans-serif',fontSize:14,outline:'none',direction:'rtl'};
+  const lbl={fontSize:11,fontWeight:600,color:'var(--text3)',display:'block',marginBottom:4};
+  return(
+    <>
+      <div className="sheet-ov" onClick={onClose}/>
+      <div className="bsheet open" style={{maxHeight:'86vh',paddingBottom:'calc(var(--safe-b) + 8px)'}}>
+        <div className="bsheet-handle"/>
+        <div style={{overflowY:'auto',padding:'2px 16px 16px'}}>
+          <div style={{fontWeight:700,fontSize:16,marginBottom:12}}>✏️ עריכת פעילות</div>
+          {/* type chips */}
+          <div style={{display:'flex',gap:5,marginBottom:14,overflowX:'auto',paddingBottom:2}}>
+            {BLOCK_TYPES.map(t=>(
+              <button key={t} onClick={()=>upd('type',t)}
+                style={{padding:'5px 11px',borderRadius:10,
+                  border:`1px solid ${b.type===t?BLOCK_COLOR[t]:'var(--border)'}`,
+                  background:b.type===t?BLOCK_COLOR[t]+'33':'transparent',
+                  color:b.type===t?BLOCK_COLOR[t]:'var(--text3)',
+                  fontSize:12,fontWeight:700,fontFamily:'Heebo,sans-serif',
+                  cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>
+                {BLOCK_EMOJI[t]} {BLOCK_HE[t]}
+              </button>
+            ))}
+          </div>
+          {/* title */}
+          <div style={{marginBottom:10}}>
+            <label style={lbl}>שם / כותרת</label>
+            <input value={b.title||''} onChange={e=>upd('title',e.target.value)}
+              placeholder={`${BLOCK_EMOJI[b.type]} ${BLOCK_HE[b.type]}`}
+              style={{...inp,width:'100%'}}/>
+          </div>
+          {/* times */}
+          <div style={{display:'flex',gap:10,marginBottom:10}}>
+            <div style={{flex:1}}>
+              <label style={lbl}>שעת התחלה</label>
+              <input type="time" value={b.startTime||''} onChange={e=>upd('startTime',e.target.value)}
+                style={{...inp,direction:'ltr',width:'100%'}}/>
+            </div>
+            <div style={{flex:1}}>
+              <label style={lbl}>שעת סיום</label>
+              <input type="time" value={b.endTime||''} onChange={e=>upd('endTime',e.target.value)}
+                style={{...inp,direction:'ltr',width:'100%'}}/>
+            </div>
+          </div>
+          {/* notes */}
+          <div style={{marginBottom:12}}>
+            <label style={lbl}>הערות</label>
+            <textarea value={b.note||''} onChange={e=>upd('note',e.target.value)}
+              rows={3} placeholder="תזכורות, מידע נוסף..."
+              style={{...inp,width:'100%',resize:'none',lineHeight:1.55}}/>
+          </div>
+          {/* place info (readonly) */}
+          {(b.address||b.placeRating||b.placeOpenStatus||b.placeWebsite||b.placePhone||b.placeTodayHours)&&(
+            <div style={{background:'var(--bg3)',borderRadius:10,padding:10,marginBottom:12,
+              border:'1px solid var(--border)'}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--text2)',marginBottom:6}}>📍 מידע מגוגל</div>
+              {b.address&&<div style={{fontSize:12,color:'var(--text2)',marginBottom:3}}>📍 {b.address}</div>}
+              {b.placeType&&<div style={{fontSize:11,color:'var(--text3)',marginBottom:3}}>{b.placeType}</div>}
+              <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:3}}>
+                {b.placeRating&&<span style={{fontSize:12,color:'var(--amber)'}}>⭐ {b.placeRating}</span>}
+                {b.placeOpenStatus&&<span style={{fontSize:12,fontWeight:600,
+                  color:b.placeOpenStatus==='פתוח עכשיו'?'var(--green)':'var(--red)'}}>
+                  {b.placeOpenStatus==='פתוח עכשיו'?'✅':'🔴'} {b.placeOpenStatus}
+                </span>}
+              </div>
+              {b.placeTodayHours&&<div style={{fontSize:11,color:'var(--text3)',marginBottom:3}}>🕐 {b.placeTodayHours}</div>}
+              {b.placePhone&&<a href={`tel:${b.placePhone}`} style={{fontSize:12,color:'var(--accent2)',display:'block',marginBottom:3}}>📞 {b.placePhone}</a>}
+              {b.placeWebsite&&<a href={b.placeWebsite} target="_blank" rel="noreferrer"
+                style={{fontSize:12,color:'var(--accent2)',display:'block',wordBreak:'break-all'}}>
+                🌐 {b.placeWebsite.replace(/^https?:\/\//,'').split('/')[0]}
+              </a>}
+            </div>
+          )}
+          {/* actions */}
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={()=>onSave(b)}
+              style={{flex:2,background:'var(--accent)',color:'#fff',border:'none',borderRadius:10,
+                padding:'13px',fontFamily:'Heebo,sans-serif',fontSize:14,fontWeight:700,cursor:'pointer'}}>
+              ✓ שמור
+            </button>
+            <button onClick={onClose}
+              style={{flex:1,background:'var(--surface)',color:'var(--text)',border:'1px solid var(--border)',
+                borderRadius:10,padding:'13px',fontFamily:'Heebo,sans-serif',fontSize:14,fontWeight:600,cursor:'pointer'}}>
+              ביטול
+            </button>
+            <button onClick={()=>onDelete(b.id)}
+              style={{background:'rgba(239,68,68,.12)',color:'var(--red)',
+                border:'1px solid rgba(239,68,68,.3)',borderRadius:10,
+                padding:'13px 16px',fontFamily:'Heebo,sans-serif',fontSize:18,cursor:'pointer'}}>
+              🗑
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ════════════════════════════════
    SCHEDULE SCREEN — day-by-day
 ════════════════════════════════ */
-function ScheduleScreen({trip,active,onShowOnMap,onUpdate}){
+function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings}){
   const[dayIdx,setDayIdx]=useState(0);
-  const[expandedId,setExpandedId]=useState(null);
+  const[travelTimes,setTravelTimes]=useState({});
+  const[editing,setEditing]=useState(null);
+  const[,setTick]=useState(0);
+
   const days=trip?.days||[];
   const safeIdx=Math.min(dayIdx,Math.max(0,days.length-1));
   const day=days[safeIdx];
 
-  /* swipe gesture */
+  // clock tick for "now" indicator (every 30s)
+  useEffect(()=>{const t=setInterval(()=>setTick(n=>n+1),30000);return()=>clearInterval(t);},[]);
+
+  // sorted blocks
+  const sorted=useMemo(()=>
+    [...(day?.blocks||[])].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||'')),
+  [day?.blocks]);
+
+  /* ── OSRM travel times ── */
+  const blocksKey=sorted.map(b=>b.id).join(',');
+  useEffect(()=>{
+    setTravelTimes({});
+    const bankItems=trip?.interestBank||[];
+    if(sorted.length<2)return;
+    let cancelled=false;
+    const getCoords=blk=>{
+      if(blk.lat&&blk.lng)return{lat:blk.lat,lng:blk.lng};
+      if(blk.placeId){const bi=bankItems.find(x=>x.placeId===blk.placeId);if(bi?.lat&&bi?.lng)return{lat:bi.lat,lng:bi.lng};}
+      return null;
+    };
+    (async()=>{
+      for(let i=0;i<sorted.length-1;i++){
+        if(cancelled)break;
+        const a=sorted[i],nb=sorted[i+1];
+        if(a.type==='travel'||nb.type==='travel')continue;
+        const ac=getCoords(a),bc=getCoords(nb);
+        if(!ac||!bc)continue;
+        const key=`${a.id}->${nb.id}`;
+        setTravelTimes(prev=>({...prev,[key]:{loading:true,min:null}}));
+        const min=await fetchOsrmMinutes(ac.lat,ac.lng,bc.lat,bc.lng);
+        if(!cancelled)setTravelTimes(prev=>({...prev,[key]:{loading:false,min}}));
+      }
+    })();
+    return()=>{cancelled=true;};
+  },[blocksKey,day?.id]);// eslint-disable-line
+
+  /* swipe */
   const touchX=useRef(null);
   const onTS=e=>{touchX.current=e.touches[0].clientX;};
   const onTE=e=>{
@@ -724,31 +908,80 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate}){
     const dx=e.changedTouches[0].clientX-touchX.current;
     touchX.current=null;
     if(Math.abs(dx)<50)return;
-    // RTL: swipe left → next day, swipe right → prev day
     if(dx<0)setDayIdx(i=>Math.min(days.length-1,i+1));
     else setDayIdx(i=>Math.max(0,i-1));
   };
 
-  const blockDur=b=>{
+  // day update helper
+  const updDay=upd=>{
+    if(!onUpdate||!trip||!day)return;
+    onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,...upd}:d)});
+  };
+
+  // block operations
+  const deleteBlock=id=>{
+    updDay({blocks:(day.blocks||[]).filter(b=>b.id!==id)});
+    setEditing(null);
+    toast('פעילות הוסרה','i');
+  };
+  const saveBlock=updated=>{
+    updDay({blocks:(day.blocks||[]).map(b=>b.id===updated.id?updated:b)});
+    setEditing(null);
+  };
+  const addBlock=type=>{
+    const last=sorted[sorted.length-1];
+    const startTime=last?.endTime||day?.startTime||'09:00';
+    const endTime=addMins(startTime,type==='travel'?30:60);
+    const b={id:uid(),type,title:'',startTime,endTime,note:'',placeId:'',address:'',lat:null,lng:null};
+    updDay({blocks:[...(day.blocks||[]),b]});
+    setEditing({...b});
+  };
+  const insertTravelBlock=(dayId,afterBlockId,rawMin)=>{
+    const buf=settings?.travelBuffer??1.2;
+    const buffered=Math.round(rawMin*buf);
+    const blk={id:uid(),type:'travel',title:`🚗 נסיעה (~${fmtTravelMin(buffered)})`,
+      startTime:'',endTime:'',note:'',isAutoTravel:true};
+    onUpdate({...trip,days:trip.days.map(d=>{
+      if(d.id!==dayId)return d;
+      const blks=d.blocks||[];
+      const idx=blks.findIndex(b=>b.id===afterBlockId);
+      if(idx===-1)return{...d,blocks:[...blks,blk]};
+      return{...d,blocks:[...blks.slice(0,idx+1),blk,...blks.slice(idx+1)]};
+    })});
+    toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה ✓`,'s');
+  };
+
+  const blockDurStr=b=>{
     if(!b.startTime||!b.endTime)return null;
-    const[sh,sm]=b.startTime.split(':').map(Number),[eh,em]=b.endTime.split(':').map(Number);
-    const m=(eh*60+em)-(sh*60+sm);if(m<=0)return null;
+    const m=toMinsStr(b.endTime)-toMinsStr(b.startTime);
+    if(m<=0)return null;
     return m>=60?`${Math.floor(m/60)}ש'${m%60?` ${m%60}ד`:''}`:` ${m}ד`;
   };
 
-  const toggleComplete=(dayId,blockId)=>{
-    if(!onUpdate||!trip)return;
-    onUpdate({...trip,days:trip.days.map(d=>d.id!==dayId?d:{
-      ...d,blocks:(d.blocks||[]).map(b=>b.id!==blockId?b:{...b,isCompleted:!b.isCompleted})
-    })});
-  };
+  // "now" indicator
+  const nowStr=nowTimeStr();
+  const nowM=toMinsStr(nowStr);
+  const isToday=!day?.date||day.date===todayISO();
+  let nowInsertIdx=-1;
+  if(isToday&&sorted.length>0){
+    const firstM=toMinsStr(sorted[0].startTime);
+    const lastEndM=toMinsStr(sorted[sorted.length-1].endTime||sorted[sorted.length-1].startTime);
+    if(nowM>=firstM-5&&nowM<=lastEndM+30){
+      nowInsertIdx=sorted.findIndex(b=>nowM<toMinsStr(b.startTime));
+      if(nowInsertIdx===-1)nowInsertIdx=sorted.length;
+    }
+  }
 
-  const updateNote=(dayId,blockId,note)=>{
-    if(!onUpdate||!trip)return;
-    onUpdate({...trip,days:trip.days.map(d=>d.id!==dayId?d:{
-      ...d,blocks:(d.blocks||[]).map(b=>b.id!==blockId?b:{...b,note})
-    })});
-  };
+  const nowLine=(
+    <div style={{display:'flex',alignItems:'center',gap:6,margin:'2px 0 6px',pointerEvents:'none'}}>
+      <span style={{background:'#ef4444',color:'#fff',fontSize:10,fontWeight:700,
+        padding:'2px 8px',borderRadius:10,flexShrink:0,letterSpacing:'0.02em'}}>⏱ {nowStr}</span>
+      <div style={{flex:1,height:2,background:'#ef4444',borderRadius:2,opacity:.8}}/>
+    </div>
+  );
+
+  const inpSt={background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:7,
+    padding:'7px 10px',color:'var(--text)',fontFamily:'Heebo,sans-serif',fontSize:13,outline:'none'};
 
   return(
     <div className={`screen${active?'':' h'}`} onTouchStart={onTS} onTouchEnd={onTE}>
@@ -761,72 +994,142 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate}){
       {trip&&days.length===0&&<div className="empty"><div className="eicon">📅</div><div className="etitle">אין ימים בלוז</div><div className="edesc">הוסף ימים דרך אפליקציית המחשב</div></div>}
 
       {day&&<>
-        {/* day navigation arrows */}
+        {/* day navigation */}
         <div className="day-nav">
           <button className="day-nav-btn" onClick={()=>setDayIdx(i=>i+1)} disabled={safeIdx>=days.length-1}>‹</button>
           <div className="day-nav-center">
-            <div className="day-nav-title">
-              יום {safeIdx+1}
-              {day.startLocation&&<span style={{fontWeight:400,color:'var(--text2)'}}> — {day.startLocation}</span>}
-            </div>
-            <div className="day-nav-sub">{day.startTime}–{day.endTime} · {(day.blocks||[]).length} פעילויות</div>
+            <div className="day-nav-title">יום {safeIdx+1}</div>
+            <div className="day-nav-sub">{sorted.length} פעילויות</div>
           </div>
           <button className="day-nav-btn" onClick={()=>setDayIdx(i=>i-1)} disabled={safeIdx<=0}>›</button>
         </div>
-
-        {/* dot indicators */}
         {days.length>1&&<div className="day-dots">
           {days.map((_,i)=><div key={i} className={`day-dot${i===safeIdx?' active':''}`} onClick={()=>setDayIdx(i)}/>)}
         </div>}
 
-        {/* blocks timeline */}
-        {(day.blocks||[]).length===0&&(
-          <div style={{padding:'30px 16px',textAlign:'center',color:'var(--text3)',fontSize:13}}>אין פעילויות ביום זה</div>
+        {/* start / end location */}
+        <div style={{padding:'8px 14px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',flexShrink:0}}>
+          <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:5}}>
+            <span style={{fontSize:11,color:'var(--green)',fontWeight:700,width:52,flexShrink:0}}>🟢 מוצא</span>
+            <input value={day.startLocation||''} onChange={e=>updDay({startLocation:e.target.value})}
+              placeholder="מאיפה יוצאים..." style={{...inpSt,flex:1,direction:'rtl'}}/>
+            <input type="time" value={day.startTime||'08:00'} onChange={e=>updDay({startTime:e.target.value})}
+              style={{...inpSt,direction:'ltr',width:74,flexShrink:0}}/>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <span style={{fontSize:11,color:'var(--red)',fontWeight:700,width:52,flexShrink:0}}>🔴 יעד</span>
+            <input value={day.endLocation||''} onChange={e=>updDay({endLocation:e.target.value})}
+              placeholder="לאן מגיעים..." style={{...inpSt,flex:1,direction:'rtl'}}/>
+            <input type="time" value={day.endTime||'20:00'} onChange={e=>updDay({endTime:e.target.value})}
+              style={{...inpSt,direction:'ltr',width:74,flexShrink:0}}/>
+          </div>
+        </div>
+
+        {/* add block buttons */}
+        <div style={{display:'flex',gap:6,padding:'8px 14px',overflowX:'auto',
+          borderBottom:'1px solid var(--border)',flexShrink:0,background:'var(--bg2)'}}>
+          {BLOCK_TYPES.map(t=>(
+            <button key={t} onClick={()=>addBlock(t)}
+              style={{padding:'5px 11px',borderRadius:10,flexShrink:0,
+                border:`1px solid ${BLOCK_COLOR[t]}55`,background:`${BLOCK_COLOR[t]}22`,
+                color:BLOCK_COLOR[t],fontSize:12,fontWeight:700,
+                fontFamily:'Heebo,sans-serif',cursor:'pointer',whiteSpace:'nowrap'}}>
+              + {BLOCK_EMOJI[t]}
+            </button>
+          ))}
+        </div>
+
+        {/* blocks list */}
+        {sorted.length===0&&(
+          <div style={{padding:'28px 16px',textAlign:'center',color:'var(--text3)',fontSize:13}}>
+            אין פעילויות — לחץ + להוסיף
+          </div>
         )}
         <div style={{flex:1,overflowY:'auto'}}>
-          {(day.blocks||[]).map((b,bi,arr)=>{
-            const hasLoc=!!(b.placeId||(b.lat&&b.lng));
-            const isExp=expandedId===b.id;
-            const done=!!b.isCompleted;
-            return(
-              <div key={b.id}>
-                <div className="blk-row" onClick={()=>setExpandedId(isExp?null:b.id)}>
-                  <div className="blk-left">
-                    <div
-                      className={`blk-circle${done?' done':''}`}
-                      style={{background:BLOCK_COLOR[b.type]||'#555',cursor:'pointer'}}
-                      onClick={e=>{e.stopPropagation();toggleComplete(day.id,b.id);}}
-                      title={done?'סמן כלא הושלם':'סמן כהושלם'}
-                    >
-                      {done?'✓':BLOCK_EMOJI[b.type]||'📌'}
+          <div style={{padding:'10px 14px 4px'}}>
+            {sorted.map((b,bi)=>{
+              const col=BLOCK_COLOR[b.type]||'#555';
+              const dur=blockDurStr(b);
+              const hasLoc=!!(b.placeId||(b.lat&&b.lng));
+              const next=sorted[bi+1]||null;
+              const ttKey=next?`${b.id}->${next.id}`:null;
+              const tt=ttKey?travelTimes[ttKey]:null;
+              const buf=settings?.travelBuffer??1.2;
+              return(
+                <React.Fragment key={b.id}>
+                  {nowInsertIdx===bi&&nowLine}
+                  {/* block card */}
+                  <div style={{background:'var(--surface)',border:'1px solid var(--border)',
+                    borderRight:`4px solid ${col}`,borderRadius:10,marginBottom:8,
+                    opacity:b.isCompleted?.65:1}}>
+                    <div style={{padding:'10px 12px'}}>
+                      {/* top row: time + actions */}
+                      <div style={{display:'flex',alignItems:'flex-start',gap:6,marginBottom:4}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:11,fontWeight:700,color:col,marginBottom:2}}>
+                            {b.startTime||''}{b.endTime?`–${b.endTime}`:''}
+                            {dur&&<span style={{fontWeight:400,color:'var(--text3)'}}> · {dur}</span>}
+                          </div>
+                          <div style={{fontSize:14,fontWeight:700,lineHeight:1.3}}>
+                            {BLOCK_EMOJI[b.type]} {b.title||BLOCK_HE[b.type]}
+                          </div>
+                          {b.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1}}>{b.placeType}</div>}
+                          {b.address&&<div style={{fontSize:11,color:'var(--text3)',marginTop:3}}>📍 {b.address}</div>}
+                          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:2}}>
+                            {b.placeRating&&<span style={{fontSize:11,color:'var(--amber)'}}>⭐ {b.placeRating}</span>}
+                            {b.placeOpenStatus&&<span style={{fontSize:11,fontWeight:600,
+                              color:b.placeOpenStatus==='פתוח עכשיו'?'var(--green)':'var(--red)'}}>
+                              {b.placeOpenStatus==='פתוח עכשיו'?'✅':'🔴'} {b.placeOpenStatus}
+                            </span>}
+                          </div>
+                          {b.note&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,fontStyle:'italic'}}>📝 {b.note}</div>}
+                        </div>
+                        {/* action buttons */}
+                        <div style={{display:'flex',gap:2,flexShrink:0}}>
+                          {hasLoc&&<button onClick={()=>onShowOnMap&&onShowOnMap({lat:b.lat,lng:b.lng,placeId:b.placeId,name:b.title||BLOCK_HE[b.type],address:b.address||''})}
+                            style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--accent2)'}}>🗺️</button>}
+                          <button onClick={()=>setEditing({...b})}
+                            style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--text3)'}}>✏️</button>
+                          <button onClick={()=>deleteBlock(b.id)}
+                            style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--red)',fontWeight:700}}>✕</button>
+                        </div>
+                      </div>
                     </div>
-                    {bi<arr.length-1&&<div className="blk-line"/>}
                   </div>
-                  <div className="blk-content">
-                    <div className={`blk-title${done?' done':''}`}>{b.title||BLOCK_HE[b.type]||b.type}</div>
-                    <div className="blk-meta">
-                      {b.startTime&&`${b.startTime}${b.endTime?` — ${b.endTime}`:''}`}
-                      {blockDur(b)&&<span style={{color:'var(--text3)'}}> · {blockDur(b)}</span>}
-                      {!isExp&&b.note&&<span style={{color:'var(--accent2)',display:'block',marginTop:2}}>📝 {b.note}</span>}
-                    </div>
-                    {/* inline note editor — shown when expanded */}
-                    {isExp&&<textarea
-                      className="note-inline"
-                      rows={3}
-                      defaultValue={b.note||''}
-                      placeholder="הוסף הערה לפעילות..."
-                      onClick={e=>e.stopPropagation()}
-                      onBlur={e=>updateNote(day.id,b.id,e.target.value.trim())}
-                    />}
-                  </div>
-                  {hasLoc&&<button className="blk-map-btn" onClick={e=>{e.stopPropagation();onShowOnMap&&onShowOnMap({lat:b.lat,lng:b.lng,placeId:b.placeId,name:b.title||BLOCK_HE[b.type],address:b.address||''});}}>🗺️</button>}
-                </div>
-              </div>
-            );
-          })}
-          <div style={{height:16}}/>
+                  {/* OSRM connector */}
+                  {next&&b.type!=='travel'&&next.type!=='travel'&&tt&&!tt.loading&&tt.min!=null&&(
+                    tt.min>MAX_TRAVEL_MINS
+                      ?<div style={{display:'flex',alignItems:'center',gap:7,padding:'5px 10px',marginBottom:8,
+                          background:'rgba(239,68,68,.07)',borderRadius:8,border:'1px solid rgba(239,68,68,.25)'}}>
+                          <span style={{fontSize:11,color:'var(--red)',flex:1}}>
+                            🚨 נסיעה ארוכה מ-10 שעות ({fmtTravelMin(tt.min)}) — בדוק שהאתרים באותה מדינה/יבשת
+                          </span>
+                        </div>
+                      :<div style={{display:'flex',alignItems:'center',gap:7,padding:'5px 10px',marginBottom:8,
+                          background:'rgba(79,142,247,.06)',borderRadius:8,border:'1px solid rgba(79,142,247,.15)'}}>
+                          <span style={{fontSize:11,color:'var(--text3)',flex:1,lineHeight:1.45}}>
+                            🚗 {fmtTravelMin(tt.min)} נסיעה
+                            {buf>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf-1))} דק' התארגנות = <b style={{color:'var(--text2)'}}>{fmtTravelMin(Math.round(tt.min*buf))}</b></span>}
+                          </span>
+                          <button onClick={()=>insertTravelBlock(day.id,b.id,tt.min)}
+                            style={{fontSize:10,padding:'4px 9px',border:'1px solid rgba(79,142,247,.4)',borderRadius:6,
+                              background:'rgba(79,142,247,.12)',color:'var(--accent2)',cursor:'pointer',
+                              fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap',flexShrink:0}}>
+                            + הוסף ללוז
+                          </button>
+                        </div>
+                  )}
+                </React.Fragment>
+              );
+            })}
+            {nowInsertIdx===sorted.length&&nowLine}
+          </div>
+          <div style={{height:20}}/>
         </div>
       </>}
+
+      {/* block edit sheet */}
+      {editing&&<BlockEditSheet block={editing} onSave={saveBlock} onDelete={deleteBlock} onClose={()=>setEditing(null)}/>}
     </div>
   );
 }
@@ -1269,7 +1572,7 @@ function DocsTab({trip}){
 /* ════════════════════════════════
    TRIP SCREEN
 ════════════════════════════════ */
-function TripScreen({trips,activeId,onSelectTrip,syncStatus,onRefresh,active}){
+function TripScreen({trips,activeId,onSelectTrip,syncStatus,onRefresh,active,settings,onSettingsChange}){
   const trip=trips.find(t=>t.id===activeId)||trips[0]||null;
   const totalExp=trip?.expenses?.reduce((s,e)=>s+(parseFloat(e.amount)||0),0)||0;
   const sl={idle:'⚪ לא מחובר',syncing:'🔄 מסנכרן...',synced:'✅ מסונכרן',error:'❌ שגיאה'};
@@ -1306,6 +1609,32 @@ function TripScreen({trips,activeId,onSelectTrip,syncStatus,onRefresh,active}){
           </div>
           <div className="crow" style={{cursor:'pointer'}} onClick={()=>{if(window.confirm('לפתוח אפליקציית מחשב?'))window.open('index.html','_blank');}}>
             <div className="cicon">💻</div><div className="cmain"><div className="ctitle">פתח אפליקציית מחשב</div><div className="csub">עריכה מלאה</div></div>
+          </div>
+        </div>
+        <div className="slabel">⚙️ הגדרות</div>
+        <div className="card" style={{margin:'0 14px'}}>
+          {/* ── travel buffer factor ── */}
+          <div className="crow" style={{alignItems:'flex-start',gap:10,flexWrap:'wrap'}}>
+            <div className="cicon" style={{marginTop:3}}>🚗</div>
+            <div className="cmain">
+              <div className="ctitle">פקטור זמן נסיעה</div>
+              <div className="csub" style={{lineHeight:1.55,marginTop:3}}>
+                כפיל לזמן הנסיעה המחושב אוטומטית בלוז היומי.
+                כולל זמן התארגנות — לדוגמה <b style={{color:'var(--text2)'}}>×1.2</b> אומר שנסיעה של 30 דק' תוצג כ-36 דק' (30 + 6 דק' התארגנות).
+              </div>
+            </div>
+            <select value={settings?.travelBuffer??1.2}
+              onChange={e=>onSettingsChange({...settings,travelBuffer:parseFloat(e.target.value)})}
+              style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:8,
+                padding:'7px 10px',color:'var(--text)',fontFamily:'Heebo,sans-serif',
+                fontSize:13,outline:'none',flexShrink:0,marginTop:2,direction:'ltr'}}>
+              <option value={1.0}>×1.0 — ללא תוספת</option>
+              <option value={1.1}>×1.1 — +10%</option>
+              <option value={1.2}>×1.2 — +20% (מומלץ)</option>
+              <option value={1.3}>×1.3 — +30%</option>
+              <option value={1.5}>×1.5 — +50%</option>
+              <option value={2.0}>×2.0 — כפול</option>
+            </select>
           </div>
         </div>
       </>:<div className="empty"><div className="eicon">✈️</div><div className="etitle">לא נמצאו טיולים</div><div className="edesc">צור טיול דרך אפליקציית המחשב</div></div>}
@@ -1349,8 +1678,8 @@ function BottomNav({active,onChange}){
 ════════════════════════════════ */
 function App(){
   const saved=useMemo(()=>loadState(),[]);
-  const[settings]=useState(()=>{
-    const def={firebaseUrl:FB_URL,syncKey:'',googleMapsKey:GMAPS_KEY};
+  const[settings,setSettings]=useState(()=>{
+    const def={firebaseUrl:FB_URL,syncKey:'',googleMapsKey:GMAPS_KEY,travelBuffer:1.2};
     return{...def,...(saved?.settings||{}),firebaseUrl:FB_URL};
   });
   const[trips,setTrips]=useState(()=>{
@@ -1404,10 +1733,10 @@ function App(){
 
   useEffect(()=>{loadFromFirebase();},[]);// eslint-disable-line
 
-  /* persist to localStorage */
+  /* persist to localStorage (including settings changes) */
   useEffect(()=>{
-    if(trips.length>0)saveState({settings,trips,activeId});
-  },[trips,activeId]);// eslint-disable-line
+    saveState({settings,trips,activeId});
+  },[trips,activeId,settings]);// eslint-disable-line
 
   /* debounced auto-save to Firebase */
   const debounceSave=useCallback((newTrips,newActiveId)=>{
@@ -1435,10 +1764,10 @@ function App(){
       <ToastLayer/>
       <div className="sw">
         <MapScreen trip={trip} active={screen==='map'} mapsReady={mapsReady} onUpdate={updateTrip} mapFocusRef={mapFocusRef}/>
-        <ScheduleScreen trip={trip} active={screen==='schedule'} onShowOnMap={showOnMap} onUpdate={updateTrip}/>
+        <ScheduleScreen trip={trip} active={screen==='schedule'} onShowOnMap={showOnMap} onUpdate={updateTrip} settings={settings}/>
         <BankScreen trip={trip} active={screen==='bank'} onShowOnMap={showOnMap}/>
         <ListsScreen trip={trip} active={screen==='lists'} onUpdate={updateTrip}/>
-        <TripScreen trips={trips} activeId={activeId} onSelectTrip={setActiveId} syncStatus={syncStatus} onRefresh={loadFromFirebase} active={screen==='trip'}/>
+        <TripScreen trips={trips} activeId={activeId} onSelectTrip={setActiveId} syncStatus={syncStatus} onRefresh={loadFromFirebase} active={screen==='trip'} settings={settings} onSettingsChange={setSettings}/>
       </div>
       <BottomNav active={screen} onChange={setScreen}/>
     </>
