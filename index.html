@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v82';
+const APP_VERSION = 'v83';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -346,7 +346,7 @@ const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
 const nowTime = () => { const n=new Date(); return `${fmt2(n.getHours())}:${fmt2(n.getMinutes())}`; };
-const addMins = (t,m) => { const [h,mi]=t.split(':').map(Number),tot=h*60+mi+m; return `${fmt2(Math.floor(tot/60)%24)}:${fmt2(tot%60)}`; };
+const addMins = (t,m) => { if(!t)return''; const [h,mi]=(t||'00:00').split(':').map(Number),tot=h*60+mi+(m??0); const hh=((Math.floor(tot/60)%24)+24)%24,mm=((tot%60)+60)%60; return`${fmt2(hh)}:${fmt2(mm)}`; };
 
 const EXPENSE_CATS    = ['דלק','אוכל','קמפינג','אגרות','פעילויות','קניות','תחזוקה','אחר'];
 const CAT_COLORS      = {'דלק':'#ef4444','אוכל':'#f59e0b','קמפינג':'#22c55e','אגרות':'#8b5cf6','פעילויות':'#4f8ef7','קניות':'#ec4899','תחזוקה':'#f97316','אחר':'#6b7280'};
@@ -1532,7 +1532,8 @@ function BlockModal({block,onSave,onClose,onDelete,onBankNoteUpdate}){
    בלוק בציר הזמן
 ══════════════════════════════════ */
 function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem,dragging,dragOver,onDragStart,onDragOver,onDrop,onDragEnd,nowProgress}){
-  const end=addMins(block.startTime,block.durationMins);
+  // תומך בשני פורמטים: durationMins (דסקטופ) ו-endTime (מובייל)
+  const end=block.durationMins!=null?addMins(block.startTime,block.durationMins):(block.endTime||'');
   const col=BLOCK_COLOR[block.type]||'var(--text3)';
   const btnStyle={background:'none',border:'none',cursor:'pointer',padding:'2px 5px',borderRadius:4,fontSize:15,lineHeight:1,flexShrink:0};
   return <div className="timeline-block" draggable
@@ -1672,7 +1673,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
     arr.splice(toIdx,0,moved);
     // עדכון שעות: הראשון שומר על שעתו, השאר קוסקדה
     let t=arr[0].startTime;
-    const reordered=arr.map(b=>{const nb={...b,startTime:t};t=addMins(t,b.durationMins||60);return nb;});
+    const reordered=arr.map(b=>{const nb={...b,startTime:t};t=addMins(t,bDur(b));return nb;});
     onUpdate({...day,blocks:reordered});
     dragIdxRef.current=null;setDragOver(null);
   };
@@ -1683,14 +1684,14 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
     setBankPickForBlock(null);
     const s=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
     const last=s[s.length-1];
-    const start=last?addMins(last.startTime,last.durationMins||60):(day.currentTime||'09:00');
+    const start=last?addMins(last.startTime,bDur(last)):(day.currentTime||'09:00');
     onUpdate({...day,blocks:[...day.blocks,defaultBlock(type,start)]});
   };
   const bankPickedForBlock=(item,type)=>{
     setBankPickForBlock(null);
     const s=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
     const last=s[s.length-1];
-    const start=last?addMins(last.startTime,last.durationMins||60):(day.currentTime||'09:00');
+    const start=last?addMins(last.startTime,bDur(last)):(day.currentTime||'09:00');
     const block={
       ...defaultBlock(type,start),
       title:item.name||'',location:item.address||'',
@@ -1711,12 +1712,18 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
 
   /* ── cascade / end-time helpers ── */
   const toMinsD=t=>{const[h,m]=(t||'00:00').split(':').map(Number);return h*60+m;};
+  // תומך בפורמט מובייל (endTime) ובפורמט דסקטופ (durationMins)
+  const bDur=b=>{
+    if(b.durationMins!=null)return b.durationMins;
+    if(b.startTime&&b.endTime)return Math.max(0,toMinsD(b.endTime)-toMinsD(b.startTime));
+    return 60;
+  };
   const cascadeBlocks=()=>{
     if(!sorted.length)return;
     const delta=toMinsD(day.startTime||'08:00')-toMinsD(sorted[0].startTime);
     if(delta===0){toast('הפעילויות כבר מסונכרנות ✓','success');return;}
     let t=day.startTime||'08:00';
-    const reordered=sorted.map(b=>{const nb={...b,startTime:t};t=addMins(t,b.durationMins||60);return nb;});
+    const reordered=sorted.map(b=>{const nb={...b,startTime:t};t=addMins(t,bDur(b));return nb;});
     onUpdate({...day,blocks:reordered});
     toast(`שעות עודכנו ${delta>0?'+':''}${delta} דקות ✓`,'success');
   };
@@ -1731,7 +1738,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
   };
   const lastSortedBlock=sorted[sorted.length-1];
   const dayEndMins=toMinsD(day.endTime||'20:00');
-  const lastEndMins=lastSortedBlock?toMinsD(lastSortedBlock.startTime)+(lastSortedBlock.durationMins||60):0;
+  const lastEndMins=lastSortedBlock?toMinsD(lastSortedBlock.startTime)+bDur(lastSortedBlock):0;
   const overrunMins=lastEndMins-dayEndMins;
   const cascadeNeeded=sorted.length>0&&toMinsD(sorted[0].startTime)!==toMinsD(day.startTime||'08:00');
 
@@ -1884,7 +1891,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
               <div style={{display:'flex',alignItems:'center',gap:6,marginTop:5}}>
                 <span style={{fontSize:11,color:'var(--amber)'}}>
                   ⚠️ הלוז חורג מזמן הסיום ({day.endTime}) ב-<b>{fmtTravelMin(overrunMins)}</b>
-                  {lastSortedBlock&&` (אחרון: ${addMins(lastSortedBlock.startTime,lastSortedBlock.durationMins||60)})`}
+                  {lastSortedBlock&&` (אחרון: ${addMins(lastSortedBlock.startTime,bDur(lastSortedBlock))})`}
                 </span>
               </div>
             )}
@@ -1910,17 +1917,17 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
 
           if(isToday&&sorted.length>0){
             const firstMins=toMins(sorted[0].startTime);
-            const lastEnd=toMins(sorted[sorted.length-1].startTime)+(sorted[sorted.length-1].durationMins||60);
+            const lastEnd=toMins(sorted[sorted.length-1].startTime)+bDur(sorted[sorted.length-1]);
             if(nowMins>=firstMins-5&&nowMins<=lastEnd+30){
               /* בדוק האם השעה בתוך בלוק כלשהו */
               activeIdx=sorted.findIndex(b=>{
                 const s=toMins(b.startTime);
-                return nowMins>=s&&nowMins<s+(b.durationMins||60);
+                return nowMins>=s&&nowMins<s+bDur(b);
               });
               if(activeIdx>=0){
                 /* חשב התקדמות יחסית בתוך הבלוק (0–1) */
                 const s=toMins(sorted[activeIdx].startTime);
-                nowBlockProgress=(nowMins-s)/(sorted[activeIdx].durationMins||60);
+                nowBlockProgress=(nowMins-s)/bDur(sorted[activeIdx]);
               } else {
                 /* בין בלוקים — חשב מיקום הוספה */
                 nowInsert=sorted.findIndex(b=>nowMins<toMins(b.startTime));
@@ -1979,7 +1986,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
             const buf2=settings?.travelBuffer??1.2;
             const buffered=Math.round(tt.min*buf2);
             const insertTravelEnd=()=>{
-              const travelStart=addMins(last2.startTime,last2.durationMins||60);
+              const travelStart=addMins(last2.startTime,bDur(last2));
               const nb={id:uid(),type:'travel',
                 title:`🚗 נסיעה (~${fmtTravelMin(buffered)})`,
                 startTime:travelStart,durationMins:buffered,notes:'',isAutoTravel:true};
@@ -2038,12 +2045,12 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
               const buffered=Math.round(tt.min*buf);
               const insertTravel=()=>{
                 const afterBlk=sorted[si];
-                const travelStart=addMins(afterBlk.startTime,afterBlk.durationMins||60);
+                const travelStart=addMins(afterBlk.startTime,bDur(afterBlk));
                 const nb2={id:uid(),type:'travel',
                   title:`🚗 נסיעה (~${fmtTravelMin(buffered)})`,
                   startTime:travelStart,durationMins:buffered,notes:'',isAutoTravel:true};
                 let t=addMins(travelStart,buffered);
-                const tail=sorted.slice(si+1).map(b2=>{const s={...b2,startTime:t};t=addMins(t,b2.durationMins||60);return s;});
+                const tail=sorted.slice(si+1).map(b2=>{const s={...b2,startTime:t};t=addMins(t,bDur(b2));return s;});
                 onUpdate({...day,blocks:[...sorted.slice(0,si+1),nb2,...tail]});
                 toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה`,'success');
               };
@@ -2080,7 +2087,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
         <span style={{fontSize:22}}>⚠️</span>
         <span style={{fontSize:13,color:'var(--amber)',fontWeight:600,flex:1}}>
           הלוז חורג מזמן הסיום ({day.endTime}) ב-<b>{fmtTravelMin(overrunMins)}</b>
-          {lastSortedBlock&&` — פעילות אחרונה מסתיימת ב-${addMins(lastSortedBlock.startTime,lastSortedBlock.durationMins||60)}`}
+          {lastSortedBlock&&` — פעילות אחרונה מסתיימת ב-${addMins(lastSortedBlock.startTime,bDur(lastSortedBlock))}`}
         </span>
       </div>}
 
@@ -2140,7 +2147,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
             place=>{
               const s=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
               const last=s[s.length-1];
-              const start=last?addMins(last.startTime,last.durationMins||60):(day.currentTime||'09:00');
+              const start=last?addMins(last.startTime,bDur(last)):(day.currentTime||'09:00');
               const block={...defaultBlock(t,start),
                 title:place.name||'',location:place.address||'',
                 lat:place.lat||null,lng:place.lng||null};
