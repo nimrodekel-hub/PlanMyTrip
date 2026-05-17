@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v80';
+const APP_VERSION = 'v81';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -3782,19 +3782,12 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
       documents:(t.documents||[]).map(d=>({...d,id:uid()})),
     });
   };
-  // שכפול מבנה — ימים ולוז בלבד, ללא בנק/מסמכים/הוצאות, מנקה סטטוסים
+  // שכפול מצומצם — בנק האטרקציות בלבד, ללא לוז/מסמכים/הוצאות
   const duplicateStructure=(t)=>{
-    onNewTrip(t.name+' (תבנית)',{
-      ...t,
-      interestBank:[],
-      expenses:[],
-      documents:[],
-      packingList:(t.packingList||[]).map(i=>({...i,id:uid(),checked:false})),
-      shoppingList:(t.shoppingList||[]).map(i=>({...i,id:uid(),checked:false})),
-      days:(t.days||[]).map(d=>({
-        ...d,id:uid(),summary:'',
-        blocks:(d.blocks||[]).map(b=>({...b,id:uid(),isCompleted:false,cost:0,rating:0}))
-      })),
+    const base=defaultTrip(t.name+' — בנק');
+    onNewTrip(base.name,{
+      ...base,
+      interestBank:(t.interestBank||[]).map(i=>({...i,id:uid()})),
     });
   };
 
@@ -3842,7 +3835,7 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
                   </div>
                   <button className="btn btn-secondary btn-sm" title="שנה שם" onClick={()=>startRename(t)}>✏️</button>
                   <button className="btn btn-secondary btn-sm" title="שכפול מלא — כל הבנק, הלוז, המסמכים וההוצאות" onClick={()=>duplicateFull(t)}>📋</button>
-                  <button className="btn btn-secondary btn-sm" title="שכפול מבנה — ימים ולוז בלבד, ללא בנק/מסמכים/הוצאות" onClick={()=>duplicateStructure(t)}>📐</button>
+                  <button className="btn btn-secondary btn-sm" title="שכפול מצומצם — בנק האטרקציות בלבד, ללא לוז/מסמכים/הוצאות" onClick={()=>duplicateStructure(t)}>📐</button>
                   {t.id!==activeTrip?.id&&<button className="btn btn-secondary btn-sm" onClick={()=>onLoadTrip(t.id)}>טען</button>}
                   {t.id===activeTrip?.id&&<span className="chip chip-green" style={{fontSize:10}}>פעיל</span>}
                   <button className="btn btn-danger btn-sm" onClick={()=>{if(confirm(`למחוק את "${t.name}"?`))onDeleteTrip(t.id);}}>🗑</button>
