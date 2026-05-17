@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m22';
+const MOB_VER='m23';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -901,7 +901,7 @@ function BlockEditSheet({block,onSave,onDelete,onClose,isNew}){
 /* ════════════════════════════════
    LOCATION PICKER SHEET
 ════════════════════════════════ */
-function LocationPickerSheet({bank,title,onPick,onPickFromMap,onClose}){
+function LocationPickerSheet({bank,title,onPick,onPickFromMap,onClose,onCreateEmpty}){
   const[search,setSearch]=useState('');
   const inp={background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:7,
     padding:'8px 10px',color:'var(--text)',fontFamily:'Heebo,sans-serif',fontSize:13,
@@ -918,12 +918,21 @@ function LocationPickerSheet({bank,title,onPick,onPickFromMap,onClose}){
             <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)'}}>✕</button>
           </div>
           {onPickFromMap&&(
-            <button onClick={onPickFromMap} style={{width:'100%',padding:'10px',marginBottom:10,flexShrink:0,
+            <button onClick={onPickFromMap} style={{width:'100%',padding:'10px',marginBottom:8,flexShrink:0,
               background:'rgba(79,142,247,.12)',border:'1px solid rgba(79,142,247,.3)',
               borderRadius:8,color:'var(--accent2)',fontSize:13,fontWeight:700,
               cursor:'pointer',fontFamily:'Heebo,sans-serif',display:'flex',
               alignItems:'center',justifyContent:'center',gap:6}}>
               🗺️ בחר מהמפה
+            </button>
+          )}
+          {onCreateEmpty&&(
+            <button onClick={onCreateEmpty} style={{width:'100%',padding:'10px',marginBottom:10,flexShrink:0,
+              background:'var(--bg3)',border:'1px solid var(--border)',
+              borderRadius:8,color:'var(--text2)',fontSize:13,fontWeight:600,
+              cursor:'pointer',fontFamily:'Heebo,sans-serif',display:'flex',
+              alignItems:'center',justifyContent:'center',gap:6}}>
+              ✍️ הוסף ידנית (ריק)
             </button>
           )}
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="חפש מקום בבנק..." style={{...inp,flexShrink:0}}/>
@@ -959,6 +968,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
   const[travelTimes,setTravelTimes]=useState({});
   const[editing,setEditing]=useState(null);
   const[locationPicking,setLocationPicking]=useState(null); // {field:'start'|'end'}
+  const[bankPickForBlock,setBankPickForBlock]=useState(null); // {type} — show bank picker for adding block
   const[,setTick]=useState(0);
 
   const days=trip?.days||[];
@@ -1062,11 +1072,31 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
     setEditing(null);
   };
   const addBlock=type=>{
+    setBankPickForBlock({type}); // show bank / map / manual picker
+  };
+  const addEmptyBlock=type=>{
     const last=sorted[sorted.length-1];
     const startTime=last?.endTime||day?.startTime||'09:00';
     const endTime=addMins(startTime,type==='travel'?30:60);
     const b={id:uid(),type,title:'',startTime,endTime,note:'',placeId:'',address:'',lat:null,lng:null};
-    // don't add to day yet — only add when user clicks Save
+    setBankPickForBlock(null);
+    setEditing({...b,_isNew:true});
+  };
+  const bankPickedForBlock=(item,type)=>{
+    const last=sorted[sorted.length-1];
+    const startTime=last?.endTime||day?.startTime||'09:00';
+    const endTime=addMins(startTime,60);
+    const b={id:uid(),type,
+      title:item.name||'',startTime,endTime,
+      note:item.note||'',
+      placeId:item.placeId||'',address:item.address||'',
+      lat:item.lat||null,lng:item.lng||null,
+      placeRating:item.rating||null,placeWebsite:item.website||'',
+      placePhone:item.phone||'',placeTodayHours:item.todayHours||'',
+      placeOpenStatus:item.openStatus||'',placeType:item.placeType||'',
+      placePhotoUrl:item.photoUrl||'',
+    };
+    setBankPickForBlock(null);
     setEditing({...b,_isNew:true});
   };
   const insertTravelBlock=(dayId,afterBlockId,rawMin)=>{
@@ -1401,6 +1431,33 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
             );
           }:null}
           onClose={()=>setLocationPicking(null)}
+        />
+      )}
+
+      {/* bank picker for adding a block */}
+      {bankPickForBlock&&(
+        <LocationPickerSheet
+          bank={trip?.interestBank||[]}
+          title={`${BLOCK_EMOJI[bankPickForBlock.type]} הוסף ${BLOCK_HE[bankPickForBlock.type]}`}
+          onPick={item=>bankPickedForBlock(item,bankPickForBlock.type)}
+          onPickFromMap={onPickFromMap?()=>{
+            const t=bankPickForBlock.type;
+            setBankPickForBlock(null);
+            onPickFromMap(
+              `${BLOCK_EMOJI[t]} בחר מקום על המפה`,
+              place=>{
+                const last=sorted[sorted.length-1];
+                const startTime=last?.endTime||day?.startTime||'09:00';
+                const endTime=addMins(startTime,60);
+                const b={id:uid(),type:t,title:place.name||'',startTime,endTime,
+                  note:'',placeId:'',address:place.address||'',
+                  lat:place.lat||null,lng:place.lng||null};
+                setEditing({...b,_isNew:true});
+              }
+            );
+          }:null}
+          onCreateEmpty={()=>addEmptyBlock(bankPickForBlock.type)}
+          onClose={()=>setBankPickForBlock(null)}
         />
       )}
     </div>
