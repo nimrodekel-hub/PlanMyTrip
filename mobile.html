@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m9';
+const MOB_VER='m10';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -452,7 +452,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
   useEffect(()=>{
     if(!mapsReady||!mapDivRef.current||mapRef.current)return;
     const m=new window.google.maps.Map(mapDivRef.current,{
-      center:{lat:46,lng:14},zoom:5,
+      center:{lat:32,lng:35},zoom:8, // ישראל כברירת מחדל — מוחלף ב-GPS תוך שניה
       disableDefaultUI:true,gestureHandling:'greedy',styles:DARK_MAP,
     });
     svcRef.current=new window.google.maps.places.PlacesService(m);
@@ -463,6 +463,16 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
       loadPlace(e.placeId,e.latLng.lat(),e.latLng.lng());
     });
     mapRef.current=m;
+    // מרכז על מיקום GPS אמיתי ברגע שזמין
+    navigator.geolocation?.getCurrentPosition(
+      p=>{
+        if(!mapRef.current)return;
+        mapRef.current.panTo({lat:p.coords.latitude,lng:p.coords.longitude});
+        mapRef.current.setZoom(12);
+      },
+      null,
+      {timeout:6000,maximumAge:60000,enableHighAccuracy:false}
+    );
   },[mapsReady]);
 
   /* resize + handle focus request when tab activates */
@@ -632,6 +642,18 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
 
       {/* current location FAB */}
       <button className="map-fab loc-fab" onClick={goLoc} title="מיקום נוכחי">◎</button>
+
+      {/* zoom +/− buttons */}
+      <div style={{position:'absolute',left:14,bottom:68,zIndex:10,display:'flex',flexDirection:'column',gap:4}}>
+        <button onClick={()=>mapRef.current?.setZoom((mapRef.current.getZoom()||8)+1)}
+          style={{width:44,height:44,borderRadius:12,border:'1px solid var(--border)',background:'var(--bg2)',
+            color:'var(--text)',fontSize:24,fontWeight:300,cursor:'pointer',display:'flex',alignItems:'center',
+            justifyContent:'center',boxShadow:'0 2px 10px rgba(0,0,0,.5)',lineHeight:1}}>+</button>
+        <button onClick={()=>mapRef.current?.setZoom(Math.max(1,(mapRef.current.getZoom()||8)-1))}
+          style={{width:44,height:44,borderRadius:12,border:'1px solid var(--border)',background:'var(--bg2)',
+            color:'var(--text)',fontSize:24,fontWeight:300,cursor:'pointer',display:'flex',alignItems:'center',
+            justifyContent:'center',boxShadow:'0 2px 10px rgba(0,0,0,.5)',lineHeight:1}}>−</button>
+      </div>
 
       {/* loading indicator */}
       {loading&&<div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',zIndex:20,background:'var(--bg2)',borderRadius:50,padding:14,border:'1px solid var(--border)'}}>
