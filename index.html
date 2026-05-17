@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v72';
+const APP_VERSION = 'v73';
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmt2 = n => n?.toString().padStart(2,'0');
 const dateStr = d => { if (!d) return ''; return new Date(d).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); };
@@ -962,7 +962,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
 
     // InfoWindow גלובלי
     const iwPlace={};
-    const iw=new window.google.maps.InfoWindow({maxWidth:320});
+    const iw=new window.google.maps.InfoWindow({maxWidth:230,disableAutoPan:false});
 
     const buildIwContent=(p)=>{
       const days=tripRef.current?.days||[];
@@ -970,49 +970,46 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
         ? days.map((d,i)=>`<option value="${d.id}">יום ${i+1}${d.location?' — '+d.location:''}${d.date?' ('+d.date+')':''}</option>`).join('')
         : '<option disabled>אין ימים בלוח הזמנים</option>';
       const price=p.priceLevel?'₪'.repeat(p.priceLevel):'';
-      const starsHtml=p.rating?`${'★'.repeat(Math.round(p.rating))}${'☆'.repeat(5-Math.round(p.rating))}`:'';
-      const reviewsHtml=(p.reviews||[]).slice(0,2).map(r=>`
-        <div style="background:#f9f9f9;border-radius:6px;padding:6px 8px;margin-top:6px;font-size:11px;color:#444;line-height:1.4;direction:rtl">
-          <span style="color:#f59e0b;font-size:11px">${'★'.repeat(r.rating||0)}</span>
-          <span style="color:#999;margin-right:4px">${r.author_name||''}</span><br/>
-          ${(r.text||'').slice(0,120)}${(r.text||'').length>120?'…':''}
-        </div>`).join('');
-      return `<div style="font-family:Heebo,Arial,sans-serif;direction:rtl;text-align:right;padding:6px;min-width:240px;max-width:310px">
-        ${p.photoUrl?`<img src="${p.photoUrl}" style="width:100%;height:110px;object-fit:cover;border-radius:8px;margin-bottom:10px;display:block"/>`:''}
-        <input id="gm-name-edit" value="${(p.name||'').replace(/"/g,'&quot;')}"
-          style="width:100%;border:1px solid #ddd;border-radius:6px;padding:5px 8px;font-size:14px;font-weight:700;font-family:Heebo,Arial,sans-serif;direction:rtl;color:#111;margin-bottom:3px;box-sizing:border-box"/>
-        <div style="font-size:11px;color:#888;margin-bottom:6px;line-height:1.4">${p.address}</div>
-        ${p._noGoogle?`<div style="font-size:10px;color:#f59e0b;background:#fffbeb;border-radius:5px;padding:4px 7px;margin-bottom:6px">⚠️ פרטים מלאים דורשים <a href="https://console.cloud.google.com/billing" target="_blank" style="color:#d97706">Billing Account</a> ב-Google Cloud</div>`:''}
-        ${p.rating?`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
-          <span style="color:#f59e0b;font-size:14px">${starsHtml}</span>
-          <span style="font-size:12px;font-weight:600;color:#333">${p.rating}</span>
-          ${p.userRatingsTotal?`<span style="font-size:11px;color:#888">(${p.userRatingsTotal.toLocaleString()} ביקורות)</span>`:''}
-          ${price?`<span style="font-size:11px;color:#22c55e;font-weight:700">${price}</span>`:''}
-        </div>`:''}
-        ${p.openStatus?`<div style="font-size:12px;font-weight:600;margin-bottom:4px;${p.openStatus==='פתוח עכשיו'?'color:#22c55e':'color:#ef4444'}">${p.openStatus==='פתוח עכשיו'?'✅':'🔴'} ${p.openStatus}</div>`:''}
-        ${p.todayHours?`<div style="font-size:11px;color:#555;margin-bottom:6px">🕐 ${p.todayHours}</div>`:''}
-        ${p.phone?`<div style="font-size:11px;color:#4f8ef7;margin-bottom:4px">📞 ${p.phone}</div>`:''}
-        ${p.website?`<a href="${p.website}" target="_blank" rel="noreferrer" style="font-size:11px;color:#4f8ef7;display:block;margin-bottom:8px;word-break:break-all">🌐 ${p.website.replace(/^https?:\/\//,'').split('/')[0]}</a>`:''}
-        ${reviewsHtml?`<div style="margin-bottom:8px">${reviewsHtml}</div>`:''}
-        ${p.allHours?`<details style="margin-bottom:8px;font-size:11px;color:#555"><summary style="cursor:pointer;font-weight:600">🕐 שעות פעילות</summary><div style="margin-top:4px;line-height:1.8">${p.allHours}</div></details>`:''}
-        ${p.placeId?`<a href="https://www.google.com/maps/place/?q=place_id:${p.placeId}" target="_blank" rel="noreferrer"
-          style="display:block;text-align:center;padding:7px;background:#e8f0fe;border-radius:7px;color:#1a73e8;font-size:12px;font-weight:600;text-decoration:none;margin-bottom:8px">
-          🗺️ פתח בגוגל מפות לפרטים מלאים ↗
-        </a>`:''}
-        <hr style="border:none;border-top:1px solid #eee;margin:8px 0"/>
-        <button onclick="window.__gmBank()"
-          style="background:#f59e0b;color:#fff;border:none;border-radius:7px;padding:8px 0;font-size:13px;cursor:pointer;width:100%;margin-bottom:8px;font-family:Heebo,Arial,sans-serif;font-weight:600">
-          🌟 שמור לבנק האטרקציות
-        </button>
-        <div style="display:flex;gap:6px;align-items:center">
-          <select id="gm-day-sel" style="flex:1;border:1px solid #ccc;border-radius:7px;padding:7px 8px;font-size:12px;font-family:Heebo,Arial,sans-serif;direction:rtl">
-            <option value="">➕ הוסף ליום...</option>
-            ${daysHtml}
-          </select>
-          <button onclick="window.__gmDay()"
-            style="background:#4f8ef7;color:#fff;border:none;border-radius:7px;padding:8px 12px;font-size:13px;cursor:pointer;font-family:Heebo,Arial,sans-serif;font-weight:600;white-space:nowrap">
-            הוסף
+      const openColor=p.openStatus==='פתוח עכשיו'?'#22c55e':'#ef4444';
+      const shortSite=p.website?p.website.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]:'';
+      return `<div style="font-family:Heebo,Arial,sans-serif;direction:rtl;text-align:right;width:210px;padding:2px 0 0">
+        <!-- שם + סוג + דירוג בשורה אחת -->
+        <div style="padding:8px 10px 0">
+          <input id="gm-name-edit" value="${(p.name||'').replace(/"/g,'&quot;')}"
+            style="width:100%;border:none;border-bottom:1px solid #e0e0e0;padding:2px 0 4px;font-size:14px;font-weight:700;font-family:Heebo,Arial,sans-serif;direction:rtl;color:#111;background:none;outline:none;box-sizing:border-box;margin-bottom:3px"/>
+          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:4px">
+            ${p.placeType?`<span style="font-size:10px;color:#fff;background:#888;border-radius:10px;padding:1px 6px">${p.placeType}</span>`:''}
+            ${p.rating?`<span style="font-size:11px;color:#f59e0b;font-weight:700">★ ${p.rating}</span>`:''}
+            ${p.userRatingsTotal?`<span style="font-size:10px;color:#aaa">(${p.userRatingsTotal.toLocaleString()})</span>`:''}
+            ${price?`<span style="font-size:11px;color:#22c55e;font-weight:700">${price}</span>`:''}
+          </div>
+          ${p.address?`<div style="font-size:10px;color:#888;line-height:1.35;margin-bottom:4px;max-height:28px;overflow:hidden">${p.address}</div>`:''}
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            ${p.openStatus?`<span style="font-size:11px;font-weight:600;color:${openColor}">${p.openStatus==='פתוח עכשיו'?'✅':'🔴'} ${p.openStatus}</span>`:''}
+            ${p.todayHours?`<span style="font-size:10px;color:#777">🕐 ${p.todayHours}</span>`:''}
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+            ${shortSite?`<a href="${p.website}" target="_blank" rel="noreferrer" style="font-size:11px;color:#1a73e8;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px">🌐 ${shortSite}</a>`:''}
+            ${p.phone?`<span style="font-size:11px;color:#555">📞 ${p.phone}</span>`:''}
+            ${p.placeId?`<a href="https://www.google.com/maps/place/?q=place_id:${p.placeId}" target="_blank" rel="noreferrer" style="font-size:10px;color:#1a73e8;text-decoration:none;margin-right:auto">↗ גוגל מפות</a>`:''}
+          </div>
+        </div>
+        <!-- כפתורי פעולה -->
+        <div style="border-top:1px solid #f0f0f0;padding:6px 8px;display:flex;flex-direction:column;gap:5px">
+          <button onclick="window.__gmBank()"
+            style="background:#f59e0b;color:#fff;border:none;border-radius:6px;padding:7px 0;font-size:12px;cursor:pointer;width:100%;font-family:Heebo,Arial,sans-serif;font-weight:600">
+            🌟 שמור לבנק
           </button>
+          <div style="display:flex;gap:5px;align-items:center">
+            <select id="gm-day-sel" style="flex:1;border:1px solid #ddd;border-radius:6px;padding:5px 6px;font-size:11px;font-family:Heebo,Arial,sans-serif;direction:rtl;min-width:0">
+              <option value="">➕ הוסף ליום...</option>
+              ${daysHtml}
+            </select>
+            <button onclick="window.__gmDay()"
+              style="background:#4f8ef7;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:Heebo,Arial,sans-serif;font-weight:600;white-space:nowrap;flex-shrink:0">
+              הוסף
+            </button>
+          </div>
         </div>
       </div>`;
     };

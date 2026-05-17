@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m13';
+const MOB_VER='m14';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -605,7 +605,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
       // pan/zoom to results
       if(list.length===1){
         const loc=list[0].geometry.location;
-        mapRef.current.panTo(loc);mapRef.current.setZoom(15);
+        mapRef.current.panTo(loc);mapRef.current.setZoom(12);
         loadPlace(list[0].place_id,loc.lat(),loc.lng());
       } else if(list.length>1){
         mapRef.current.fitBounds(bounds,{top:60,bottom:60,left:20,right:20});
