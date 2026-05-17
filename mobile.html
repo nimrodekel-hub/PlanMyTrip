@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m32';
+const MOB_VER='m33';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -619,15 +619,27 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
     setLoading(true);
     const inBank=bankItem!=null||!!(trip?.interestBank||[]).find(i=>i.placeId===placeId);
 
-    // helper: parse getDetails result into sheet fields
+    // helper: parse getDetails result into sheet fields + persist back to bank item
     const parseDetails=(res,pid,la,lo)=>{
       const dow=new Date().getDay(),wdIdx=dow===0?6:dow-1;
       let openStatus='';
       try{openStatus=res.opening_hours?.isOpen()?'פתוח עכשיו':'סגור עכשיו';}catch{}
       const todayHours=res.opening_hours?.weekday_text?.[wdIdx]?.replace(/^[^:]+:\s*/,'')||'';
-      return{placeId:pid,lat:res.geometry?.location?.lat()||la,lng:res.geometry?.location?.lng()||lo,
+      const fields={placeId:pid,lat:res.geometry?.location?.lat()||la,lng:res.geometry?.location?.lng()||lo,
         name:res.name,address:res.formatted_address,rating:res.rating,website:res.website,
-        types:res.types,openStatus,todayHours,phone:res.international_phone_number||'',inBank};
+        types:res.types,openStatus,todayHours,phone:res.international_phone_number||''};
+      // persist fresh data back to bank item so it survives future stale placeId failures
+      if(inBank&&bankItem&&onUpdate&&trip){
+        const patch={rating:fields.rating||bankItem.rating,website:fields.website||bankItem.website,
+          openStatus:fields.openStatus||bankItem.openStatus||'',todayHours:fields.todayHours||bankItem.todayHours||'',
+          phone:fields.phone||bankItem.phone||'',placeId:pid};
+        const needsUpdate=Object.keys(patch).some(k=>bankItem[k]!==patch[k]);
+        if(needsUpdate){
+          const updated=(trip.interestBank||[]).map(i=>i.id===bankItem.id?{...i,...patch}:i);
+          onUpdate({...trip,interestBank:updated});
+        }
+      }
+      return{...fields,inBank};
     };
 
     // helper: try to refresh stale placeId via text search by name (once per session per item)

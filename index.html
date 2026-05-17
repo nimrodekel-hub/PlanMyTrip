@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v90';
+const APP_VERSION = 'v91';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -836,7 +836,7 @@ const makeSearchMarkerIcon=types=>{
 /* ══════════════════════════════════
    מפת גוגל
 ══════════════════════════════════ */
-function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,highlightDay,highlightItem,mapPickCallbackRef,mapPickLabel,onCancelMapPick}){
+function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateBankItem,highlightDay,highlightItem,mapPickCallbackRef,mapPickLabel,onCancelMapPick}){
   const mapRef=useRef(null), mapInst=useRef(null), markers=useRef([]);
   const hlDayMarkers=useRef([]), hlItemMarker=useRef(null);
   const [ready,setReady]=useState(false);
@@ -851,11 +851,13 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,highlight
   const onAddToBankRef=useRef(onAddToBank);
   const onAddToDayRef=useRef(onAddToDay);
   const onSetDayLocationRef=useRef(onSetDayLocation);
+  const onUpdateBankRef=useRef(onUpdateBankItem);
   const mapsKeyRef=useRef(mapsKey);
   useEffect(()=>{tripRef.current=trip;},[trip]);
   useEffect(()=>{onAddToBankRef.current=onAddToBank;},[onAddToBank]);
   useEffect(()=>{onAddToDayRef.current=onAddToDay;},[onAddToDay]);
   useEffect(()=>{onSetDayLocationRef.current=onSetDayLocation;},[onSetDayLocation]);
+  useEffect(()=>{onUpdateBankRef.current=onUpdateBankItem;},[onUpdateBankItem]);
   useEffect(()=>{mapsKeyRef.current=mapsKey;},[mapsKey]);
 
   useEffect(()=>{
@@ -1119,6 +1121,21 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,highlight
         // שמור בcache לסשן — מניעת קריאות כפולות
         if(placeId) window.__placeCache[placeId]=placeData;
         iw.setContent(buildIwContent({name,address,lat,lng,placeId,photoUrl,...details,_noGoogle}));
+        // persist fresh data back to any matching bank item — so data survives future stale placeId
+        if(placeId&&onUpdateBankRef.current&&tripRef.current){
+          const bank=tripRef.current.interestBank||[];
+          const idx=bank.findIndex(i=>i.placeId===placeId);
+          if(idx>=0){
+            const item=bank[idx];
+            const patch={rating:details.rating||item.rating||null,
+              openStatus:details.openStatus||item.openStatus||'',
+              todayHours:details.todayHours||item.todayHours||'',
+              phone:details.phone||item.phone||'',
+              website:details.website||item.website||''};
+            const needsUpdate=Object.keys(patch).some(k=>item[k]!==patch[k]);
+            if(needsUpdate)onUpdateBankRef.current(item.id,patch);
+          }
+        }
       }catch(err){
         iwPlace.data={name:'מקום',address:'',lat:lat0,lng:lng0,placeId};
         iw.setContent(buildIwContent({name:'מקום',address:'',lat:lat0,lng:lng0,placeId}));
@@ -4946,6 +4963,10 @@ function App(){
     if (!trip) return;
     updTrip({...trip,interestBank:[...trip.interestBank,{...item,id:uid()}]});
   },[trip,updTrip]);
+  const updateBankItem=useCallback((id,patch)=>{
+    if(!trip)return;
+    updTrip({...trip,interestBank:trip.interestBank.map(i=>i.id===id?{...i,...patch}:i)});
+  },[trip,updTrip]);
 
   const setDayLocation=useCallback((dayId,field,name,lat,lng)=>{
     if(!trip)return;
@@ -5048,7 +5069,7 @@ function App(){
           {/* עמודה 1: מפה */}
           <div className="map-col map-col-map">
             <MapView mapsKey={settings.googleMapsKey} trip={trip} onAddToBank={addToBank} onAddToDay={addToDay}
-              onSetDayLocation={setDayLocation}
+              onSetDayLocation={setDayLocation} onUpdateBankItem={updateBankItem}
               highlightDay={hlDay} highlightItem={hlItem}
               mapPickCallbackRef={mapPickCallbackRef} mapPickLabel={mapPickLabel} onCancelMapPick={cancelMapPick}/>
           </div>
