@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v87';
+const APP_VERSION = 'v88';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1567,12 +1567,15 @@ function BlockModal({block,onSave,onClose,onDelete,onBankNoteUpdate}){
 /* ══════════════════════════════════
    בלוק בציר הזמן
 ══════════════════════════════════ */
-function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem,dragging,dragOver,onDragStart,onDragOver,onDrop,onDragEnd,nowProgress}){
+function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem,onNoteChange,dragging,dragOver,onDragStart,onDragOver,onDrop,onDragEnd,nowProgress}){
   // תומך בשני פורמטים: durationMins (דסקטופ) ו-endTime (מובייל)
   const end=block.durationMins!=null?addMins(block.startTime,block.durationMins):(block.endTime||'');
   const col=BLOCK_COLOR[block.type]||'var(--text3)';
   const locked=!!block.isAutoTravel; // נסיעות אוטומטיות לא ניתנות לגרירה
   const btnStyle={background:'none',border:'none',cursor:'pointer',padding:'2px 5px',borderRadius:4,fontSize:15,lineHeight:1,flexShrink:0};
+  const[noteOpen,setNoteOpen]=React.useState(false);
+  const[noteVal,setNoteVal]=React.useState(block.notes||'');
+  const toggleNote=()=>{if(!noteOpen)setNoteVal(block.notes||'');setNoteOpen(o=>!o);};
   return <div className="timeline-block" draggable={!locked}
     onDragStart={locked?null:onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={locked?null:onDragEnd}
     style={{opacity:dragging?0.35:1,transition:'opacity .15s',borderTop:dragOver?'2px solid var(--accent)':'2px solid transparent'}}>
@@ -1593,6 +1596,9 @@ function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem,dragging,drag
               <button style={{...btnStyle,color:'#f59e0b'}} title="העבר לבנק האטרקציות"
                 onClick={e=>{e.stopPropagation();onMoveToBank(block);}}>⭐</button>
             )}
+            {onNoteChange&&<button style={{...btnStyle,color:block.notes?'var(--accent)':'#6b7280'}}
+              title="הוסף הערה מהירה"
+              onClick={e=>{e.stopPropagation();toggleNote();}}>📝</button>}
             <button style={{...btnStyle,color:'#6b7280'}} title="ערוך פרטים"
               onClick={e=>{e.stopPropagation();onEdit(block);}}>✏️</button>
             {onDelete&&(
@@ -1619,6 +1625,31 @@ function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem,dragging,drag
           {block.cost>0&&<span style={{fontSize:11,color:'var(--amber)'}}>💰 ₪{block.cost.toFixed(0)}</span>}
         </div>
       </div>
+      {/* inline note editor */}
+      {noteOpen&&onNoteChange&&(
+        <div style={{borderTop:'1px solid var(--border)',padding:'7px 12px',display:'flex',gap:7,alignItems:'center'}}>
+          <input autoFocus dir="rtl"
+            value={noteVal}
+            onChange={e=>setNoteVal(e.target.value)}
+            onKeyDown={e=>{
+              if(e.key==='Enter'){onNoteChange(block.id,noteVal);setNoteOpen(false);}
+              if(e.key==='Escape'){setNoteOpen(false);}
+            }}
+            placeholder="הוסף הערה..."
+            style={{flex:1,border:'none',borderBottom:'1px solid var(--border)',background:'none',
+              color:'var(--text)',fontSize:12,padding:'3px 2px',fontFamily:'Heebo,sans-serif',outline:'none',direction:'rtl'}}
+          />
+          <button onClick={()=>{onNoteChange(block.id,noteVal);setNoteOpen(false);}}
+            style={{background:'var(--green,#22c55e)',border:'none',borderRadius:5,color:'#fff',
+              fontSize:12,fontWeight:700,padding:'4px 10px',cursor:'pointer',fontFamily:'Heebo,sans-serif',flexShrink:0}}>
+            ✓
+          </button>
+          <button onClick={()=>setNoteOpen(false)}
+            style={{background:'none',border:'none',color:'var(--text3)',fontSize:14,cursor:'pointer',padding:'4px 5px',flexShrink:0}}>
+            ✕
+          </button>
+        </div>
+      )}
       {/* קו "עכשיו" בתוך הבלוק — מופיע כשהשעה הנוכחית תוך כדי פעילות זו */}
       {nowProgress!=null&&<div style={{
         position:'absolute',left:0,right:0,
@@ -2061,6 +2092,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
           return [startConn,...sorted.map((bl,si)=>[
             nowInsert===si&&nowLine,
             <BlockItem key={bl.id} block={bl} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onFocusItem={onFocusItem}
+              onNoteChange={(id,note)=>{const b=day.blocks.find(x=>x.id===id);if(b)updBlock({...b,notes:note});}}
               dragging={dragOver!==null&&dragIdxRef.current===si} dragOver={dragOver===si}
               nowProgress={activeIdx===si?nowBlockProgress:null}
               onDragStart={e=>{e.dataTransfer.effectAllowed='move';dragIdxRef.current=si;}}

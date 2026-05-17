@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m29';
+const MOB_VER='m30';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -995,6 +995,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
   const[locationPicking,setLocationPicking]=useState(null); // {field:'start'|'end'}
   const[bankPickForBlock,setBankPickForBlock]=useState(null); // {type} — show bank picker for adding block
   const[,setTick]=useState(0);
+  const[inlineNote,setInlineNote]=useState(null); // {blockId, value}
   // drag-and-drop state
   const dragIdxRef=useRef(null);
   const[dragSrc,setDragSrc]=useState(null);
@@ -1102,6 +1103,13 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
   };
 
   // block operations
+  const saveInlineNote=(blockId,note)=>{
+    const blk=(day.blocks||[]).find(b=>b.id===blockId);
+    if(!blk)return;
+    updBlock({...blk,note:note.trim()});
+    setInlineNote(null);
+  };
+
   const deleteBlock=id=>{
     const blks=[...(day.blocks||[])].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
     const idx=blks.findIndex(b=>b.id===id);
@@ -1422,6 +1430,13 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                         <div style={{display:'flex',gap:2,flexShrink:0,alignItems:'flex-start'}}>
                           {hasLoc&&<button onClick={()=>onShowOnMap&&onShowOnMap({lat:b.lat,lng:b.lng,placeId:b.placeId,name:b.title||BLOCK_HE[b.type],address:b.address||''})}
                             style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--accent2)'}}>🗺️</button>}
+                          <button onClick={()=>{
+                              if(inlineNote?.blockId===b.id){setInlineNote(null);}
+                              else{setInlineNote({blockId:b.id,value:b.note||''});}
+                            }}
+                            title="הוסף הערה מהירה"
+                            style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,
+                              color:b.note?'var(--accent2)':'var(--text3)'}}>📝</button>
                           <button onClick={()=>setEditing({...b})}
                             style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--text3)'}}>✏️</button>
                           <button onClick={()=>deleteBlock(b.id)}
@@ -1467,6 +1482,32 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                         </div>
                       </div>
                     </div>
+                    {/* inline note editor */}
+                    {inlineNote?.blockId===b.id&&(
+                      <div style={{borderTop:'1px solid var(--border)',padding:'8px 12px',display:'flex',gap:7,alignItems:'center'}}>
+                        <input autoFocus dir="rtl"
+                          value={inlineNote.value}
+                          onChange={e=>setInlineNote(n=>({...n,value:e.target.value}))}
+                          onKeyDown={e=>{
+                            if(e.key==='Enter'){saveInlineNote(b.id,inlineNote.value);}
+                            if(e.key==='Escape'){setInlineNote(null);}
+                          }}
+                          placeholder="הוסף הערה..."
+                          style={{flex:1,border:'none',borderBottom:'1px solid var(--border)',background:'none',
+                            color:'var(--text)',fontSize:13,padding:'3px 2px',fontFamily:'Heebo,sans-serif',
+                            outline:'none',direction:'rtl'}}
+                        />
+                        <button onClick={()=>saveInlineNote(b.id,inlineNote.value)}
+                          style={{background:'var(--green)',border:'none',borderRadius:6,color:'#fff',
+                            fontSize:13,fontWeight:700,padding:'4px 10px',cursor:'pointer',fontFamily:'Heebo,sans-serif',flexShrink:0}}>
+                          ✓
+                        </button>
+                        <button onClick={()=>setInlineNote(null)}
+                          style={{background:'none',border:'none',color:'var(--text3)',fontSize:15,cursor:'pointer',padding:'4px 5px',flexShrink:0}}>
+                          ✕
+                        </button>
+                      </div>
+                    )}
                   </div>
                   {/* OSRM connector */}
                   {next&&b.type!=='travel'&&next.type!=='travel'&&tt&&!tt.loading&&tt.min!=null&&(
