@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v84';
+const APP_VERSION = 'v85';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1535,11 +1535,12 @@ function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem,dragging,drag
   // תומך בשני פורמטים: durationMins (דסקטופ) ו-endTime (מובייל)
   const end=block.durationMins!=null?addMins(block.startTime,block.durationMins):(block.endTime||'');
   const col=BLOCK_COLOR[block.type]||'var(--text3)';
+  const locked=!!block.isAutoTravel; // נסיעות אוטומטיות לא ניתנות לגרירה
   const btnStyle={background:'none',border:'none',cursor:'pointer',padding:'2px 5px',borderRadius:4,fontSize:15,lineHeight:1,flexShrink:0};
-  return <div className="timeline-block" draggable
-    onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd}
+  return <div className="timeline-block" draggable={!locked}
+    onDragStart={locked?null:onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={locked?null:onDragEnd}
     style={{opacity:dragging?0.35:1,transition:'opacity .15s',borderTop:dragOver?'2px solid var(--accent)':'2px solid transparent'}}>
-    <div className="timeline-dot" style={{background:col,cursor:'grab'}}>☰</div>
+    <div className="timeline-dot" style={{background:col,cursor:locked?'default':'grab'}} title={locked?'נסיעה אוטומטית — לא ניתן להזזה':'גרור לשינוי סדר'}>{locked?'🔒':'☰'}</div>
     <div className={`card block-${block.type}`} style={{flex:1,marginRight:4,opacity:block.isCompleted?0.6:1,position:'relative',overflow:'hidden'}}>
       <div style={{padding:'8px 12px'}}>
         {/* שורת כותרת: שעה + כפתורי פעולה */}
@@ -1667,15 +1668,18 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
   const delBlock=id=>onUpdate({...day,blocks:day.blocks.filter(b=>b.id!==id)});
   const handleDrop=(toIdx)=>{
     const from=dragIdxRef.current;
-    if(from===null||from===toIdx){dragIdxRef.current=null;setDragOver(null);return;}
+    dragIdxRef.current=null;setDragOver(null);
+    if(from===null||from===toIdx)return;
+    if(sorted[from]?.isAutoTravel)return; // נסיעות אוטומטיות לא ניתנות להזזה
     const arr=[...sorted];
     const[moved]=arr.splice(from,1);
     arr.splice(toIdx,0,moved);
-    // עדכון שעות: הראשון שומר על שעתו, השאר קוסקדה
-    let t=arr[0].startTime;
-    const reordered=arr.map(b=>{const nb={...b,startTime:t};t=addMins(t,bDur(b));return nb;});
+    // הסרת בלוקי נסיעה אוטומטיים שהפכו לא-רלוונטיים — OSRM יציע מחדש
+    const clean=arr.filter(b=>!b.isAutoTravel);
+    if(!clean.length)return;
+    let t=clean[0].startTime;
+    const reordered=clean.map(b=>{const nb={...b,startTime:t};t=addMins(t,bDur(b));return nb;});
     onUpdate({...day,blocks:reordered});
-    dragIdxRef.current=null;setDragOver(null);
   };
   const addBlock=type=>{
     setBankPickForBlock({type}); // show bank / map / manual picker

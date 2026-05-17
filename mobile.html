@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m26';
+const MOB_VER='m27';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -1058,11 +1058,15 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
   // drag-and-drop reorder — מחשב מחדש startTime/endTime אחרי הזזה
   const handleDrop=(fromIdx,toIdx)=>{
     if(fromIdx===null||toIdx===null||fromIdx===toIdx)return;
+    if(sorted[fromIdx]?.isAutoTravel)return; // נסיעות אוטומטיות לא ניתנות להזזה
     const arr=[...sorted];
     const[moved]=arr.splice(fromIdx,1);
     arr.splice(toIdx,0,moved);
-    let t=arr[0].startTime||'09:00';
-    const reordered=arr.map(b=>{
+    // הסרת בלוקי נסיעה אוטומטיים שהפכו לא-רלוונטיים — OSRM יציע מחדש
+    const clean=arr.filter(b=>!b.isAutoTravel);
+    if(!clean.length)return;
+    let t=clean[0].startTime||'09:00';
+    const reordered=clean.map(b=>{
       const dur=b.endTime&&b.startTime?Math.max(1,toMinsStr(b.endTime)-toMinsStr(b.startTime)):60;
       const nb={...b,startTime:t,endTime:addMins(t,dur)};
       t=nb.endTime;
@@ -1392,39 +1396,44 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                             style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--text3)'}}>✏️</button>
                           <button onClick={()=>deleteBlock(b.id)}
                             style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--red)',fontWeight:700}}>✕</button>
-                          {/* drag handle */}
-                          <div
-                            style={{padding:'4px 5px',fontSize:15,color:'var(--text3)',cursor:'grab',
-                              touchAction:'none',userSelect:'none',lineHeight:1}}
-                            onPointerDown={e=>{
-                              e.currentTarget.setPointerCapture(e.pointerId);
-                              dragIdxRef.current=bi;
-                              setDragSrc(bi);
-                              setDragOver(bi);
-                            }}
-                            onPointerMove={e=>{
-                              if(dragIdxRef.current===null)return;
-                              const el=document.elementFromPoint(e.clientX,e.clientY);
-                              let t2=el;
-                              while(t2){
-                                const idx=t2.dataset?.blockIdx;
-                                if(idx!==undefined){setDragOver(parseInt(idx));break;}
-                                t2=t2.parentElement;
-                              }
-                            }}
-                            onPointerUp={e=>{
-                              e.currentTarget.releasePointerCapture(e.pointerId);
-                              handleDrop(dragIdxRef.current,dragOver);
-                              dragIdxRef.current=null;
-                              setDragSrc(null);
-                              setDragOver(null);
-                            }}
-                            onPointerCancel={()=>{
-                              dragIdxRef.current=null;
-                              setDragSrc(null);
-                              setDragOver(null);
-                            }}
-                          >☰</div>
+                          {/* drag handle — מוסתר לנסיעות אוטומטיות */}
+                          {b.isAutoTravel
+                            ?<div style={{padding:'4px 5px',fontSize:13,color:'var(--text3)',opacity:.4,lineHeight:1,userSelect:'none'}}
+                               title="נסיעה אוטומטית — לא ניתן להזזה">🔒</div>
+                            :<div
+                              style={{padding:'4px 5px',fontSize:15,color:'var(--text3)',cursor:'grab',
+                                touchAction:'none',userSelect:'none',lineHeight:1}}
+                              title="גרור לשינוי סדר"
+                              onPointerDown={e=>{
+                                e.currentTarget.setPointerCapture(e.pointerId);
+                                dragIdxRef.current=bi;
+                                setDragSrc(bi);
+                                setDragOver(bi);
+                              }}
+                              onPointerMove={e=>{
+                                if(dragIdxRef.current===null)return;
+                                const el=document.elementFromPoint(e.clientX,e.clientY);
+                                let t2=el;
+                                while(t2){
+                                  const idx=t2.dataset?.blockIdx;
+                                  if(idx!==undefined){setDragOver(parseInt(idx));break;}
+                                  t2=t2.parentElement;
+                                }
+                              }}
+                              onPointerUp={e=>{
+                                e.currentTarget.releasePointerCapture(e.pointerId);
+                                handleDrop(dragIdxRef.current,dragOver);
+                                dragIdxRef.current=null;
+                                setDragSrc(null);
+                                setDragOver(null);
+                              }}
+                              onPointerCancel={()=>{
+                                dragIdxRef.current=null;
+                                setDragSrc(null);
+                                setDragOver(null);
+                              }}
+                            >☰</div>
+                          }
                         </div>
                       </div>
                     </div>
