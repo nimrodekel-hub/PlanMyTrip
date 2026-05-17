@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v83';
+const APP_VERSION = 'v84';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1953,11 +1953,12 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
             const buffered=Math.round(tt.min*buf2);
             const insertTravelStart=()=>{
               const firstStart=sorted[0].startTime;
-              const travelStart=addMins(firstStart,-buffered);
               const nb={id:uid(),type:'travel',
                 title:`🚗 נסיעה (~${fmtTravelMin(buffered)})`,
-                startTime:travelStart,durationMins:buffered,notes:'',isAutoTravel:true};
-              onUpdate({...day,blocks:[nb,...day.blocks]});
+                startTime:firstStart,durationMins:buffered,notes:'',isAutoTravel:true};
+              // כל הבלוקים הקיימים מוזזים קדימה ב-buffered דקות
+              const shifted=day.blocks.map(b=>({...b,startTime:addMins(b.startTime,buffered)}));
+              onUpdate({...day,blocks:[nb,...shifted]});
               toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה לתחילת הלוז`,'success');
             };
             return(

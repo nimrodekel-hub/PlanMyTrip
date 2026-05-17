@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m25';
+const MOB_VER='m26';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -1139,25 +1139,24 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
     toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה ✓`,'s');
   };
   // הוספת נסיעה לפני הבלוק הראשון (מוצא → ראשון)
+  // נסיעה מתחילה בשעת הבלוק הראשון, כל הבלוקים מוזזים buffered דקות קדימה
   const insertTravelBeforeFirst=(dayId,rawMin)=>{
     const buf=settings?.travelBuffer??1.2;
     const buffered=Math.round(rawMin*buf);
     const dayBlks=trip.days.find(d=>d.id===dayId)?.blocks||[];
-    const sorted2=[...dayBlks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
-    if(!sorted2.length)return;
-    const firstStart=sorted2[0].startTime||'09:00';
-    const travelStart=addMins(firstStart,-buffered);
+    if(!dayBlks.length)return;
+    const firstStart=[...dayBlks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''))[0].startTime||'09:00';
     const blk={id:uid(),type:'travel',title:`🚗 נסיעה (~${fmtTravelMin(buffered)})`,
-      startTime:travelStart,endTime:firstStart,note:'',isAutoTravel:true};
-    // מוסיפים את הבלוק לפני הראשון
-    const firstId=sorted2[0].id;
-    onUpdate({...trip,days:trip.days.map(d=>{
-      if(d.id!==dayId)return d;
-      const blks=d.blocks||[];
-      const idx=blks.findIndex(b=>b.id===firstId);
-      if(idx===-1)return{...d,blocks:[blk,...blks]};
-      return{...d,blocks:[...blks.slice(0,idx),blk,...blks.slice(idx)]};
-    })});
+      startTime:firstStart,endTime:addMins(firstStart,buffered),note:'',isAutoTravel:true};
+    // כל הבלוקים הקיימים מוזזים קדימה ב-buffered דקות
+    const shifted=dayBlks.map(b=>({
+      ...b,
+      startTime:addMins(b.startTime,buffered),
+      endTime:b.endTime?addMins(b.endTime,buffered):b.endTime,
+    }));
+    onUpdate({...trip,days:trip.days.map(d=>
+      d.id!==dayId?d:{...d,blocks:[blk,...shifted]}
+    )});
     toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה לתחילת הלוז ✓`,'s');
   };
 
