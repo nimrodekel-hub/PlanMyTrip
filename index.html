@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="pragma" content="no-cache" />
-  <title>CaravanControl — מנהל טיולים v26</title>
+  <title>CaravanControl — מנהל טיולים v27</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v78';
+const APP_VERSION = 'v79';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -963,7 +963,10 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
               icon:makeSearchMarkerIcon(r.types||[]),
               zIndex:20,
             });
-            m.addListener('click',()=>showPlaceById(r.place_id,lat,lng));
+            m.addListener('click',()=>{
+              if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:r.name||'',lat,lng,address:r.formatted_address||r.vicinity||''});return;}
+              showPlaceById(r.place_id,lat,lng);
+            });
             window.__gmSearchMarkers?.push(m);
             placed++;
           });
@@ -1194,6 +1197,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
         });
         if (iw&&build&&iwPlace){
           bm.addListener('click',()=>{
+            if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:block.title||'פעילות',lat:block.lat,lng:block.lng,address:block.location||''});return;}
             iwPlace.data={name:block.title||'פעילות',address:block.location||'',lat:block.lat,lng:block.lng,placeId:null};
             iw.setContent(build({name:block.title||'פעילות',address:block.location||'',lat:block.lat,lng:block.lng}));
             iw.setPosition({lat:block.lat,lng:block.lng});
@@ -1231,6 +1235,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
       });
       if (iw&&build&&iwPlace){
         m.addListener('click',()=>{
+          if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:item.name||'',lat:item.lat,lng:item.lng,address:item.address||''});return;}
           iwPlace.data={name:item.name,address:item.address||'',lat:item.lat,lng:item.lng,placeId:null};
           iw.setContent(build({name:item.name,address:item.address||'',lat:item.lat,lng:item.lng}));
           iw.setPosition({lat:item.lat,lng:item.lng});
@@ -4651,8 +4656,9 @@ function App(){
     mapPickCallbackRef.current=place=>{
       callback(place);
       setMapPickLabel(null);
-      setTab('map');
+      setTab('timeline'); // return to timeline after pick
     };
+    window.__gmIw?.close(); // close any open InfoWindow before switching
     setMapPickLabel(label);
     setTab('map');
   },[]);

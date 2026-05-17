@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m20';
+const MOB_VER='m21';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -578,7 +578,10 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
         zIndex:5,
         ...(icon?{icon}:{}),
       });
-      mk.addListener('click',()=>loadPlace(item.placeId,item.lat,item.lng,item));
+      mk.addListener('click',()=>{
+        if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:item.name||'',lat:item.lat,lng:item.lng,address:item.address||''});return;}
+        loadPlace(item.placeId,item.lat,item.lng,item);
+      });
       bankMkRef.current.push(mk);
     });
   },[trip?.interestBank,mapsReady]);
@@ -600,7 +603,10 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
           icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:10,fillColor:color,fillOpacity:.92,strokeColor:'#fff',strokeWeight:2},
           label:{text:String(di+1),color:'#fff',fontSize:'10px',fontWeight:'bold'},
         });
-        mk.addListener('click',()=>setSheet({lat,lng,name:b.title||BLOCK_HE[b.type]||'פעילות',address:b.address||'',inBank:false,placeId:b.placeId||null,website:'',dayLabel:`יום ${di+1}`}));
+        mk.addListener('click',()=>{
+          if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:b.title||BLOCK_HE[b.type]||'פעילות',lat,lng,address:b.address||''});return;}
+          setSheet({lat,lng,name:b.title||BLOCK_HE[b.type]||'פעילות',address:b.address||'',inBank:false,placeId:b.placeId||null,website:'',dayLabel:`יום ${di+1}`});
+        });
         dayMkRef.current.push(mk);
       });
     });
@@ -653,7 +659,10 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
         const mk=new window.google.maps.Marker({
           position:{lat:loc.lat(),lng:loc.lng()},map:mapRef.current,
           title:r.name||'',zIndex:20,icon});
-        mk.addListener('click',()=>loadPlace(r.place_id,loc.lat(),loc.lng()));
+        mk.addListener('click',()=>{
+          if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:r.name||'',lat:loc.lat(),lng:loc.lng(),address:r.formatted_address||r.vicinity||''});return;}
+          loadPlace(r.place_id,loc.lat(),loc.lng());
+        });
         srchMkRef.current.push(mk);
         bounds.extend(loc);
       });
@@ -758,10 +767,10 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
       </div>}
 
       {/* bottom sheet overlay */}
-      {sheet&&<div className="sheet-ov" onClick={()=>setSheet(null)}/>}
+      {sheet&&!mapPickLabel&&<div className="sheet-ov" onClick={()=>setSheet(null)}/>}
 
       {/* bottom sheet */}
-      <div className={`bsheet${sheet?' open':''}`}>
+      <div className={`bsheet${sheet&&!mapPickLabel?' open':''}`}>
         <div className="bsheet-handle"/>
         {sheet&&<>
           <div className="bsheet-name">{sheet.name||'מקום לא ידוע'}</div>
