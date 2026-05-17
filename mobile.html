@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m10';
+const MOB_VER='m11';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -490,21 +490,27 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
     return()=>clearTimeout(t);
   },[active,mapsReady]);// eslint-disable-line
 
-  /* bank markers — colored by _listSource (❤️ liked / 🏴 wantToGo / ⭐ saved / 📋 list / 🧳 itinerary) */
+  /* bank markers — colored by _listSource; plain red pin if no known status */
   useEffect(()=>{
     if(!mapsReady||!mapRef.current)return;
     bankMkRef.current.forEach(m=>m.setMap(null));
     bankMkRef.current=[];
     (trip?.interestBank||[]).forEach(item=>{
       if(!item.lat||!item.lng)return;
-      const src=getBankSrc(item);
-      const mk=new window.google.maps.Marker({
+      const hasStatus=item._listSource&&BANK_SRC[item._listSource];
+      const opts={
         position:{lat:item.lat,lng:item.lng},map:mapRef.current,
-        title:`${src.emoji} ${item.name||''}`,zIndex:5,
-        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:src.scale,
-          fillColor:src.color,fillOpacity:.92,strokeColor:'#fff',strokeWeight:1.5},
-        label:{text:src.sym,color:'#fff',fontSize:'11px',fontWeight:'bold'},
-      });
+        title:item.name||'',zIndex:5,
+      };
+      if(hasStatus){
+        const src=BANK_SRC[item._listSource];
+        opts.title=`${src.emoji} ${item.name||''}`;
+        opts.icon={path:window.google.maps.SymbolPath.CIRCLE,scale:src.scale,
+          fillColor:src.color,fillOpacity:.92,strokeColor:'#fff',strokeWeight:1.5};
+        opts.label={text:src.sym,color:'#fff',fontSize:'11px',fontWeight:'bold'};
+      }
+      // no icon/label → default Google red pin
+      const mk=new window.google.maps.Marker(opts);
       mk.addListener('click',()=>loadPlace(item.placeId,item.lat,item.lng,item));
       bankMkRef.current.push(mk);
     });
