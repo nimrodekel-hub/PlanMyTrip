@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m7';
+const MOB_VER='m8';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -344,6 +344,16 @@ const normTrip=t=>{
     days:(t.days||[]).map(d=>({blocks:[],...d,startLocation:d.startLocation||'',startTime:d.startTime||'08:00',endLocation:d.endLocation||'',endTime:d.endTime||'20:00'})),
     interestBank:t.interestBank||[],expenses:t.expenses||[],packingList:t.packingList||[],shoppingList:t.shoppingList||[],documents:t.documents||[],quickNotes:t.quickNotes||[]};
 };
+
+/* ── bank item list-source styles (same as desktop) ── */
+const BANK_SRC={
+  liked:    {color:'#ec4899',emoji:'❤️',label:'מועדפים',  sym:'♥', scale:9},
+  wantToGo: {color:'#22c55e',emoji:'🏴',label:'רוצה לבקר',sym:'⚑', scale:9},
+  saved:    {color:'#f59e0b',emoji:'⭐',label:'שמור',      sym:'★', scale:8},
+  list:     {color:'#6366f1',emoji:'📋',label:'רשימה',    sym:'♦', scale:8},
+  itinerary:{color:'#16a34a',emoji:'🧳',label:'תוכנית נסיעה',sym:'✈',scale:8},
+};
+const getBankSrc=item=>BANK_SRC[item._listSource]||BANK_SRC.saved;
 
 /* ── marker icon map (same as desktop) ── */
 const SEARCH_ICON_MAP=[
@@ -470,20 +480,21 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
     return()=>clearTimeout(t);
   },[active,mapsReady]);// eslint-disable-line
 
-  /* bank markers — category SVG pins */
+  /* bank markers — colored by _listSource (❤️ liked / 🏴 wantToGo / ⭐ saved / 📋 list / 🧳 itinerary) */
   useEffect(()=>{
     if(!mapsReady||!mapRef.current)return;
     bankMkRef.current.forEach(m=>m.setMap(null));
     bankMkRef.current=[];
     (trip?.interestBank||[]).forEach(item=>{
       if(!item.lat||!item.lng)return;
-      const types=item.types||(item.placeType?[item.placeType]:[]);
-      const icon=makePinIcon(types,{scale:0.85})||{
-        path:window.google.maps.SymbolPath.CIRCLE,scale:9,
-        fillColor:'#f59e0b',fillOpacity:.9,strokeColor:'#fff',strokeWeight:1.5};
+      const src=getBankSrc(item);
       const mk=new window.google.maps.Marker({
         position:{lat:item.lat,lng:item.lng},map:mapRef.current,
-        title:item.name||'',zIndex:5,icon});
+        title:`${src.emoji} ${item.name||''}`,zIndex:5,
+        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:src.scale,
+          fillColor:src.color,fillOpacity:.92,strokeColor:'#fff',strokeWeight:1.5},
+        label:{text:src.sym,color:'#fff',fontSize:'11px',fontWeight:'bold'},
+      });
       mk.addListener('click',()=>loadPlace(item.placeId,item.lat,item.lng,item));
       bankMkRef.current.push(mk);
     });
@@ -848,16 +859,22 @@ function BankScreen({trip,active,onShowOnMap}){
   const showFlat=!!(search.trim())||sortMode==='distance';
 
   const BankItem=({item})=>{
+    const src=getBankSrc(item); // ❤️/🏴/⭐/📋/🧳 + color by _listSource
     const types=item.types||(item.placeType?[item.placeType]:[]);
+    const catEmoji=getTypeEmoji(types); // ⛺🍽🛏... category emoji
     const lbl=getTypeLabel(types);
-    const ic=getTypeEmoji(types); // emoji from SEARCH_ICON_MAP (same as map pins)
     const hasLoc=!!(item.lat&&item.lng);
     return(
       <div className="bitem">
-        <div style={{fontSize:20,flexShrink:0}}>{ic}</div>
+        {/* status icon (left) */}
+        <div style={{fontSize:20,flexShrink:0,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+          <span style={{fontSize:18}}>{src.emoji}</span>
+          <span style={{fontSize:13}}>{catEmoji}</span>
+        </div>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:14,fontWeight:600}}>{item.name||'—'}</div>
-          {(lbl||item.address)&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>
+          <div style={{fontSize:11,color:src.color,fontWeight:600,marginTop:1}}>{src.label}</div>
+          {(lbl||item.address)&&<div style={{fontSize:11,color:'var(--text3)',marginTop:1}}>
             {lbl&&<span>{lbl}</span>}
             {lbl&&item.address&&<span> · </span>}
             {item.address&&<span>{item.address}</span>}
