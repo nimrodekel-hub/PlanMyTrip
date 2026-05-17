@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m23';
+const MOB_VER='m24';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -1117,6 +1117,28 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
     })});
     toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה ✓`,'s');
   };
+  // הוספת נסיעה לפני הבלוק הראשון (מוצא → ראשון)
+  const insertTravelBeforeFirst=(dayId,rawMin)=>{
+    const buf=settings?.travelBuffer??1.2;
+    const buffered=Math.round(rawMin*buf);
+    const dayBlks=trip.days.find(d=>d.id===dayId)?.blocks||[];
+    const sorted2=[...dayBlks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
+    if(!sorted2.length)return;
+    const firstStart=sorted2[0].startTime||'09:00';
+    const travelStart=addMins(firstStart,-buffered);
+    const blk={id:uid(),type:'travel',title:`🚗 נסיעה (~${fmtTravelMin(buffered)})`,
+      startTime:travelStart,endTime:firstStart,note:'',isAutoTravel:true};
+    // מוסיפים את הבלוק לפני הראשון
+    const firstId=sorted2[0].id;
+    onUpdate({...trip,days:trip.days.map(d=>{
+      if(d.id!==dayId)return d;
+      const blks=d.blocks||[];
+      const idx=blks.findIndex(b=>b.id===firstId);
+      if(idx===-1)return{...d,blocks:[blk,...blks]};
+      return{...d,blocks:[...blks.slice(0,idx),blk,...blks.slice(idx)]};
+    })});
+    toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה לתחילת הלוז ✓`,'s');
+  };
 
   const blockDurStr=b=>{
     if(!b.startTime||!b.endTime)return null;
@@ -1271,18 +1293,25 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
         <div style={{flex:1,overflowY:'auto'}}>
           <div style={{padding:'10px 14px 4px'}}>
             {/* start location → first block connector */}
-            {sorted.length>0&&day?.startLat&&day?.startLng&&(()=>{
+            {sorted.length>0&&day?.startLat&&day?.startLng&&sorted[0].type!=='travel'&&(()=>{
               const key=`__start__->${sorted[0].id}`;
               const tt=travelTimes[key];
               if(!tt||tt.loading||tt.min==null)return null;
               const buf2=settings?.travelBuffer??1.2;
+              const buffered=Math.round(tt.min*buf2);
               return(
                 <div style={{display:'flex',alignItems:'center',gap:7,padding:'5px 10px',marginBottom:8,
                     background:'rgba(34,197,94,.07)',borderRadius:8,border:'1px solid rgba(34,197,94,.2)'}}>
                   <span style={{fontSize:11,color:'var(--green)',flex:1,lineHeight:1.45}}>
                     🟢 {day.startLocation||'מוצא'} → אתר ראשון: {fmtTravelMin(tt.min)} נסיעה
-                    {buf2>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf2-1))} דק' = <b>{fmtTravelMin(Math.round(tt.min*buf2))}</b></span>}
+                    {buf2>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf2-1))} דק' = <b>{fmtTravelMin(buffered)}</b></span>}
                   </span>
+                  <button onClick={()=>insertTravelBeforeFirst(day.id,tt.min)}
+                    style={{fontSize:10,padding:'4px 9px',border:'1px solid rgba(34,197,94,.4)',borderRadius:6,
+                      background:'rgba(34,197,94,.12)',color:'var(--green)',cursor:'pointer',
+                      fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap',flexShrink:0}}>
+                    + הוסף ללוז
+                  </button>
                 </div>
               );
             })()}
@@ -1372,19 +1401,26 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
             })}
             {nowInsertIdx===sorted.length&&nowLine}
             {/* last block → end location connector */}
-            {sorted.length>0&&day?.endLat&&day?.endLng&&(()=>{
+            {sorted.length>0&&day?.endLat&&day?.endLng&&sorted[sorted.length-1].type!=='travel'&&(()=>{
               const last2=sorted[sorted.length-1];
               const key=`${last2.id}->__end__`;
               const tt=travelTimes[key];
               if(!tt||tt.loading||tt.min==null)return null;
               const buf2=settings?.travelBuffer??1.2;
+              const buffered=Math.round(tt.min*buf2);
               return(
                 <div style={{display:'flex',alignItems:'center',gap:7,padding:'5px 10px',marginTop:4,
                     background:'rgba(239,68,68,.07)',borderRadius:8,border:'1px solid rgba(239,68,68,.2)'}}>
                   <span style={{fontSize:11,color:'var(--red)',flex:1,lineHeight:1.45}}>
                     🔴 אתר אחרון → {day.endLocation||'יעד'}: {fmtTravelMin(tt.min)} נסיעה
-                    {buf2>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf2-1))} דק' = <b>{fmtTravelMin(Math.round(tt.min*buf2))}</b></span>}
+                    {buf2>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf2-1))} דק' = <b>{fmtTravelMin(buffered)}</b></span>}
                   </span>
+                  <button onClick={()=>insertTravelBlock(day.id,last2.id,tt.min)}
+                    style={{fontSize:10,padding:'4px 9px',border:'1px solid rgba(239,68,68,.4)',borderRadius:6,
+                      background:'rgba(239,68,68,.12)',color:'var(--red)',cursor:'pointer',
+                      fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap',flexShrink:0}}>
+                    + הוסף ללוז
+                  </button>
                 </div>
               );
             })()}

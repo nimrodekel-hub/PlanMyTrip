@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v81';
+const APP_VERSION = 'v82';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1943,14 +1943,30 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
             const tt=travelTimes[key];
             if(!tt||tt.loading||tt.min==null)return null;
             const buf2=settings?.travelBuffer??1.2;
+            const buffered=Math.round(tt.min*buf2);
+            const insertTravelStart=()=>{
+              const firstStart=sorted[0].startTime;
+              const travelStart=addMins(firstStart,-buffered);
+              const nb={id:uid(),type:'travel',
+                title:`🚗 נסיעה (~${fmtTravelMin(buffered)})`,
+                startTime:travelStart,durationMins:buffered,notes:'',isAutoTravel:true};
+              onUpdate({...day,blocks:[nb,...day.blocks]});
+              toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה לתחילת הלוז`,'success');
+            };
             return(
               <div key="__start_conn__" style={{display:'flex',alignItems:'center',gap:8,
                 padding:'6px 8px 6px 40px',margin:'0 0 6px',
                 background:'rgba(34,197,94,.07)',borderRadius:8,border:'1px solid rgba(34,197,94,.25)',marginRight:36}}>
                 <span style={{fontSize:11,color:'var(--green)',flex:1}}>
                   🟢 {day.startLocation||'מוצא'} → ראשון: {fmtTravelMin(tt.min)} נסיעה
-                  {buf2>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf2-1))} דק' = <b>{fmtTravelMin(Math.round(tt.min*buf2))}</b></span>}
+                  {buf2>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf2-1))} דק' = <b>{fmtTravelMin(buffered)}</b></span>}
                 </span>
+                <button onClick={insertTravelStart}
+                  style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(34,197,94,.4)',
+                    borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',
+                    cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
+                  + הוסף ללוז
+                </button>
               </div>
             );
           })();
@@ -1961,14 +1977,29 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
             const tt=travelTimes[key];
             if(!tt||tt.loading||tt.min==null)return null;
             const buf2=settings?.travelBuffer??1.2;
+            const buffered=Math.round(tt.min*buf2);
+            const insertTravelEnd=()=>{
+              const travelStart=addMins(last2.startTime,last2.durationMins||60);
+              const nb={id:uid(),type:'travel',
+                title:`🚗 נסיעה (~${fmtTravelMin(buffered)})`,
+                startTime:travelStart,durationMins:buffered,notes:'',isAutoTravel:true};
+              onUpdate({...day,blocks:[...day.blocks,nb]});
+              toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה לסיום הלוז`,'success');
+            };
             return(
               <div key="__end_conn__" style={{display:'flex',alignItems:'center',gap:8,
                 padding:'6px 8px 6px 40px',margin:'0 0 6px',
                 background:'rgba(239,68,68,.07)',borderRadius:8,border:'1px solid rgba(239,68,68,.25)',marginRight:36}}>
                 <span style={{fontSize:11,color:'var(--red)',flex:1}}>
                   🔴 אחרון → {day.endLocation||'יעד'}: {fmtTravelMin(tt.min)} נסיעה
-                  {buf2>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf2-1))} דק' = <b>{fmtTravelMin(Math.round(tt.min*buf2))}</b></span>}
+                  {buf2>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf2-1))} דק' = <b>{fmtTravelMin(buffered)}</b></span>}
                 </span>
+                <button onClick={insertTravelEnd}
+                  style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(239,68,68,.4)',
+                    borderRadius:6,background:'rgba(239,68,68,.12)',color:'var(--red)',
+                    cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
+                  + הוסף ללוז
+                </button>
               </div>
             );
           })();
