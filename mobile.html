@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m31';
+const MOB_VER='m32';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -493,6 +493,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
   const svcRef=useRef(null);
   const iwRef=useRef(null);
   const srchInputRef=useRef(null);
+  const refreshedIdsRef=useRef(new Set()); // session cache: IDs already attempted refresh
   const[sheet,setSheet]=useState(null);
   const[daySelPlace,setDaySelPlace]=useState(null);
   const[daySelMode,setDaySelMode]=useState(null); // 'sched'|'start'|'end'
@@ -629,9 +630,11 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
         types:res.types,openStatus,todayHours,phone:res.international_phone_number||'',inBank};
     };
 
-    // helper: try to refresh stale placeId via text search by name
-    const tryRefresh=(name,la,lo)=>{
+    // helper: try to refresh stale placeId via text search by name (once per session per item)
+    const tryRefresh=(name,la,lo,itemId)=>{
       if(!name)return;
+      if(itemId&&refreshedIdsRef.current.has(itemId))return; // already tried this session
+      if(itemId)refreshedIdsRef.current.add(itemId);
       const loc=new window.google.maps.LatLng(la,lo);
       svcRef.current.textSearch({query:name,location:loc,radius:500},(results,st2)=>{
         const PS=window.google.maps.places.PlacesServiceStatus;
@@ -662,7 +665,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
         types:bankItem?.types||[],openStatus:bankItem?.openStatus||'',
         todayHours:bankItem?.todayHours||'',phone:bankItem?.phone||''});
       setLoading(false);
-      if(bankItem?.name&&lat&&lng)tryRefresh(bankItem.name,lat,lng);
+      if(bankItem?.name&&lat&&lng)tryRefresh(bankItem.name,lat,lng,bankItem.id);
       return;
     }
 
@@ -673,13 +676,13 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
         if(st===PS.OK&&res){
           setSheet(parseDetails(res,placeId,lat,lng));
         } else {
-          // placeId stale — show stored bankItem data immediately, then try to refresh
+          // placeId stale — show stored bankItem data immediately, then try to refresh once
           setSheet({placeId,lat,lng,inBank,
             name:bankItem?.name||'',address:bankItem?.address||'',
             rating:bankItem?.rating||null,website:bankItem?.website||'',
             types:bankItem?.types||[],openStatus:bankItem?.openStatus||'',
             todayHours:bankItem?.todayHours||'',phone:bankItem?.phone||''});
-          if(bankItem?.name&&lat&&lng)tryRefresh(bankItem.name,lat,lng);
+          if(bankItem?.name&&lat&&lng)tryRefresh(bankItem.name,lat,lng,bankItem.id);
         }
         setLoading(false);
       });

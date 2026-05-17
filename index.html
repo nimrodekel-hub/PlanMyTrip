@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v89';
+const APP_VERSION = 'v90';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1023,6 +1023,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,highlight
             ${shortSite?`<a href="${p.website}" target="_blank" rel="noreferrer" style="font-size:11px;color:#1a73e8;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px">🌐 ${shortSite}</a>`:''}
             ${p.phone?`<span style="font-size:11px;color:#555">📞 ${p.phone}</span>`:''}
             ${p.placeId?`<a href="https://www.google.com/maps/place/?q=place_id:${p.placeId}" target="_blank" rel="noreferrer" style="font-size:10px;color:#1a73e8;text-decoration:none;margin-right:auto">↗ גוגל מפות</a>`:''}
+            ${p.placeId&&!p.rating?`<button onclick="window.__gmShowPlace('${p.placeId}',${p.lat},${p.lng})" style="font-size:10px;color:#1a73e8;background:none;border:none;cursor:pointer;padding:0;font-family:Heebo,Arial,sans-serif" title="טען נתונים עדכניים מגוגל">🔄 טען פרטים</button>`:''}
           </div>
         </div>
         <!-- כפתורי פעולה -->
@@ -1274,13 +1275,18 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,highlight
       if (iw&&build&&iwPlace){
         m.addListener('click',()=>{
           if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:item.name||'',lat:item.lat,lng:item.lng,address:item.address||''});return;}
-          if(item.placeId&&window.__gmShowPlace){
-            // use fresh Google data (handles stale placeId internally)
-            window.__gmShowPlace(item.placeId,item.lat,item.lng);
+          // show all stored bank data — zero API calls
+          // if placeId exists and data is already in session cache, use it (free)
+          if(item.placeId&&window.__placeCache?.[item.placeId]){
+            const cached=window.__placeCache[item.placeId];
+            iwPlace.data=cached;
+            iw.setContent(build(cached));
+            iw.setPosition({lat:item.lat,lng:item.lng});
+            iw.open(mapInst.current);
           } else {
-            // no placeId — show stored bank data
-            const p={name:item.name,address:item.address||'',lat:item.lat,lng:item.lng,placeId:null,
-              rating:item.rating||null,openStatus:item.openStatus||'',todayHours:item.todayHours||'',
+            const p={name:item.name,address:item.address||'',lat:item.lat,lng:item.lng,
+              placeId:item.placeId||null,rating:item.rating||null,
+              openStatus:item.openStatus||'',todayHours:item.todayHours||'',
               phone:item.phone||'',website:item.website||'',placeType:item.placeType||''};
             iwPlace.data=p;
             iw.setContent(build(p));
