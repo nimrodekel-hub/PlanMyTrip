@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v88';
+const APP_VERSION = 'v89';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1124,6 +1124,8 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,highlight
       }
     };
 
+    window.__gmShowPlace=showPlaceById;
+
     window.__gmBank=()=>{
       if (!iwPlace.data) return;
       const p=iwPlace.data;
@@ -1272,10 +1274,19 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,highlight
       if (iw&&build&&iwPlace){
         m.addListener('click',()=>{
           if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:item.name||'',lat:item.lat,lng:item.lng,address:item.address||''});return;}
-          iwPlace.data={name:item.name,address:item.address||'',lat:item.lat,lng:item.lng,placeId:null};
-          iw.setContent(build({name:item.name,address:item.address||'',lat:item.lat,lng:item.lng}));
-          iw.setPosition({lat:item.lat,lng:item.lng});
-          iw.open(mapInst.current);
+          if(item.placeId&&window.__gmShowPlace){
+            // use fresh Google data (handles stale placeId internally)
+            window.__gmShowPlace(item.placeId,item.lat,item.lng);
+          } else {
+            // no placeId — show stored bank data
+            const p={name:item.name,address:item.address||'',lat:item.lat,lng:item.lng,placeId:null,
+              rating:item.rating||null,openStatus:item.openStatus||'',todayHours:item.todayHours||'',
+              phone:item.phone||'',website:item.website||'',placeType:item.placeType||''};
+            iwPlace.data=p;
+            iw.setContent(build(p));
+            iw.setPosition({lat:item.lat,lng:item.lng});
+            iw.open(mapInst.current);
+          }
         });
       }
       markers.current.push(m);

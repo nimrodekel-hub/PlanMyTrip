@@ -617,23 +617,69 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
     if(!svcRef.current){return;}
     setLoading(true);
     const inBank=bankItem!=null||!!(trip?.interestBank||[]).find(i=>i.placeId===placeId);
+
+    // helper: parse getDetails result into sheet fields
+    const parseDetails=(res,pid,la,lo)=>{
+      const dow=new Date().getDay(),wdIdx=dow===0?6:dow-1;
+      let openStatus='';
+      try{openStatus=res.opening_hours?.isOpen()?'פתוח עכשיו':'סגור עכשיו';}catch{}
+      const todayHours=res.opening_hours?.weekday_text?.[wdIdx]?.replace(/^[^:]+:\s*/,'')||'';
+      return{placeId:pid,lat:res.geometry?.location?.lat()||la,lng:res.geometry?.location?.lng()||lo,
+        name:res.name,address:res.formatted_address,rating:res.rating,website:res.website,
+        types:res.types,openStatus,todayHours,phone:res.international_phone_number||'',inBank};
+    };
+
+    // helper: try to refresh stale placeId via text search by name
+    const tryRefresh=(name,la,lo)=>{
+      if(!name)return;
+      const loc=new window.google.maps.LatLng(la,lo);
+      svcRef.current.textSearch({query:name,location:loc,radius:500},(results,st2)=>{
+        const PS=window.google.maps.places.PlacesServiceStatus;
+        if(st2!==PS.OK||!results?.length)return;
+        const freshId=results[0].place_id;
+        if(!freshId)return;
+        svcRef.current.getDetails({placeId:freshId,
+          fields:['name','rating','formatted_address','website','types','geometry','opening_hours','international_phone_number']},
+          (res2,st3)=>{
+            if(st3===PS.OK&&res2){
+              setSheet(parseDetails(res2,freshId,la,lo));
+              // silently update placeId in bank if item is from bank
+              if(bankItem&&onUpdate&&trip&&freshId!==placeId){
+                const updated=(trip.interestBank||[]).map(i=>
+                  i.id===bankItem.id?{...i,placeId:freshId}:i);
+                onUpdate({...trip,interestBank:updated});
+              }
+            }
+          });
+      });
+    };
+
     if(!placeId){
-      setSheet({lat,lng,name:bankItem?.name||'',address:bankItem?.address||'',inBank,bankItem});
-      setLoading(false);return;
+      // no placeId stored — show bankItem data and try to find by name
+      setSheet({lat,lng,inBank,
+        name:bankItem?.name||'',address:bankItem?.address||'',
+        rating:bankItem?.rating||null,website:bankItem?.website||'',
+        types:bankItem?.types||[],openStatus:bankItem?.openStatus||'',
+        todayHours:bankItem?.todayHours||'',phone:bankItem?.phone||''});
+      setLoading(false);
+      if(bankItem?.name&&lat&&lng)tryRefresh(bankItem.name,lat,lng);
+      return;
     }
-    svcRef.current.getDetails({placeId,fields:['name','rating','formatted_address','website','types','geometry','opening_hours','international_phone_number']},
+
+    svcRef.current.getDetails({placeId,
+      fields:['name','rating','formatted_address','website','types','geometry','opening_hours','international_phone_number']},
       (res,st)=>{
         const PS=window.google.maps.places.PlacesServiceStatus;
         if(st===PS.OK&&res){
-          const dow=new Date().getDay(),wdIdx=dow===0?6:dow-1;
-          let openStatus='';
-          try{openStatus=res.opening_hours?.isOpen()?'פתוח עכשיו':'סגור עכשיו';}catch{}
-          const todayHours=res.opening_hours?.weekday_text?.[wdIdx]?.replace(/^[^:]+:\s*/,'')||'';
-          setSheet({placeId,lat:res.geometry?.location?.lat()||lat,lng:res.geometry?.location?.lng()||lng,
-            name:res.name,address:res.formatted_address,rating:res.rating,website:res.website,types:res.types,
-            openStatus,todayHours,phone:res.international_phone_number||'',inBank});
+          setSheet(parseDetails(res,placeId,lat,lng));
         } else {
-          setSheet({placeId,lat,lng,name:bankItem?.name||'',address:bankItem?.address||'',inBank});
+          // placeId stale — show stored bankItem data immediately, then try to refresh
+          setSheet({placeId,lat,lng,inBank,
+            name:bankItem?.name||'',address:bankItem?.address||'',
+            rating:bankItem?.rating||null,website:bankItem?.website||'',
+            types:bankItem?.types||[],openStatus:bankItem?.openStatus||'',
+            todayHours:bankItem?.todayHours||'',phone:bankItem?.phone||''});
+          if(bankItem?.name&&lat&&lng)tryRefresh(bankItem.name,lat,lng);
         }
         setLoading(false);
       });
