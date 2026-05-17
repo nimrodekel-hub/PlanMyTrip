@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v92';
+const APP_VERSION = 'v93';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1292,23 +1292,19 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       if (iw&&build&&iwPlace){
         m.addListener('click',()=>{
           if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:item.name||'',lat:item.lat,lng:item.lng,address:item.address||''});return;}
-          // show all stored bank data — zero API calls
-          // if placeId exists and data is already in session cache, use it (free)
-          if(item.placeId&&window.__placeCache?.[item.placeId]){
-            const cached=window.__placeCache[item.placeId];
-            iwPlace.data=cached;
-            iw.setContent(build(cached));
-            iw.setPosition({lat:item.lat,lng:item.lng});
-            iw.open(mapInst.current);
-          } else {
-            const p={name:item.name,address:item.address||'',lat:item.lat,lng:item.lng,
-              placeId:item.placeId||null,rating:item.rating||null,
-              openStatus:item.openStatus||'',todayHours:item.todayHours||'',
-              phone:item.phone||'',website:item.website||'',placeType:item.placeType||''};
-            iwPlace.data=p;
-            iw.setContent(build(p));
-            iw.setPosition({lat:item.lat,lng:item.lng});
-            iw.open(mapInst.current);
+          // always show stored bank data immediately
+          const cached=item.placeId?window.__placeCache?.[item.placeId]:null;
+          const p=cached||{name:item.name,address:item.address||'',lat:item.lat,lng:item.lng,
+            placeId:item.placeId||null,rating:item.rating??null,
+            openStatus:item.openStatus||'',todayHours:item.todayHours||'',
+            phone:item.phone||'',website:item.website||'',placeType:item.placeType||''};
+          iwPlace.data=p;
+          iw.setContent(build(p));
+          iw.setPosition({lat:item.lat,lng:item.lng});
+          iw.open(mapInst.current);
+          // silently enrich in background if not cached yet
+          if(item.placeId&&!cached&&window.__gmShowPlace){
+            window.__gmShowPlace(item.placeId,item.lat,item.lng);
           }
         });
       }
@@ -1605,8 +1601,11 @@ function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,
   // תומך בשני פורמטים: durationMins (דסקטופ) ו-endTime (מובייל)
   const end=block.durationMins!=null?addMins(block.startTime,block.durationMins):(block.endTime||'');
   const col=BLOCK_COLOR[block.type]||'var(--text3)';
-  // look up bank item for display fallback (blocks created before m31/v91 may lack place fields)
-  const bankInfo=block.placeId?(interestBank||[]).find(i=>i.placeId===block.placeId):null;
+  // look up bank item for display fallback (try placeId first, then lat/lng)
+  const bank=interestBank||[];
+  const bankInfo=block.placeId
+    ?bank.find(i=>i.placeId&&i.placeId===block.placeId)
+    :(block.lat&&block.lng?bank.find(i=>i.lat&&Math.abs(i.lat-block.lat)<0.0001&&Math.abs(i.lng-block.lng)<0.0001):null);
   const dispRating=block.placeRating??bankInfo?.rating??null;
   const dispOpenStatus=block.placeOpenStatus||bankInfo?.openStatus||'';
   const dispTodayHours=block.placeTodayHours||bankInfo?.todayHours||'';

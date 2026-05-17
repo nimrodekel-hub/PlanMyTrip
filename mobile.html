@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m34';
+const MOB_VER='m35';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -616,8 +616,24 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
 
   const loadPlace=(placeId,lat,lng,bankItem=null)=>{
     if(!svcRef.current){return;}
-    setLoading(true);
     const inBank=bankItem!=null||!!(trip?.interestBank||[]).find(i=>i.placeId===placeId);
+
+    // show stored bank data IMMEDIATELY so bottom sheet opens with existing info
+    if(bankItem){
+      setSheet({placeId:placeId||null,lat,lng,inBank,
+        name:bankItem.name||'',address:bankItem.address||'',
+        rating:bankItem.rating??null,website:bankItem.website||'',
+        types:bankItem.types||[],openStatus:bankItem.openStatus||'',
+        todayHours:bankItem.todayHours||'',phone:bankItem.phone||''});
+    }
+
+    if(!placeId){
+      // no placeId — already showed bank data above; try refresh by name
+      if(bankItem?.name&&lat&&lng)tryRefresh(bankItem.name,lat,lng,bankItem.id);
+      return;
+    }
+
+    setLoading(true);
 
     // helper: parse getDetails result into sheet fields + persist back to bank item
     const parseDetails=(res,pid,la,lo)=>{
@@ -677,31 +693,15 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
       });
     };
 
-    if(!placeId){
-      // no placeId stored — show bankItem data and try to find by name
-      setSheet({lat,lng,inBank,
-        name:bankItem?.name||'',address:bankItem?.address||'',
-        rating:bankItem?.rating||null,website:bankItem?.website||'',
-        types:bankItem?.types||[],openStatus:bankItem?.openStatus||'',
-        todayHours:bankItem?.todayHours||'',phone:bankItem?.phone||''});
-      setLoading(false);
-      if(bankItem?.name&&lat&&lng)tryRefresh(bankItem.name,lat,lng,bankItem.id);
-      return;
-    }
-
     svcRef.current.getDetails({placeId,
       fields:['name','rating','formatted_address','website','types','geometry','opening_hours','international_phone_number']},
       (res,st)=>{
         const PS=window.google.maps.places.PlacesServiceStatus;
         if(st===PS.OK&&res){
+          // update sheet with Google data merged on top of bank data
           setSheet(parseDetails(res,placeId,lat,lng));
         } else {
-          // placeId stale — show stored bankItem data immediately, then try to refresh once
-          setSheet({placeId,lat,lng,inBank,
-            name:bankItem?.name||'',address:bankItem?.address||'',
-            rating:bankItem?.rating||null,website:bankItem?.website||'',
-            types:bankItem?.types||[],openStatus:bankItem?.openStatus||'',
-            todayHours:bankItem?.todayHours||'',phone:bankItem?.phone||''});
+          // placeId stale — already showing bank data; try to find fresh placeId once
           if(bankItem?.name&&lat&&lng)tryRefresh(bankItem.name,lat,lng,bankItem.id);
         }
         setLoading(false);
@@ -1473,8 +1473,11 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
               const ttKey=next?`${b.id}->${next.id}`:null;
               const tt=ttKey?travelTimes[ttKey]:null;
               const buf=settings?.travelBuffer??1.2;
-              // look up bank item for display fallback (blocks created before m31 may lack place fields)
-              const bankInfo=b.placeId?(trip?.interestBank||[]).find(i=>i.placeId===b.placeId):null;
+              // look up bank item for display fallback (try placeId first, then lat/lng)
+              const bank=trip?.interestBank||[];
+              const bankInfo=b.placeId
+                ?bank.find(i=>i.placeId&&i.placeId===b.placeId)
+                :(b.lat&&b.lng?bank.find(i=>i.lat&&Math.abs(i.lat-b.lat)<0.0001&&Math.abs(i.lng-b.lng)<0.0001):null);
               const dispRating=b.placeRating??bankInfo?.rating??null;
               const dispOpenStatus=b.placeOpenStatus||bankInfo?.openStatus||'';
               const dispTodayHours=b.placeTodayHours||bankInfo?.todayHours||'';
