@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v76';
+const APP_VERSION = 'v77';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1454,16 +1454,23 @@ function Weather({coordinates,location}){
 /* ══════════════════════════════════
    מודל עריכת בלוק
 ══════════════════════════════════ */
-function BlockModal({block,onSave,onClose,onDelete}){
+function BlockModal({block,onSave,onClose,onDelete,onBankNoteUpdate}){
   const[b,setB]=useState({...block});
   const upd=(k,v)=>setB(p=>({...p,[k]:v}));
+  const hasPlaceInfo=!!(b.placeRating||b.placeOpenStatus||b.placeTodayHours||b.placePhone||b.placeWebsite||b.placeType);
+  const handleSave=()=>{
+    onSave(b);
+    // sync notes to matching bank item
+    if(b.placeId&&onBankNoteUpdate) onBankNoteUpdate(b.placeId,b.notes||'');
+    onClose();
+  };
   return <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
-    <div className="modal">
-      <div className="modal-header">
+    <div className="modal" style={{maxHeight:'90vh',display:'flex',flexDirection:'column'}}>
+      <div className="modal-header" style={{flexShrink:0}}>
         <span style={{fontWeight:700,fontSize:15}}>{BLOCK_EMOJI[b.type]} עריכת בלוק</span>
         <button className="btn btn-secondary btn-icon btn-sm" onClick={onClose}>✕</button>
       </div>
-      <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+      <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:14,overflowY:'auto',flex:1}}>
         <div><label className="label">סוג</label>
           <select className="input" value={b.type} onChange={e=>upd('type',e.target.value)}>
             {BLOCK_TYPES.map(t=><option key={t} value={t}>{BLOCK_EMOJI[t]} {BLOCK_HE[t]}</option>)}
@@ -1480,19 +1487,37 @@ function BlockModal({block,onSave,onClose,onDelete}){
           <input className="input" value={b.location} onChange={e=>upd('location',e.target.value)} placeholder="אופציונלי"/></div>
         <div><label className="label">עלות (₪)</label>
           <input className="input" type="number" min="0" step="1" value={b.cost} onChange={e=>upd('cost',parseFloat(e.target.value)||0)}/></div>
-        <div><label className="label">הערות</label>
-          <textarea className="input" value={b.notes} onChange={e=>upd('notes',e.target.value)} placeholder="הערות פרטיות…"/></div>
+        {/* הערות — מסונכרנות עם הבנק אם יש placeId */}
+        <div>
+          <label className="label">📝 הערות{b.placeId?' (מסונכרנות עם הבנק)':''}</label>
+          <textarea className="input" rows={3} value={b.notes||''} onChange={e=>upd('notes',e.target.value)}
+            placeholder="הערות, טיפים, מה לא לפספס…"/>
+        </div>
         <div><label className="label">דירוג הנאה</label><Stars value={b.rating} onChange={v=>upd('rating',v)}/></div>
         <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13}}>
           <input type="checkbox" checked={b.isCompleted} onChange={e=>upd('isCompleted',e.target.checked)} style={{accentColor:'var(--green)'}}/>
           סמן כהושלם
         </label>
+        {/* מידע מגוגל — readonly */}
+        {hasPlaceInfo&&<div style={{background:'var(--bg3)',borderRadius:10,padding:'10px 12px',
+          border:'1px solid var(--border)'}}>
+          <div style={{fontSize:11,fontWeight:700,color:'var(--text2)',marginBottom:6}}>📍 מידע מגוגל (קריאה בלבד)</div>
+          {b.placeType&&<div style={{fontSize:11,color:'var(--text3)',marginBottom:3}}>{b.placeType}</div>}
+          {b.placeRating&&<div style={{fontSize:12,color:'var(--amber)',marginBottom:3}}>⭐ {b.placeRating}{b.placeUserRatings?` (${Number(b.placeUserRatings).toLocaleString()} ביקורות)`:''}</div>}
+          {b.placeOpenStatus&&<div style={{fontSize:12,fontWeight:600,marginBottom:3,color:b.placeOpenStatus==='פתוח עכשיו'?'var(--green)':'var(--red)'}}>
+            {b.placeOpenStatus==='פתוח עכשיו'?'✅':'🔴'} {b.placeOpenStatus}</div>}
+          {b.placeTodayHours&&<div style={{fontSize:11,color:'var(--text3)',marginBottom:3}}>🕐 {b.placeTodayHours}</div>}
+          {b.placePhone&&<div style={{fontSize:11,color:'var(--accent)',marginBottom:3}}>📞 {b.placePhone}</div>}
+          {b.placeWebsite&&<a href={b.placeWebsite} target="_blank" rel="noreferrer"
+            style={{fontSize:11,color:'var(--accent)',display:'block'}} onClick={e=>e.stopPropagation()}>
+            🌐 {b.placeWebsite.replace(/^https?:\/\//,'').split('/')[0]}</a>}
+        </div>}
       </div>
-      <div className="modal-footer">
+      <div className="modal-footer" style={{flexShrink:0}}>
         {onDelete&&<button className="btn btn-danger btn-sm" onClick={onDelete}>🗑 מחק</button>}
         <div style={{flex:1}}/>
         <button className="btn btn-secondary btn-sm" onClick={onClose}>ביטול</button>
-        <button className="btn btn-primary btn-sm" onClick={()=>{onSave(b);onClose();}}>שמור</button>
+        <button className="btn btn-primary btn-sm" onClick={handleSave}>שמור</button>
       </div>
     </div>
   </div>;
@@ -1619,7 +1644,7 @@ function LocationPickerModal({bank,title,onPick,onPickFromMap,onClose}){
   );
 }
 
-function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank,settings,onPickFromMap}){
+function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank,settings,onPickFromMap,onBankNoteUpdate}){
   const[open,setOpen]=useState(true),[editing,setEd]=useState(null);
   const[travelTimes,setTravelTimes]=useState({});
   const[locationPicking,setLocationPicking]=useState(null); // {field:'start'|'end'}
@@ -1943,7 +1968,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
       </div>
     </div>}
 
-    {editing&&<BlockModal block={editing} onSave={updBlock} onClose={()=>setEd(null)} onDelete={()=>{delBlock(editing.id);setEd(null);}}/>}
+    {editing&&<BlockModal block={editing} onSave={updBlock} onClose={()=>setEd(null)} onDelete={()=>{delBlock(editing.id);setEd(null);}} onBankNoteUpdate={onBankNoteUpdate}/>}
 
     {locationPicking&&(
       <LocationPickerModal
@@ -2069,6 +2094,7 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=fals
   const[dayOffset,setDayOffset]=useState(0);
 
   const updDay=upd=>onUpdate({...trip,days:trip.days.map(d=>d.id===upd.id?upd:d)});
+  const updateBankNote=(placeId,note)=>onUpdate({...trip,interestBank:(trip.interestBank||[]).map(i=>i.placeId===placeId?{...i,note}:i)});
   const addDay=()=>{
     const last=trip.days[trip.days.length-1];
     let nd='';
@@ -2118,7 +2144,8 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=fals
           :trip.days.map((day,i)=>(
             <DayPanel key={day.id} day={{...day,_tripBank:trip.interestBank||[]}} idx={i} onUpdate={updDay} onDelete={()=>delDay(day.id)}
               onFocusDay={onFocusDay} onFocusItem={onFocusItem}
-              onMoveToBank={(block)=>moveBlockToBank(block,day.id)} settings={settings} onPickFromMap={onPickFromMap}/>
+              onMoveToBank={(block)=>moveBlockToBank(block,day.id)} settings={settings} onPickFromMap={onPickFromMap}
+              onBankNoteUpdate={updateBankNote}/>
           ))
         }
       </div>
@@ -2176,7 +2203,8 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=fals
             <div className="scroll-y flex-1" style={{padding:'8px'}}>
               <DayPanel day={{...day,_tripBank:trip.interestBank||[]}} idx={clampedOffset+i} onUpdate={updDay} onDelete={()=>delDay(day.id)}
                 onFocusDay={onFocusDay} onFocusItem={onFocusItem}
-                onMoveToBank={(block)=>moveBlockToBank(block,day.id)} settings={settings} onPickFromMap={onPickFromMap}/>
+                onMoveToBank={(block)=>moveBlockToBank(block,day.id)} settings={settings} onPickFromMap={onPickFromMap}
+                onBankNoteUpdate={updateBankNote}/>
             </div>
           </div>
         ))
@@ -3616,6 +3644,31 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
     if(renameName.trim()) onLoadTrip(null,{...t,name:renameName.trim()});
     setRenameId(null);
   };
+  // שכפול מלא — כל התוכן כולל בנק, מסמכים, לוז, הוצאות
+  const duplicateFull=(t)=>{
+    onNewTrip(t.name+' — עותק',{
+      ...t,
+      days:(t.days||[]).map(d=>({...d,id:uid(),blocks:(d.blocks||[]).map(b=>({...b,id:uid()}))})),
+      interestBank:(t.interestBank||[]).map(i=>({...i,id:uid()})),
+      expenses:(t.expenses||[]).map(e=>({...e,id:uid()})),
+      documents:(t.documents||[]).map(d=>({...d,id:uid()})),
+    });
+  };
+  // שכפול מבנה — ימים ולוז בלבד, ללא בנק/מסמכים/הוצאות, מנקה סטטוסים
+  const duplicateStructure=(t)=>{
+    onNewTrip(t.name+' (תבנית)',{
+      ...t,
+      interestBank:[],
+      expenses:[],
+      documents:[],
+      packingList:(t.packingList||[]).map(i=>({...i,id:uid(),checked:false})),
+      shoppingList:(t.shoppingList||[]).map(i=>({...i,id:uid(),checked:false})),
+      days:(t.days||[]).map(d=>({
+        ...d,id:uid(),summary:'',
+        blocks:(d.blocks||[]).map(b=>({...b,id:uid(),isCompleted:false,cost:0,rating:0}))
+      })),
+    });
+  };
 
   return <div className="scroll-y" style={{height:'100%',padding:20}}>
     <div style={{maxWidth:640,margin:'0 auto',display:'flex',flexDirection:'column',gap:20}}>
@@ -3640,6 +3693,9 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
               </div>
             </div>
           )}
+          <div style={{fontSize:11,color:'var(--text3)',padding:'4px 2px',lineHeight:1.7}}>
+            📋 שכפול מלא (בנק + לוז + מסמכים + הוצאות) &nbsp;|&nbsp; 📐 שכפול מבנה בלבד (ימים + לוז, ללא בנק/מסמכים/הוצאות)
+          </div>
           {trips.map(t=>(
             <div key={t.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:8,background:t.id===activeTrip?.id?'rgba(79,142,247,.12)':'var(--surface2)'}}>
               {renameId===t.id?(
@@ -3657,6 +3713,8 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
                     <div style={{fontSize:11,color:'var(--text3)'}}>{t.startDate||'—'} → {t.endDate||'—'} · {t.days.length} ימים · {t.expenses.length} הוצאות</div>
                   </div>
                   <button className="btn btn-secondary btn-sm" title="שנה שם" onClick={()=>startRename(t)}>✏️</button>
+                  <button className="btn btn-secondary btn-sm" title="שכפול מלא — כל הבנק, הלוז, המסמכים וההוצאות" onClick={()=>duplicateFull(t)}>📋</button>
+                  <button className="btn btn-secondary btn-sm" title="שכפול מבנה — ימים ולוז בלבד, ללא בנק/מסמכים/הוצאות" onClick={()=>duplicateStructure(t)}>📐</button>
                   {t.id!==activeTrip?.id&&<button className="btn btn-secondary btn-sm" onClick={()=>onLoadTrip(t.id)}>טען</button>}
                   {t.id===activeTrip?.id&&<span className="chip chip-green" style={{fontSize:10}}>פעיל</span>}
                   <button className="btn btn-danger btn-sm" onClick={()=>{if(confirm(`למחוק את "${t.name}"?`))onDeleteTrip(t.id);}}>🗑</button>

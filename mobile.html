@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m18';
+const MOB_VER='m19';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -1017,7 +1017,14 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
     toast('פעילות הוסרה','i');
   };
   const saveBlock=updated=>{
-    updDay({blocks:(day.blocks||[]).map(b=>b.id===updated.id?updated:b)});
+    // update block in day
+    const newDays=trip.days.map(d=>d.id===day.id
+      ?{...d,blocks:(d.blocks||[]).map(b=>b.id===updated.id?updated:b)}:d);
+    // sync note to matching bank item (by placeId)
+    const newBank=updated.placeId
+      ?(trip.interestBank||[]).map(i=>i.placeId===updated.placeId?{...i,note:updated.note||''}:i)
+      :(trip.interestBank||[]);
+    onUpdate({...trip,days:newDays,interestBank:newBank});
     setEditing(null);
   };
   const addBlock=type=>{
@@ -1230,7 +1237,16 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                               {b.placeOpenStatus==='פתוח עכשיו'?'✅':'🔴'} {b.placeOpenStatus}
                             </span>}
                           </div>
-                          {b.note&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,fontStyle:'italic'}}>📝 {b.note}</div>}
+                          {b.placeTodayHours&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>🕐 {b.placeTodayHours}</div>}
+                          {b.placePhone&&<div style={{fontSize:11,color:'var(--accent2)',marginTop:2}}>📞 {b.placePhone}</div>}
+                          {b.placeWebsite&&<a href={b.placeWebsite} target="_blank" rel="noreferrer"
+                            onClick={e=>e.stopPropagation()}
+                            style={{fontSize:11,color:'var(--accent2)',display:'block',marginTop:2,textDecoration:'none'}}>
+                            🌐 {b.placeWebsite.replace(/^https?:\/\//,'').split('/')[0]}
+                          </a>}
+                          {b.note&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,lineHeight:1.4,
+                            background:'rgba(79,142,247,.06)',borderRadius:6,padding:'4px 7px',
+                            borderRight:'2px solid var(--accent2)'}}>📝 {b.note}</div>}
                         </div>
                         {/* action buttons */}
                         <div style={{display:'flex',gap:2,flexShrink:0}}>
