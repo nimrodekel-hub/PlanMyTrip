@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m11';
+const MOB_VER='m12';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -453,7 +453,8 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
     if(!mapsReady||!mapDivRef.current||mapRef.current)return;
     const m=new window.google.maps.Map(mapDivRef.current,{
       center:{lat:32,lng:35},zoom:8, // ישראל כברירת מחדל — מוחלף ב-GPS תוך שניה
-      disableDefaultUI:true,gestureHandling:'greedy',styles:DARK_MAP,
+      disableDefaultUI:true,gestureHandling:'greedy',
+      // ללא styles — שימוש בסגנון הסטנדרטי של גוגל מפות (הכי קריא)
     });
     svcRef.current=new window.google.maps.places.PlacesService(m);
     iwRef.current=new window.google.maps.InfoWindow();
