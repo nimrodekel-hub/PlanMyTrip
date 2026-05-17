@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v86';
+const APP_VERSION = 'v87';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1701,7 +1701,14 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
   const dragIdxRef=useRef(null);
   const[dragOver,setDragOver]=useState(null);
   const updBlock=upd=>onUpdate({...day,blocks:day.blocks.map(b=>b.id===upd.id?upd:b)});
-  const delBlock=id=>onUpdate({...day,blocks:day.blocks.filter(b=>b.id!==id)});
+  const delBlock=id=>{
+    const blks=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+    const idx=blks.findIndex(b=>b.id===id);
+    const toRemove=new Set([id]);
+    if(idx>0&&blks[idx-1].isAutoTravel)toRemove.add(blks[idx-1].id);
+    if(idx<blks.length-1&&blks[idx+1].isAutoTravel)toRemove.add(blks[idx+1].id);
+    onUpdate({...day,blocks:day.blocks.filter(b=>!toRemove.has(b.id))});
+  };
   const handleDrop=(toIdx)=>{
     const from=dragIdxRef.current;
     dragIdxRef.current=null;setDragOver(null);

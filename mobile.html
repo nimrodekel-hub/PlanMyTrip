@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m28';
+const MOB_VER='m29';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -1103,7 +1103,12 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
 
   // block operations
   const deleteBlock=id=>{
-    updDay({blocks:(day.blocks||[]).filter(b=>b.id!==id)});
+    const blks=[...(day.blocks||[])].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
+    const idx=blks.findIndex(b=>b.id===id);
+    const toRemove=new Set([id]);
+    if(idx>0&&blks[idx-1].isAutoTravel)toRemove.add(blks[idx-1].id);
+    if(idx<blks.length-1&&blks[idx+1].isAutoTravel)toRemove.add(blks[idx+1].id);
+    updDay({blocks:(day.blocks||[]).filter(b=>!toRemove.has(b.id))});
     setEditing(null);
     toast('פעילות הוסרה','i');
   };
