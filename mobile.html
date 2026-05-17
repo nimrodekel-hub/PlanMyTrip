@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m6';
+const MOB_VER='m7';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -345,6 +345,46 @@ const normTrip=t=>{
     interestBank:t.interestBank||[],expenses:t.expenses||[],packingList:t.packingList||[],shoppingList:t.shoppingList||[],documents:t.documents||[],quickNotes:t.quickNotes||[]};
 };
 
+/* ── marker icon map (same as desktop) ── */
+const SEARCH_ICON_MAP=[
+  ['campground','⛺','#33691e'],['rv_park','🏕','#2e7d32'],
+  ['bakery','🥐','#bf8a30'],['winery','🍷','#7b1c2e'],
+  ['cafe','☕','#5d4037'],['bar','🍺','#4e342e'],
+  ['night_club','🎵','#4a148c'],['lodging','🛏','#1565c0'],
+  ['restaurant','🍽','#e65100'],['shopping_mall','🛍','#00695c'],
+  ['supermarket','🛒','#00838f'],['grocery_or_supermarket','🛒','#00838f'],
+  ['clothing_store','👗','#ad1457'],['store','🛍','#00796b'],
+  ['museum','🏛','#7b1fa2'],['playground','🎠','#0097a7'],
+  ['amusement_park','🎢','#bf360c'],['zoo','🦁','#e65100'],
+  ['aquarium','🐠','#0277bd'],['tourist_attraction','🎯','#6a1b9a'],
+  ['park','🌳','#2e7d32'],['beach','🏖','#f57f17'],
+  ['natural_feature','🏔','#388e3c'],['gym','💪','#ef6c00'],
+  ['stadium','🏟','#33691e'],['movie_theater','🎬','#4a148c'],
+  ['airport','✈','#37474f'],['train_station','🚂','#546e7a'],
+  ['bus_station','🚌','#607d8b'],['gas_station','⛽','#795548'],
+  ['hospital','🏥','#c62828'],['pharmacy','💊','#2e7d32'],
+  ['synagogue','🕍','#b8860b'],['church','⛪','#546e7a'],['mosque','🕌','#1b5e20'],
+];
+const makePinIcon=(types,opts={})=>{
+  if(!window.google?.maps)return null;
+  const row=SEARCH_ICON_MAP.find(([t])=>(types||[]).includes(t))||['','📍','#1a73e8'];
+  const[,em,color]=row;
+  const scale=opts.scale||1;
+  const w=Math.round(34*scale),h=Math.round(44*scale);
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 52" width="${w}" height="${h}">`+
+    `<path d="M20 2C10.06 2 2 10.06 2 20c0 11.05 18 34 18 34s18-22.95 18-34C38 10.06 29.94 2 20 2z" fill="${color}" stroke="rgba(0,0,0,0.22)" stroke-width="1.5"/>`+
+    `<circle cx="20" cy="20" r="13" fill="rgba(255,255,255,0.93)"/>`+
+    `<text x="20" y="26" text-anchor="middle" font-family="Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif" font-size="15">${em}</text>`+
+    `</svg>`;
+  return{url:'data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(svg),
+    scaledSize:new window.google.maps.Size(w,h),
+    anchor:new window.google.maps.Point(Math.round(w/2),h)};
+};
+const getTypeEmoji=types=>{
+  const row=SEARCH_ICON_MAP.find(([t])=>(types||[]).includes(t));
+  return row?row[1]:'📍';
+};
+
 /* ─── dark map styles ─── */
 const DARK_MAP=[{elementType:'geometry',stylers:[{color:'#1d2c4d'}]},{elementType:'labels.text.fill',stylers:[{color:'#8ec3b9'}]},{elementType:'labels.text.stroke',stylers:[{color:'#1a3646'}]},{featureType:'administrative.country',elementType:'geometry.stroke',stylers:[{color:'#4b6878'}]},{featureType:'road',elementType:'geometry',stylers:[{color:'#304a7d'}]},{featureType:'road',elementType:'labels.text.fill',stylers:[{color:'#98a5be'}]},{featureType:'road.highway',elementType:'geometry',stylers:[{color:'#2c6675'}]},{featureType:'water',elementType:'geometry',stylers:[{color:'#0e1626'}]},{featureType:'water',elementType:'labels.text.fill',stylers:[{color:'#4e6d70'}]},{featureType:'poi',elementType:'geometry',stylers:[{color:'#283d6a'}]}];
 
@@ -430,17 +470,20 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
     return()=>clearTimeout(t);
   },[active,mapsReady]);// eslint-disable-line
 
-  /* bank markers — gold dots */
+  /* bank markers — category SVG pins */
   useEffect(()=>{
     if(!mapsReady||!mapRef.current)return;
     bankMkRef.current.forEach(m=>m.setMap(null));
     bankMkRef.current=[];
     (trip?.interestBank||[]).forEach(item=>{
       if(!item.lat||!item.lng)return;
+      const types=item.types||(item.placeType?[item.placeType]:[]);
+      const icon=makePinIcon(types,{scale:0.85})||{
+        path:window.google.maps.SymbolPath.CIRCLE,scale:9,
+        fillColor:'#f59e0b',fillOpacity:.9,strokeColor:'#fff',strokeWeight:1.5};
       const mk=new window.google.maps.Marker({
-        position:{lat:item.lat,lng:item.lng},map:mapRef.current,title:item.name||'',zIndex:5,
-        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:8,fillColor:'#f59e0b',fillOpacity:.9,strokeColor:'#fff',strokeWeight:1.5},
-      });
+        position:{lat:item.lat,lng:item.lng},map:mapRef.current,
+        title:item.name||'',zIndex:5,icon});
       mk.addListener('click',()=>loadPlace(item.placeId,item.lat,item.lng,item));
       bankMkRef.current.push(mk);
     });
@@ -492,24 +535,44 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef}){
 
   const doSearch=()=>{
     const q=(srchInputRef.current?.value||'').trim();
-    if(!q||!mapRef.current||!svcRef.current)return;
+    if(!q)return;
+    if(!mapRef.current||!svcRef.current){toast('המפה עדיין נטענת...','e');return;}
     srchMkRef.current.forEach(m=>m.setMap(null));srchMkRef.current=[];
-    const bounds=mapRef.current.getBounds();
-    const opts={query:q,language:'he'};
-    if(bounds)opts.bounds=bounds;
+    const vpBounds=mapRef.current.getBounds();
+    const opts={query:q};
+    if(vpBounds)opts.bounds=vpBounds;
     svcRef.current.textSearch(opts,(res,st)=>{
       const PS=window.google.maps.places.PlacesServiceStatus;
       if(st!==PS.OK||!res?.length){toast('לא נמצאו תוצאות','e');return;}
-      const toShow=(bounds?res.filter(r=>r.geometry?.location&&bounds.contains(r.geometry.location)):res).slice(0,10);
-      const list=toShow.length?toShow:res.slice(0,5);
+      // filter in-viewport first; fall back to all results if none in viewport
+      const inView=vpBounds
+        ?res.filter(r=>r.geometry?.location&&vpBounds.contains(r.geometry.location))
+        :res;
+      const list=(inView.length?inView:res).slice(0,8);
+      // place markers
+      const bounds=new window.google.maps.LatLngBounds();
       list.forEach(r=>{
         const loc=r.geometry?.location;if(!loc)return;
-        const mk=new window.google.maps.Marker({position:{lat:loc.lat(),lng:loc.lng()},map:mapRef.current,title:r.name||'',zIndex:20,
-          icon:{path:window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,scale:5,fillColor:'#4f8ef7',fillOpacity:1,strokeColor:'#fff',strokeWeight:1.5,rotation:180}});
+        const icon=makePinIcon(r.types||[])||{
+          path:window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+          scale:5,fillColor:'#4f8ef7',fillOpacity:1,strokeColor:'#fff',strokeWeight:1.5,rotation:180};
+        const mk=new window.google.maps.Marker({
+          position:{lat:loc.lat(),lng:loc.lng()},map:mapRef.current,
+          title:r.name||'',zIndex:20,icon});
         mk.addListener('click',()=>loadPlace(r.place_id,loc.lat(),loc.lng()));
         srchMkRef.current.push(mk);
+        bounds.extend(loc);
       });
-      if(list.length===1){const loc=list[0].geometry.location;loadPlace(list[0].place_id,loc.lat(),loc.lng());}
+      // pan/zoom to results
+      if(list.length===1){
+        const loc=list[0].geometry.location;
+        mapRef.current.panTo(loc);mapRef.current.setZoom(15);
+        loadPlace(list[0].place_id,loc.lat(),loc.lng());
+      } else if(list.length>1){
+        mapRef.current.fitBounds(bounds,{top:60,bottom:60,left:20,right:20});
+      }
+      if(inView.length===0&&res.length>0)
+        toast(`${list.length} תוצאות — גרור לאזור אחר לסינון טוב יותר`,'i');
     });
   };
 
@@ -785,15 +848,20 @@ function BankScreen({trip,active,onShowOnMap}){
   const showFlat=!!(search.trim())||sortMode==='distance';
 
   const BankItem=({item})=>{
-    const lbl=getTypeLabel(item.types||(item.placeType?[item.placeType]:[]));
-    const ic=lbl?lbl.split(' ')[0]:'📍';
+    const types=item.types||(item.placeType?[item.placeType]:[]);
+    const lbl=getTypeLabel(types);
+    const ic=getTypeEmoji(types); // emoji from SEARCH_ICON_MAP (same as map pins)
     const hasLoc=!!(item.lat&&item.lng);
     return(
       <div className="bitem">
         <div style={{fontSize:20,flexShrink:0}}>{ic}</div>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:14,fontWeight:600}}>{item.name||'—'}</div>
-          {(item.address||lbl)&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>{lbl}{item.address&&<span> · {item.address}</span>}</div>}
+          {(lbl||item.address)&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>
+            {lbl&&<span>{lbl}</span>}
+            {lbl&&item.address&&<span> · </span>}
+            {item.address&&<span>{item.address}</span>}
+          </div>}
           {item._dist!==undefined&&<div style={{fontSize:11,color:'var(--accent2)',marginTop:2}}>📍 {fmtDist(item._dist)}</div>}
           {item.note&&<div style={{fontSize:11,color:'var(--accent2)',marginTop:2}}>📝 {item.note}</div>}
         </div>
