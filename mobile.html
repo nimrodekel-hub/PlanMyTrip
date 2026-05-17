@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m19';
+const MOB_VER='m20';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -964,12 +964,12 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
     [...(day?.blocks||[])].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||'')),
   [day?.blocks]);
 
-  /* ── OSRM travel times ── */
+  /* ── OSRM travel times (including start/end location) ── */
   const blocksKey=sorted.map(b=>b.id).join(',');
   useEffect(()=>{
     setTravelTimes({});
     const bankItems=trip?.interestBank||[];
-    if(sorted.length<2)return;
+    if(sorted.length<1)return;
     let cancelled=false;
     const getCoords=blk=>{
       if(blk.lat&&blk.lng)return{lat:blk.lat,lng:blk.lng};
@@ -977,6 +977,17 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
       return null;
     };
     (async()=>{
+      // start location → first block
+      if(day?.startLat&&day?.startLng&&sorted[0].type!=='travel'){
+        const fc=getCoords(sorted[0]);
+        if(fc&&!cancelled){
+          const key=`__start__->${sorted[0].id}`;
+          setTravelTimes(prev=>({...prev,[key]:{loading:true,min:null}}));
+          const min=await fetchOsrmMinutes(day.startLat,day.startLng,fc.lat,fc.lng);
+          if(!cancelled)setTravelTimes(prev=>({...prev,[key]:{loading:false,min}}));
+        }
+      }
+      // between consecutive blocks
       for(let i=0;i<sorted.length-1;i++){
         if(cancelled)break;
         const a=sorted[i],nb=sorted[i+1];
@@ -988,9 +999,20 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
         const min=await fetchOsrmMinutes(ac.lat,ac.lng,bc.lat,bc.lng);
         if(!cancelled)setTravelTimes(prev=>({...prev,[key]:{loading:false,min}}));
       }
+      // last block → end location
+      const last=sorted[sorted.length-1];
+      if(day?.endLat&&day?.endLng&&last.type!=='travel'){
+        const lc=getCoords(last);
+        if(lc&&!cancelled){
+          const key=`${last.id}->__end__`;
+          setTravelTimes(prev=>({...prev,[key]:{loading:true,min:null}}));
+          const min=await fetchOsrmMinutes(lc.lat,lc.lng,day.endLat,day.endLng);
+          if(!cancelled)setTravelTimes(prev=>({...prev,[key]:{loading:false,min}}));
+        }
+      }
     })();
     return()=>{cancelled=true;};
-  },[blocksKey,day?.id]);// eslint-disable-line
+  },[blocksKey,day?.id,day?.startLat,day?.startLng,day?.endLat,day?.endLng]);// eslint-disable-line
 
   /* swipe */
   const touchX=useRef(null);
@@ -1038,8 +1060,12 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
   const insertTravelBlock=(dayId,afterBlockId,rawMin)=>{
     const buf=settings?.travelBuffer??1.2;
     const buffered=Math.round(rawMin*buf);
+    const dayBlks=trip.days.find(d=>d.id===dayId)?.blocks||[];
+    const afterBlk=dayBlks.find(b=>b.id===afterBlockId);
+    const travelStart=afterBlk?.endTime||'';
+    const travelEnd=travelStart?addMins(travelStart,buffered):'';
     const blk={id:uid(),type:'travel',title:`🚗 נסיעה (~${fmtTravelMin(buffered)})`,
-      startTime:'',endTime:'',note:'',isAutoTravel:true};
+      startTime:travelStart,endTime:travelEnd,note:'',isAutoTravel:true};
     onUpdate({...trip,days:trip.days.map(d=>{
       if(d.id!==dayId)return d;
       const blks=d.blocks||[];
@@ -1202,6 +1228,22 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
         )}
         <div style={{flex:1,overflowY:'auto'}}>
           <div style={{padding:'10px 14px 4px'}}>
+            {/* start location → first block connector */}
+            {sorted.length>0&&day?.startLat&&day?.startLng&&(()=>{
+              const key=`__start__->${sorted[0].id}`;
+              const tt=travelTimes[key];
+              if(!tt||tt.loading||tt.min==null)return null;
+              const buf2=settings?.travelBuffer??1.2;
+              return(
+                <div style={{display:'flex',alignItems:'center',gap:7,padding:'5px 10px',marginBottom:8,
+                    background:'rgba(34,197,94,.07)',borderRadius:8,border:'1px solid rgba(34,197,94,.2)'}}>
+                  <span style={{fontSize:11,color:'var(--green)',flex:1,lineHeight:1.45}}>
+                    🟢 {day.startLocation||'מוצא'} → אתר ראשון: {fmtTravelMin(tt.min)} נסיעה
+                    {buf2>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf2-1))} דק' = <b>{fmtTravelMin(Math.round(tt.min*buf2))}</b></span>}
+                  </span>
+                </div>
+              );
+            })()}
             {sorted.map((b,bi)=>{
               const col=BLOCK_COLOR[b.type]||'#555';
               const dur=blockDurStr(b);
@@ -1287,6 +1329,23 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
               );
             })}
             {nowInsertIdx===sorted.length&&nowLine}
+            {/* last block → end location connector */}
+            {sorted.length>0&&day?.endLat&&day?.endLng&&(()=>{
+              const last2=sorted[sorted.length-1];
+              const key=`${last2.id}->__end__`;
+              const tt=travelTimes[key];
+              if(!tt||tt.loading||tt.min==null)return null;
+              const buf2=settings?.travelBuffer??1.2;
+              return(
+                <div style={{display:'flex',alignItems:'center',gap:7,padding:'5px 10px',marginTop:4,
+                    background:'rgba(239,68,68,.07)',borderRadius:8,border:'1px solid rgba(239,68,68,.2)'}}>
+                  <span style={{fontSize:11,color:'var(--red)',flex:1,lineHeight:1.45}}>
+                    🔴 אתר אחרון → {day.endLocation||'יעד'}: {fmtTravelMin(tt.min)} נסיעה
+                    {buf2>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf2-1))} דק' = <b>{fmtTravelMin(Math.round(tt.min*buf2))}</b></span>}
+                  </span>
+                </div>
+              );
+            })()}
           </div>
           <div style={{height:20}}/>
         </div>
