@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v75';
+const APP_VERSION = 'v76';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -836,7 +836,7 @@ const makeSearchMarkerIcon=types=>{
 /* ══════════════════════════════════
    מפת גוגל
 ══════════════════════════════════ */
-function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem}){
+function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem,mapPickCallbackRef,mapPickLabel,onCancelMapPick}){
   const mapRef=useRef(null), mapInst=useRef(null), markers=useRef([]);
   const hlDayMarkers=useRef([]), hlItemMarker=useRef(null);
   const [ready,setReady]=useState(false);
@@ -1130,6 +1130,29 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
     };
 
     map.addListener('click',async e=>{
+      // pick mode — intercept for start/end location selection
+      if(mapPickCallbackRef?.current){
+        const lat=e.latLng.lat(),lng=e.latLng.lng();
+        if(e.placeId){
+          e.stop();
+          const svc=new window.google.maps.places.PlacesService(map);
+          svc.getDetails(
+            {placeId:e.placeId,fields:['name','formatted_address','geometry']},
+            (place,status)=>{
+              const cb=mapPickCallbackRef.current;
+              mapPickCallbackRef.current=null;
+              cb(status==='OK'
+                ?{name:place.name||'',lat,lng,address:place.formatted_address||''}
+                :{name:`${lat.toFixed(5)}, ${lng.toFixed(5)}`,lat,lng,address:''});
+            }
+          );
+        }else{
+          const cb=mapPickCallbackRef.current;
+          mapPickCallbackRef.current=null;
+          cb({name:`${lat.toFixed(5)}, ${lng.toFixed(5)}`,lat,lng,address:''});
+        }
+        return;
+      }
       if(!e.placeId) return;
       e.stop();
       showPlaceById(e.placeId,e.latLng.lat(),e.latLng.lng());
@@ -1290,6 +1313,21 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,highlightDay,highlightItem
   const WMO_MAP={0:['☀️','בהיר'],1:['🌤️','בהיר בעיקר'],2:['⛅','מעונן חלקית'],3:['☁️','מעונן'],45:['🌫️','ערפל'],48:['🌫️','ערפל'],51:['🌦️','טפטוף קל'],53:['🌦️','טפטוף'],55:['🌧️','טפטוף כבד'],61:['🌧️','גשם קל'],63:['🌧️','גשם'],65:['🌧️','גשם כבד'],71:['🌨️','שלג קל'],73:['🌨️','שלג'],75:['❄️','שלג כבד'],80:['🌦️','מקלחות'],95:['⛈️','סערה'],96:['⛈️','סערה עם ברד'],99:['⛈️','סערה חזקה']};
 
   return <div style={{height:'100%',width:'100%',position:'relative',display:'flex',flexDirection:'column'}}>
+    {/* pick mode banner */}
+    {mapPickLabel&&(
+      <div style={{position:'absolute',top:0,left:0,right:0,zIndex:200,
+        background:'rgba(20,30,80,.95)',backdropFilter:'blur(4px)',
+        padding:'10px 14px',display:'flex',alignItems:'center',gap:10,
+        boxShadow:'0 4px 16px rgba(0,0,0,.4)',borderBottom:'2px solid var(--accent)'}}>
+        <span style={{flex:1,color:'#fff',fontWeight:700,fontSize:14,lineHeight:1.3}}>{mapPickLabel}</span>
+        <button onClick={onCancelMapPick}
+          className="btn btn-sm"
+          style={{background:'rgba(255,255,255,.15)',border:'1px solid rgba(255,255,255,.3)',
+            color:'#fff',flexShrink:0}}>
+          ביטול
+        </button>
+      </div>
+    )}
     <div style={{padding:'8px',background:'var(--bg2)',borderBottom:'1px solid var(--border)',display:'flex',gap:6,alignItems:'center'}}>
       <input id="map-search-input" className="input" placeholder="🔍 חפש מקום, עיר, מלון, אטרקציה… (Enter)" style={{fontSize:13,flex:1}}/>
       <button className="btn btn-secondary btn-sm" onClick={()=>window.__gmSearch?.()}>חפש</button>
@@ -1534,9 +1572,57 @@ function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem,dragging,drag
 /* ══════════════════════════════════
    פאנל יום
 ══════════════════════════════════ */
-function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank,settings}){
+/* ════════════════════════════════
+   LOCATION PICKER MODAL (desktop)
+════════════════════════════════ */
+function LocationPickerModal({bank,title,onPick,onPickFromMap,onClose}){
+  const[search,setSearch]=useState('');
+  const filtered=bank.filter(i=>!search||(i.name||'').includes(search)||(i.address||'').includes(search));
+  return(
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:460,width:'95vw',maxHeight:'80vh',display:'flex',flexDirection:'column'}}>
+        <div className="modal-header" style={{flexShrink:0}}>
+          <span style={{fontWeight:700}}>{title}</span>
+          <button className="btn btn-secondary btn-icon btn-sm" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column',gap:10,padding:'12px 16px'}}>
+          {onPickFromMap&&(
+            <button className="btn btn-primary" onClick={onPickFromMap}
+              style={{width:'100%',gap:6}}>
+              🗺️ בחר מהמפה
+            </button>
+          )}
+          <input className="input" value={search} onChange={e=>setSearch(e.target.value)}
+            placeholder="חפש מקום בבנק..." autoFocus/>
+          <div style={{overflowY:'auto',flex:1}}>
+            {filtered.length===0
+              ?<div style={{padding:'16px',textAlign:'center',color:'var(--text3)',fontSize:13}}>
+                {bank.length===0?'הבנק ריק — הוסף מקומות קודם':'אין תוצאות'}
+              </div>
+              :filtered.map(item=>(
+                <div key={item.id} onClick={()=>onPick(item)}
+                  className="timeline-item"
+                  style={{cursor:'pointer',padding:'9px 10px',borderRadius:8,marginBottom:4,
+                    border:'1px solid var(--border)',display:'flex',gap:10,alignItems:'center'}}>
+                  <span style={{fontSize:18,flexShrink:0}}>{item.types?.length?'🏛':'📍'}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:600,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
+                    {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.address}</div>}
+                  </div>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank,settings,onPickFromMap}){
   const[open,setOpen]=useState(true),[editing,setEd]=useState(null);
   const[travelTimes,setTravelTimes]=useState({});
+  const[locationPicking,setLocationPicking]=useState(null); // {field:'start'|'end'}
   const dragIdxRef=useRef(null);
   const[dragOver,setDragOver]=useState(null);
   const updBlock=upd=>onUpdate({...day,blocks:day.blocks.map(b=>b.id===upd.id?upd:b)});
@@ -1564,6 +1650,32 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
   const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
   const dayColor=DAY_COLORS[idx%DAY_COLORS.length];
   const hasMapBlocks=day.blocks.some(b=>b.lat&&b.lng);
+
+  /* ── cascade / end-time helpers ── */
+  const toMinsD=t=>{const[h,m]=(t||'00:00').split(':').map(Number);return h*60+m;};
+  const cascadeBlocks=()=>{
+    if(!sorted.length)return;
+    const delta=toMinsD(day.startTime||'08:00')-toMinsD(sorted[0].startTime);
+    if(delta===0){toast('הפעילויות כבר מסונכרנות ✓','success');return;}
+    let t=day.startTime||'08:00';
+    const reordered=sorted.map(b=>{const nb={...b,startTime:t};t=addMins(t,b.durationMins||60);return nb;});
+    onUpdate({...day,blocks:reordered});
+    toast(`שעות עודכנו ${delta>0?'+':''}${delta} דקות ✓`,'success');
+  };
+  const pickLocationItem=(item,field)=>{
+    onUpdate({...day,
+      ...(field==='start'
+        ?{startLocation:item.name,startLat:item.lat||null,startLng:item.lng||null,startPending:false}
+        :{endLocation:item.name,endLat:item.lat||null,endLng:item.lng||null})
+    });
+    setLocationPicking(null);
+    toast(`${field==='start'?'נקודת מוצא':'נקודת יעד'} עודכנה ✓`,'success');
+  };
+  const lastSortedBlock=sorted[sorted.length-1];
+  const dayEndMins=toMinsD(day.endTime||'20:00');
+  const lastEndMins=lastSortedBlock?toMinsD(lastSortedBlock.startTime)+(lastSortedBlock.durationMins||60):0;
+  const overrunMins=lastEndMins-dayEndMins;
+  const cascadeNeeded=sorted.length>0&&toMinsD(sorted[0].startTime)!==toMinsD(day.startTime||'08:00');
 
   /* ── OSRM travel times between consecutive located blocks ── */
   const blocksKey=sorted.map(b=>b.id).join(',');
@@ -1651,7 +1763,17 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
                 style={{width:72,background:'var(--bg2)',border:'1px solid var(--border)',
                   color:'var(--text)',borderRadius:6,padding:'6px 4px',fontSize:12,
                   fontFamily:'Heebo,sans-serif',flexShrink:0}}/>
+              <button title="בחר מהבנק או מהמפה" onClick={()=>setLocationPicking({field:'start'})}
+                className="btn btn-secondary btn-icon btn-sm" style={{flexShrink:0,fontSize:14}}>📍</button>
             </div>
+            {cascadeNeeded&&(
+              <div style={{display:'flex',alignItems:'center',gap:6,marginTop:5}}>
+                <span style={{fontSize:11,color:'var(--text3)'}}>פעילות ראשונה ב-{sorted[0].startTime} — שעה שונה מהיום</span>
+                <button className="btn btn-sm" style={{padding:'2px 8px',fontSize:11,
+                  background:'rgba(79,142,247,.12)',color:'var(--accent)',border:'1px solid var(--accent)',borderRadius:5,cursor:'pointer'}}
+                  onClick={cascadeBlocks}>↕ הזז הכל</button>
+              </div>
+            )}
             {day.startPending&&<div style={{display:'flex',alignItems:'center',gap:6,marginTop:5}}>
               <span style={{fontSize:11,color:'var(--amber)'}}>❓ הועתק מיעד אתמול — לאשר?</span>
               <button className="btn btn-sm" style={{padding:'1px 8px',fontSize:11,
@@ -1675,7 +1797,17 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
                 style={{width:72,background:'var(--bg2)',border:'1px solid var(--border)',
                   color:'var(--text)',borderRadius:6,padding:'6px 4px',fontSize:12,
                   fontFamily:'Heebo,sans-serif',flexShrink:0}}/>
+              <button title="בחר מהבנק או מהמפה" onClick={()=>setLocationPicking({field:'end'})}
+                className="btn btn-secondary btn-icon btn-sm" style={{flexShrink:0,fontSize:14}}>📍</button>
             </div>
+            {overrunMins>0&&(
+              <div style={{display:'flex',alignItems:'center',gap:6,marginTop:5}}>
+                <span style={{fontSize:11,color:'var(--amber)'}}>
+                  ⚠️ הלוז חורג מזמן הסיום ({day.endTime}) ב-<b>{fmtTravelMin(overrunMins)}</b>
+                  {lastSortedBlock&&` (אחרון: ${addMins(lastSortedBlock.startTime,lastSortedBlock.durationMins||60)})`}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1812,6 +1944,30 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
     </div>}
 
     {editing&&<BlockModal block={editing} onSave={updBlock} onClose={()=>setEd(null)} onDelete={()=>{delBlock(editing.id);setEd(null);}}/>}
+
+    {locationPicking&&(
+      <LocationPickerModal
+        bank={day._tripBank||[]}
+        title={locationPicking.field==='start'?'🟢 בחר נקודת מוצא':'🔴 בחר נקודת יעד'}
+        onPick={item=>pickLocationItem(item,locationPicking.field)}
+        onPickFromMap={onPickFromMap?()=>{
+          const f=locationPicking.field;
+          setLocationPicking(null);
+          onPickFromMap(
+            f==='start'?'🟢 לחץ על המפה לבחירת נקודת המוצא':'🔴 לחץ על המפה לבחירת נקודת היעד',
+            place=>{
+              onUpdate({...day,
+                ...(f==='start'
+                  ?{startLocation:place.name,startLat:place.lat,startLng:place.lng,startPending:false}
+                  :{endLocation:place.name,endLat:place.lat,endLng:place.lng})
+              });
+              toast(`${f==='start'?'נקודת מוצא':'נקודת יעד'} עודכנה ✓`,'success');
+            }
+          );
+        }:null}
+        onClose={()=>setLocationPicking(null)}
+      />
+    )}
   </div>;
 }
 
@@ -1908,7 +2064,7 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
 
 const DAYS_PER_PAGE=4;
 
-function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=false,settings}){
+function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=false,settings,onPickFromMap}){
   const[showBank,setShowBank]=useState(!compact);
   const[dayOffset,setDayOffset]=useState(0);
 
@@ -1960,9 +2116,9 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=fals
           ?<div className="empty-state"><div className="emoji">🗓️</div><div style={{fontWeight:600}}>אין ימים</div>
              <button className="btn btn-primary btn-sm" style={{marginTop:8}} onClick={addDay}>+ הוסף יום</button></div>
           :trip.days.map((day,i)=>(
-            <DayPanel key={day.id} day={day} idx={i} onUpdate={updDay} onDelete={()=>delDay(day.id)}
+            <DayPanel key={day.id} day={{...day,_tripBank:trip.interestBank||[]}} idx={i} onUpdate={updDay} onDelete={()=>delDay(day.id)}
               onFocusDay={onFocusDay} onFocusItem={onFocusItem}
-              onMoveToBank={(block)=>moveBlockToBank(block,day.id)} settings={settings}/>
+              onMoveToBank={(block)=>moveBlockToBank(block,day.id)} settings={settings} onPickFromMap={onPickFromMap}/>
           ))
         }
       </div>
@@ -2018,9 +2174,9 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=fals
             display:'flex',flexDirection:'column',overflow:'hidden'
           }}>
             <div className="scroll-y flex-1" style={{padding:'8px'}}>
-              <DayPanel day={day} idx={clampedOffset+i} onUpdate={updDay} onDelete={()=>delDay(day.id)}
+              <DayPanel day={{...day,_tripBank:trip.interestBank||[]}} idx={clampedOffset+i} onUpdate={updDay} onDelete={()=>delDay(day.id)}
                 onFocusDay={onFocusDay} onFocusItem={onFocusItem}
-                onMoveToBank={(block)=>moveBlockToBank(block,day.id)} settings={settings}/>
+                onMoveToBank={(block)=>moveBlockToBank(block,day.id)} settings={settings} onPickFromMap={onPickFromMap}/>
             </div>
           </div>
         ))
@@ -4361,6 +4517,23 @@ function App(){
   const autoSyncTimer=useRef(null);
   const skipNextPush=useRef(false);
   const syncMounted=useRef(false);
+  const mapPickCallbackRef=useRef(null);
+  const[mapPickLabel,setMapPickLabel]=useState(null);
+
+  const pickLocationFromMap=useCallback((label,callback)=>{
+    mapPickCallbackRef.current=place=>{
+      callback(place);
+      setMapPickLabel(null);
+      setTab('map');
+    };
+    setMapPickLabel(label);
+    setTab('map');
+  },[]);
+  const cancelMapPick=useCallback(()=>{
+    mapPickCallbackRef.current=null;
+    setMapPickLabel(null);
+    setTab('timeline');
+  },[]);
 
   useEffect(()=>saveState({settings,trips,activeId}),[settings,trips,activeId]);
   useEffect(()=>{document.body.className=settings.theme==='light'?'light':'';},[settings.theme]);
@@ -4552,7 +4725,8 @@ function App(){
           {/* עמודה 1: מפה */}
           <div className="map-col map-col-map">
             <MapView mapsKey={settings.googleMapsKey} trip={trip} onAddToBank={addToBank} onAddToDay={addToDay}
-              highlightDay={hlDay} highlightItem={hlItem}/>
+              highlightDay={hlDay} highlightItem={hlItem}
+              mapPickCallbackRef={mapPickCallbackRef} mapPickLabel={mapPickLabel} onCancelMapPick={cancelMapPick}/>
           </div>
           {/* backdrop בסלולר */}
           <div className={`mob-panel-backdrop${mobilePanel!=='map'?' show':''}`}
@@ -4563,7 +4737,7 @@ function App(){
               onLocate={(lat,lng)=>window.__gmFocus?.(lat,lng)}
               onFocusDay={(dayId,dayIndex,blocks)=>setHlDay({dayId,dayIndex,blocks})}
               onFocusItem={(lat,lng,name)=>{setHlItem({lat,lng,name});setHlDay(null);}}
-              settings={settings}
+              settings={settings} onPickFromMap={pickLocationFromMap}
             />:noTrip}
           </div>
           {/* עמודה 3: בנק אטרקציות */}
@@ -4577,7 +4751,7 @@ function App(){
           </div>
         </div>
       );
-      case 'timeline': return <TimelineTab trip={trip} onUpdate={updTrip}/>;
+      case 'timeline': return <TimelineTab trip={trip} onUpdate={updTrip} onPickFromMap={pickLocationFromMap} settings={settings}/>;
       case 'expenses': return <ExpensesTab trip={trip} onUpdate={updTrip}/>;
       case 'documents': return <DocsTab trip={trip} onUpdate={updTrip} settings={settings}/>;
       case 'packing': return <Checklist title="רשימת ציוד" emoji="🎒" items={trip.packingList} onUpdate={items=>updTrip({...trip,packingList:items})}/>;
