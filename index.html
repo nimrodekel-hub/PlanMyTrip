@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v93';
+const APP_VERSION = 'v94';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1131,7 +1131,8 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
               openStatus:details.openStatus||item.openStatus||'',
               todayHours:details.todayHours||item.todayHours||'',
               phone:details.phone||item.phone||'',
-              website:details.website||item.website||''};
+              website:details.website||item.website||'',
+              lastFetched:Math.floor(Date.now()/1000)};
             const needsUpdate=Object.keys(patch).some(k=>item[k]!==patch[k]);
             if(needsUpdate)onUpdateBankRef.current(item.id,patch);
           }
@@ -1302,8 +1303,11 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
           iw.setContent(build(p));
           iw.setPosition({lat:item.lat,lng:item.lng});
           iw.open(mapInst.current);
-          // silently enrich in background if not cached yet
-          if(item.placeId&&!cached&&window.__gmShowPlace){
+          // שלח ל-Google רק אם: לא בcache סשן AND הנתונים ישנים (יותר מ-7 ימים)
+          const _staleSec=7*24*3600;
+          const _nowSec=Math.floor(Date.now()/1000);
+          const _isStale=!item.lastFetched||((_nowSec-item.lastFetched)>_staleSec);
+          if(item.placeId&&!cached&&_isStale&&window.__gmShowPlace){
             window.__gmShowPlace(item.placeId,item.lat,item.lng);
           }
         });

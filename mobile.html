@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m35';
+const MOB_VER='m36';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -633,6 +633,19 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
       return;
     }
 
+    // SESSION CACHE — כבר שלפנו מקום זה בסשן הנוכחי?
+    window.__placeCache=window.__placeCache||{};
+    if(window.__placeCache[placeId]){
+      setSheet({...window.__placeCache[placeId],inBank});
+      return;
+    }
+    // STALENESS CHECK — אם הנתונים עדכניים (פחות מ-7 ימים) — אין צורך לפנות ל-Google
+    const STALE_SEC=7*24*3600;
+    const nowSec=Math.floor(Date.now()/1000);
+    if(bankItem?.lastFetched&&(nowSec-bankItem.lastFetched)<STALE_SEC){
+      return; // נתונים טריים — כבר הצגנו אותם למעלה
+    }
+
     setLoading(true);
 
     // helper: parse getDetails result into sheet fields + persist back to bank item
@@ -656,7 +669,8 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
       if(inBank&&bankItem&&onUpdate&&trip){
         const patch={rating:fields.rating||bankItem.rating,website:fields.website||bankItem.website,
           openStatus:fields.openStatus||bankItem.openStatus||'',todayHours:fields.todayHours||bankItem.todayHours||'',
-          phone:fields.phone||bankItem.phone||'',placeId:pid};
+          phone:fields.phone||bankItem.phone||'',placeId:pid,
+          lastFetched:Math.floor(Date.now()/1000)};
         const needsUpdate=Object.keys(patch).some(k=>bankItem[k]!==patch[k]);
         if(needsUpdate){
           const updated=(trip.interestBank||[]).map(i=>i.id===bankItem.id?{...i,...patch}:i);
@@ -699,7 +713,10 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
         const PS=window.google.maps.places.PlacesServiceStatus;
         if(st===PS.OK&&res){
           // update sheet with Google data merged on top of bank data
-          setSheet(parseDetails(res,placeId,lat,lng));
+          const parsed=parseDetails(res,placeId,lat,lng);
+          setSheet(parsed);
+          // שמור ב-session cache — לא נצטרך לקרוא שוב ל-Google בסשן הזה
+          window.__placeCache[placeId]=parsed;
         } else {
           // placeId stale — already showing bank data; try to find fresh placeId once
           if(bankItem?.name&&lat&&lng)tryRefresh(bankItem.name,lat,lng,bankItem.id);
