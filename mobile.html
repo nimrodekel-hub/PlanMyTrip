@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m30';
+const MOB_VER='m31';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -621,12 +621,17 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
       setSheet({lat,lng,name:bankItem?.name||'',address:bankItem?.address||'',inBank,bankItem});
       setLoading(false);return;
     }
-    svcRef.current.getDetails({placeId,fields:['name','rating','formatted_address','website','types','geometry']},
+    svcRef.current.getDetails({placeId,fields:['name','rating','formatted_address','website','types','geometry','opening_hours','international_phone_number']},
       (res,st)=>{
         const PS=window.google.maps.places.PlacesServiceStatus;
         if(st===PS.OK&&res){
+          const dow=new Date().getDay(),wdIdx=dow===0?6:dow-1;
+          let openStatus='';
+          try{openStatus=res.opening_hours?.isOpen()?'פתוח עכשיו':'סגור עכשיו';}catch{}
+          const todayHours=res.opening_hours?.weekday_text?.[wdIdx]?.replace(/^[^:]+:\s*/,'')||'';
           setSheet({placeId,lat:res.geometry?.location?.lat()||lat,lng:res.geometry?.location?.lng()||lng,
-            name:res.name,address:res.formatted_address,rating:res.rating,website:res.website,types:res.types,inBank});
+            name:res.name,address:res.formatted_address,rating:res.rating,website:res.website,types:res.types,
+            openStatus,todayHours,phone:res.international_phone_number||'',inBank});
         } else {
           setSheet({placeId,lat,lng,name:bankItem?.name||'',address:bankItem?.address||'',inBank});
         }
@@ -691,7 +696,8 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
   const addToBank=()=>{
     if(!sheet||!onUpdate)return;
     const item={id:uid(),name:sheet.name||'',address:sheet.address||'',placeId:sheet.placeId||'',
-      lat:sheet.lat,lng:sheet.lng,types:sheet.types||[],rating:sheet.rating,website:sheet.website};
+      lat:sheet.lat,lng:sheet.lng,types:sheet.types||[],rating:sheet.rating,website:sheet.website,
+      openStatus:sheet.openStatus||'',todayHours:sheet.todayHours||'',phone:sheet.phone||''};
     const cur=trip||{interestBank:[]};
     onUpdate({...cur,interestBank:[...(cur.interestBank||[]),item]});
     toast(`"${sheet.name}" נוסף לבנק ⭐`,'s');
@@ -710,6 +716,8 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
       note:'',placeId:sheet.placeId||'',address:sheet.address||'',
       lat:sheet.lat||null,lng:sheet.lng||null,
       placeRating:sheet.rating||null,placeWebsite:sheet.website||'',
+      placeOpenStatus:sheet.openStatus||'',placeTodayHours:sheet.todayHours||'',
+      placePhone:sheet.phone||'',
       placeType:sheet.types?.length?getTypeLabel(sheet.types):''};
     onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,blocks:[...(d.blocks||[]),block]}:d)});
     toast(`"${sheet.name}" נוסף ליום ✓`,'s');
@@ -790,12 +798,23 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
         {sheet&&<>
           <div className="bsheet-name">{sheet.name||'מקום לא ידוע'}</div>
           {sheet.types?.length>0&&<div className="bsheet-type">{getTypeLabel(sheet.types)}</div>}
-          {sheet.rating&&<div style={{padding:'0 16px 6px',fontSize:13,color:'var(--amber)'}}>⭐ {sheet.rating}</div>}
+          <div style={{padding:'0 16px 4px',display:'flex',flexWrap:'wrap',gap:'6px 14px',alignItems:'center'}}>
+            {sheet.rating&&<span style={{fontSize:13,color:'var(--amber)'}}>⭐ {sheet.rating}</span>}
+            {sheet.openStatus&&<span style={{fontSize:12,fontWeight:600,
+              color:sheet.openStatus==='פתוח עכשיו'?'var(--green)':'var(--red)'}}>
+              {sheet.openStatus==='פתוח עכשיו'?'✅':'🔴'} {sheet.openStatus}
+            </span>}
+          </div>
+          {sheet.todayHours&&<div style={{padding:'0 16px 4px',fontSize:12,color:'var(--text3)'}}>🕐 {sheet.todayHours}</div>}
+          {sheet.phone&&<div style={{padding:'0 16px 4px',fontSize:12,color:'var(--accent2)'}}>📞 {sheet.phone}</div>}
+          {sheet.website&&<div style={{padding:'0 16px 4px'}}>
+            <a href={sheet.website} target="_blank" rel="noreferrer"
+              style={{fontSize:12,color:'var(--accent2)',textDecoration:'none'}}>
+              🌐 {sheet.website.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]}
+            </a>
+          </div>}
           {sheet.address&&<div className="bsheet-addr">📍 {sheet.address}</div>}
           <div className="bsheet-actions">
-            {sheet.website&&<a href={sheet.website} target="_blank" rel="noreferrer" style={{textDecoration:'none',flex:1,minWidth:120}}>
-              <button className="bsheet-btn web" style={{width:'100%'}}>🌐 אתר</button>
-            </a>}
             {!sheet.inBank&&<button className="bsheet-btn bank" onClick={addToBank}>⭐ שמור לבנק</button>}
             {sheet.inBank&&<div style={{padding:'11px 10px',fontSize:12,color:'var(--amber)',fontWeight:600}}>⭐ כבר בבנק</div>}
             {(trip?.days||[]).length>0&&<button className="bsheet-btn sched" onClick={()=>{setDaySelPlace(sheet);setDaySelMode('sched');}}>📅 הוסף ללוז</button>}
