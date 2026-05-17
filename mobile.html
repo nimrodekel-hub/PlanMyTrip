@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m24';
+const MOB_VER='m25';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -970,6 +970,10 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
   const[locationPicking,setLocationPicking]=useState(null); // {field:'start'|'end'}
   const[bankPickForBlock,setBankPickForBlock]=useState(null); // {type} — show bank picker for adding block
   const[,setTick]=useState(0);
+  // drag-and-drop state
+  const dragIdxRef=useRef(null);
+  const[dragSrc,setDragSrc]=useState(null);
+  const[dragOver,setDragOver]=useState(null);
 
   const days=trip?.days||[];
   const safeIdx=Math.min(dayIdx,Math.max(0,days.length-1));
@@ -1049,6 +1053,23 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
   const updDay=upd=>{
     if(!onUpdate||!trip||!day)return;
     onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,...upd}:d)});
+  };
+
+  // drag-and-drop reorder — מחשב מחדש startTime/endTime אחרי הזזה
+  const handleDrop=(fromIdx,toIdx)=>{
+    if(fromIdx===null||toIdx===null||fromIdx===toIdx)return;
+    const arr=[...sorted];
+    const[moved]=arr.splice(fromIdx,1);
+    arr.splice(toIdx,0,moved);
+    let t=arr[0].startTime||'09:00';
+    const reordered=arr.map(b=>{
+      const dur=b.endTime&&b.startTime?Math.max(1,toMinsStr(b.endTime)-toMinsStr(b.startTime)):60;
+      const nb={...b,startTime:t,endTime:addMins(t,dur)};
+      t=nb.endTime;
+      return nb;
+    });
+    updDay({blocks:reordered});
+    toast('סדר הפעילויות עודכן ✓','s');
   };
 
   // block operations
@@ -1327,9 +1348,12 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                 <React.Fragment key={b.id}>
                   {nowInsertIdx===bi&&nowLine}
                   {/* block card */}
-                  <div style={{background:'var(--surface)',border:'1px solid var(--border)',
+                  <div data-block-idx={bi} style={{background:'var(--surface)',
+                    border:dragOver===bi&&dragSrc!==bi?'2px solid var(--accent)':'1px solid var(--border)',
                     borderRight:`4px solid ${col}`,borderRadius:10,marginBottom:8,
-                    opacity:b.isCompleted?.65:1}}>
+                    opacity:dragSrc===bi?0.4:(b.isCompleted?.65:1),
+                    transition:'opacity .15s',
+                    transform:dragSrc===bi?'scale(0.97)':'none'}}>
                     <div style={{padding:'10px 12px'}}>
                       {/* top row: time + actions */}
                       <div style={{display:'flex',alignItems:'flex-start',gap:6,marginBottom:4}}>
@@ -1362,13 +1386,46 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                             borderRight:'2px solid var(--accent2)'}}>📝 {b.note}</div>}
                         </div>
                         {/* action buttons */}
-                        <div style={{display:'flex',gap:2,flexShrink:0}}>
+                        <div style={{display:'flex',gap:2,flexShrink:0,alignItems:'flex-start'}}>
                           {hasLoc&&<button onClick={()=>onShowOnMap&&onShowOnMap({lat:b.lat,lng:b.lng,placeId:b.placeId,name:b.title||BLOCK_HE[b.type],address:b.address||''})}
                             style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--accent2)'}}>🗺️</button>}
                           <button onClick={()=>setEditing({...b})}
                             style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--text3)'}}>✏️</button>
                           <button onClick={()=>deleteBlock(b.id)}
                             style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--red)',fontWeight:700}}>✕</button>
+                          {/* drag handle */}
+                          <div
+                            style={{padding:'4px 5px',fontSize:15,color:'var(--text3)',cursor:'grab',
+                              touchAction:'none',userSelect:'none',lineHeight:1}}
+                            onPointerDown={e=>{
+                              e.currentTarget.setPointerCapture(e.pointerId);
+                              dragIdxRef.current=bi;
+                              setDragSrc(bi);
+                              setDragOver(bi);
+                            }}
+                            onPointerMove={e=>{
+                              if(dragIdxRef.current===null)return;
+                              const el=document.elementFromPoint(e.clientX,e.clientY);
+                              let t2=el;
+                              while(t2){
+                                const idx=t2.dataset?.blockIdx;
+                                if(idx!==undefined){setDragOver(parseInt(idx));break;}
+                                t2=t2.parentElement;
+                              }
+                            }}
+                            onPointerUp={e=>{
+                              e.currentTarget.releasePointerCapture(e.pointerId);
+                              handleDrop(dragIdxRef.current,dragOver);
+                              dragIdxRef.current=null;
+                              setDragSrc(null);
+                              setDragOver(null);
+                            }}
+                            onPointerCancel={()=>{
+                              dragIdxRef.current=null;
+                              setDragSrc(null);
+                              setDragOver(null);
+                            }}
+                          >☰</div>
                         </div>
                       </div>
                     </div>
