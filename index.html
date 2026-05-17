@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v91';
+const APP_VERSION = 'v92';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1601,10 +1601,17 @@ function BlockModal({block,onSave,onClose,onDelete,onBankNoteUpdate}){
 /* ══════════════════════════════════
    בלוק בציר הזמן
 ══════════════════════════════════ */
-function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem,onNoteChange,dragging,dragOver,onDragStart,onDragOver,onDrop,onDragEnd,nowProgress}){
+function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,onNoteChange,dragging,dragOver,onDragStart,onDragOver,onDrop,onDragEnd,nowProgress}){
   // תומך בשני פורמטים: durationMins (דסקטופ) ו-endTime (מובייל)
   const end=block.durationMins!=null?addMins(block.startTime,block.durationMins):(block.endTime||'');
   const col=BLOCK_COLOR[block.type]||'var(--text3)';
+  // look up bank item for display fallback (blocks created before m31/v91 may lack place fields)
+  const bankInfo=block.placeId?(interestBank||[]).find(i=>i.placeId===block.placeId):null;
+  const dispRating=block.placeRating??bankInfo?.rating??null;
+  const dispOpenStatus=block.placeOpenStatus||bankInfo?.openStatus||'';
+  const dispTodayHours=block.placeTodayHours||bankInfo?.todayHours||'';
+  const dispPhone=block.placePhone||bankInfo?.phone||'';
+  const dispWebsite=block.placeWebsite||bankInfo?.website||'';
   const locked=!!block.isAutoTravel; // נסיעות אוטומטיות לא ניתנות לגרירה
   const btnStyle={background:'none',border:'none',cursor:'pointer',padding:'2px 5px',borderRadius:4,fontSize:15,lineHeight:1,flexShrink:0};
   const[noteOpen,setNoteOpen]=React.useState(false);
@@ -1648,12 +1655,12 @@ function BlockItem({block,onEdit,onDelete,onMoveToBank,onFocusItem,onNoteChange,
         {block.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1,lineHeight:1.4}}>{block.placeType}</div>}
         {block.location&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>📍 {block.location}</div>}
         {block.notes&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,fontStyle:'italic',lineHeight:1.5}}>{block.notes}</div>}
-        {/* פרטי מקום שנשמרו */}
-        {block.placeRating&&<div style={{fontSize:11,color:'var(--amber)',marginTop:3}}>⭐ {block.placeRating}{block.placeUserRatings?` (${Number(block.placeUserRatings).toLocaleString()})`:''}</div>}
-        {block.placeOpenStatus&&<div style={{fontSize:11,fontWeight:600,marginTop:2,color:block.placeOpenStatus==='פתוח עכשיו'?'#22c55e':'#ef4444'}}>{block.placeOpenStatus==='פתוח עכשיו'?'✅':'🔴'} {block.placeOpenStatus}</div>}
-        {block.placeTodayHours&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>🕐 {block.placeTodayHours}</div>}
-        {block.placePhone&&<div style={{fontSize:11,color:'var(--accent)',marginTop:2}}>📞 {block.placePhone}</div>}
-        {block.placeWebsite&&<a href={block.placeWebsite} target="_blank" rel="noreferrer" style={{fontSize:11,color:'var(--accent)',display:'block',marginTop:2}} onClick={e=>e.stopPropagation()}>🌐 {block.placeWebsite.replace(/^https?:\/\//,'').split('/')[0]}</a>}
+        {/* פרטי מקום שנשמרו — עם fallback לבנק האטרקציות */}
+        {dispRating&&<div style={{fontSize:11,color:'var(--amber)',marginTop:3}}>⭐ {dispRating}{block.placeUserRatings?` (${Number(block.placeUserRatings).toLocaleString()})`:''}</div>}
+        {dispOpenStatus&&<div style={{fontSize:11,fontWeight:600,marginTop:2,color:dispOpenStatus==='פתוח עכשיו'?'#22c55e':'#ef4444'}}>{dispOpenStatus==='פתוח עכשיו'?'✅':'🔴'} {dispOpenStatus}</div>}
+        {dispTodayHours&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>🕐 {dispTodayHours}</div>}
+        {dispPhone&&<div style={{fontSize:11,color:'var(--accent)',marginTop:2}}>📞 {dispPhone}</div>}
+        {dispWebsite&&<a href={dispWebsite} target="_blank" rel="noreferrer" style={{fontSize:11,color:'var(--accent)',display:'block',marginTop:2}} onClick={e=>e.stopPropagation()}>🌐 {dispWebsite.replace(/^https?:\/\//,'').split('/')[0]}</a>}
         <div style={{display:'flex',gap:10,marginTop:5,flexWrap:'wrap'}}>
           {block.durationMins>0&&<span style={{fontSize:11,color:'var(--text3)'}}>⏱ {block.durationMins} דקות</span>}
           {block.cost>0&&<span style={{fontSize:11,color:'var(--amber)'}}>💰 ₪{block.cost.toFixed(0)}</span>}
@@ -2125,7 +2132,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
           })();
           return [startConn,...sorted.map((bl,si)=>[
             nowInsert===si&&nowLine,
-            <BlockItem key={bl.id} block={bl} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onFocusItem={onFocusItem}
+            <BlockItem key={bl.id} block={bl} interestBank={day._tripBank||[]} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onFocusItem={onFocusItem}
               onNoteChange={(id,note)=>{const b=day.blocks.find(x=>x.id===id);if(b)updBlock({...b,notes:note});}}
               dragging={dragOver!==null&&dragIdxRef.current===si} dragOver={dragOver===si}
               nowProgress={activeIdx===si?nowBlockProgress:null}

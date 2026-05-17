@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m33';
+const MOB_VER='m34';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -625,9 +625,17 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
       let openStatus='';
       try{openStatus=res.opening_hours?.isOpen()?'פתוח עכשיו':'סגור עכשיו';}catch{}
       const todayHours=res.opening_hours?.weekday_text?.[wdIdx]?.replace(/^[^:]+:\s*/,'')||'';
-      const fields={placeId:pid,lat:res.geometry?.location?.lat()||la,lng:res.geometry?.location?.lng()||lo,
-        name:res.name,address:res.formatted_address,rating:res.rating,website:res.website,
-        types:res.types,openStatus,todayHours,phone:res.international_phone_number||''};
+      // merge: prefer fresh Google data, fall back to whatever is stored in bankItem
+      const fields={placeId:pid,
+        lat:res.geometry?.location?.lat()||la,lng:res.geometry?.location?.lng()||lo,
+        name:res.name||bankItem?.name||'',
+        address:res.formatted_address||bankItem?.address||'',
+        rating:res.rating??bankItem?.rating??null,
+        website:res.website||bankItem?.website||'',
+        types:res.types||bankItem?.types||[],
+        openStatus:openStatus||bankItem?.openStatus||'',
+        todayHours:todayHours||bankItem?.todayHours||'',
+        phone:res.international_phone_number||bankItem?.phone||''};
       // persist fresh data back to bank item so it survives future stale placeId failures
       if(inBank&&bankItem&&onUpdate&&trip){
         const patch={rating:fields.rating||bankItem.rating,website:fields.website||bankItem.website,
@@ -1465,6 +1473,13 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
               const ttKey=next?`${b.id}->${next.id}`:null;
               const tt=ttKey?travelTimes[ttKey]:null;
               const buf=settings?.travelBuffer??1.2;
+              // look up bank item for display fallback (blocks created before m31 may lack place fields)
+              const bankInfo=b.placeId?(trip?.interestBank||[]).find(i=>i.placeId===b.placeId):null;
+              const dispRating=b.placeRating??bankInfo?.rating??null;
+              const dispOpenStatus=b.placeOpenStatus||bankInfo?.openStatus||'';
+              const dispTodayHours=b.placeTodayHours||bankInfo?.todayHours||'';
+              const dispPhone=b.placePhone||bankInfo?.phone||'';
+              const dispWebsite=b.placeWebsite||bankInfo?.website||'';
               return(
                 <React.Fragment key={b.id}>
                   {nowInsertIdx===bi&&nowLine}
@@ -1489,18 +1504,18 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                           {b.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1}}>{b.placeType}</div>}
                           {b.address&&<div style={{fontSize:11,color:'var(--text3)',marginTop:3}}>📍 {b.address}</div>}
                           <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:2}}>
-                            {b.placeRating&&<span style={{fontSize:11,color:'var(--amber)'}}>⭐ {b.placeRating}</span>}
-                            {b.placeOpenStatus&&<span style={{fontSize:11,fontWeight:600,
-                              color:b.placeOpenStatus==='פתוח עכשיו'?'var(--green)':'var(--red)'}}>
-                              {b.placeOpenStatus==='פתוח עכשיו'?'✅':'🔴'} {b.placeOpenStatus}
+                            {dispRating&&<span style={{fontSize:11,color:'var(--amber)'}}>⭐ {dispRating}</span>}
+                            {dispOpenStatus&&<span style={{fontSize:11,fontWeight:600,
+                              color:dispOpenStatus==='פתוח עכשיו'?'var(--green)':'var(--red)'}}>
+                              {dispOpenStatus==='פתוח עכשיו'?'✅':'🔴'} {dispOpenStatus}
                             </span>}
                           </div>
-                          {b.placeTodayHours&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>🕐 {b.placeTodayHours}</div>}
-                          {b.placePhone&&<div style={{fontSize:11,color:'var(--accent2)',marginTop:2}}>📞 {b.placePhone}</div>}
-                          {b.placeWebsite&&<a href={b.placeWebsite} target="_blank" rel="noreferrer"
+                          {dispTodayHours&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>🕐 {dispTodayHours}</div>}
+                          {dispPhone&&<div style={{fontSize:11,color:'var(--accent2)',marginTop:2}}>📞 {dispPhone}</div>}
+                          {dispWebsite&&<a href={dispWebsite} target="_blank" rel="noreferrer"
                             onClick={e=>e.stopPropagation()}
                             style={{fontSize:11,color:'var(--accent2)',display:'block',marginTop:2,textDecoration:'none'}}>
-                            🌐 {b.placeWebsite.replace(/^https?:\/\//,'').split('/')[0]}
+                            🌐 {dispWebsite.replace(/^https?:\/\//,'').split('/')[0]}
                           </a>}
                           {b.note&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,lineHeight:1.4,
                             background:'rgba(79,142,247,.06)',borderRadius:6,padding:'4px 7px',
