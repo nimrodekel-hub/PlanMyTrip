@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m21';
+const MOB_VER='m22';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -797,7 +797,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
 /* ════════════════════════════════
    BLOCK EDIT SHEET (mobile)
 ════════════════════════════════ */
-function BlockEditSheet({block,onSave,onDelete,onClose}){
+function BlockEditSheet({block,onSave,onDelete,onClose,isNew}){
   const[b,setB]=useState({...block});
   const upd=(k,v)=>setB(p=>({...p,[k]:v}));
   const inp={background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:8,
@@ -809,7 +809,7 @@ function BlockEditSheet({block,onSave,onDelete,onClose}){
       <div className="bsheet open" style={{maxHeight:'86vh',paddingBottom:'calc(var(--safe-b) + 8px)'}}>
         <div className="bsheet-handle"/>
         <div style={{overflowY:'auto',padding:'2px 16px 16px'}}>
-          <div style={{fontWeight:700,fontSize:16,marginBottom:12}}>✏️ עריכת פעילות</div>
+          <div style={{fontWeight:700,fontSize:16,marginBottom:12}}>{isNew?'➕ פעילות חדשה':'✏️ עריכת פעילות'}</div>
           {/* type chips */}
           <div style={{display:'flex',gap:5,marginBottom:14,overflowX:'auto',paddingBottom:2}}>
             {BLOCK_TYPES.map(t=>(
@@ -1048,12 +1048,15 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
     toast('פעילות הוסרה','i');
   };
   const saveBlock=updated=>{
-    // update block in day
-    const newDays=trip.days.map(d=>d.id===day.id
-      ?{...d,blocks:(d.blocks||[]).map(b=>b.id===updated.id?updated:b)}:d);
+    const {_isNew,...block}=updated; // strip internal flag
+    const exists=(day?.blocks||[]).some(b=>b.id===block.id);
+    // new block → append; existing block → update in place
+    const newDays=exists
+      ?trip.days.map(d=>d.id===day.id?{...d,blocks:(d.blocks||[]).map(b=>b.id===block.id?block:b)}:d)
+      :trip.days.map(d=>d.id===day.id?{...d,blocks:[...(d.blocks||[]),block]}:d);
     // sync note to matching bank item (by placeId)
-    const newBank=updated.placeId
-      ?(trip.interestBank||[]).map(i=>i.placeId===updated.placeId?{...i,note:updated.note||''}:i)
+    const newBank=block.placeId
+      ?(trip.interestBank||[]).map(i=>i.placeId===block.placeId?{...i,note:block.note||''}:i)
       :(trip.interestBank||[]);
     onUpdate({...trip,days:newDays,interestBank:newBank});
     setEditing(null);
@@ -1063,8 +1066,8 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
     const startTime=last?.endTime||day?.startTime||'09:00';
     const endTime=addMins(startTime,type==='travel'?30:60);
     const b={id:uid(),type,title:'',startTime,endTime,note:'',placeId:'',address:'',lat:null,lng:null};
-    updDay({blocks:[...(day.blocks||[]),b]});
-    setEditing({...b});
+    // don't add to day yet — only add when user clicks Save
+    setEditing({...b,_isNew:true});
   };
   const insertTravelBlock=(dayId,afterBlockId,rawMin)=>{
     const buf=settings?.travelBuffer??1.2;
@@ -1373,7 +1376,10 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
       )}
 
       {/* block edit sheet */}
-      {editing&&<BlockEditSheet block={editing} onSave={saveBlock} onDelete={deleteBlock} onClose={()=>setEditing(null)}/>}
+      {editing&&<BlockEditSheet
+        block={editing} isNew={!!editing._isNew} onSave={saveBlock}
+        onDelete={editing._isNew?()=>setEditing(null):()=>deleteBlock(editing.id)}
+        onClose={()=>setEditing(null)}/>}
 
       {/* location picker sheet */}
       {locationPicking&&(
