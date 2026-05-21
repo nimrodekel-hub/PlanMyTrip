@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m45';
+const MOB_VER='m46';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -1521,7 +1521,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
     if(!window.google?.maps?.DirectionsService){toast('Google Maps לא זמין','e');return;}
     const{lat:fLat,lng:fLng}=fromBlock,{lat:tLat,lng:tLng}=toBlock;
     if(!fLat||!fLng||!tLat||!tLng){toast('חסרים נתוני מיקום','e');return;}
-    setTransitSearch({loading:true,fromBlockId:fromBlock.id,toBlockId:toBlock.id,insertMode,results:null,error:null});
+    setTransitSearch({loading:true,fromBlockId:fromBlock.id,toBlockId:toBlock.id,insertMode,fromLat:fLat,fromLng:fLng,toLat:tLat,toLng:tLng,results:null,error:null});
     let dep=new Date();
     if(day?.date&&fromBlock.endTime){const t=new Date(day.date+'T'+fromBlock.endTime+':00');if(!isNaN(t)&&t>new Date())dep=t;}
     const tRouteOpts={departureTime:dep};
@@ -1534,7 +1534,10 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
     },(result,status)=>{
       if(status!=='OK'||!result?.routes?.length){
         console.warn('[transit]',status,result);
-        setTransitSearch(p=>p?{...p,loading:false,results:null,error:`לא נמצאו קווים בין הנקודות האלה (${status})`}:null);return;
+        const errMsg=status==='REQUEST_DENIED'
+          ?'הרשאה נדחתה — יש להפעיל "Directions API" ב-Google Cloud Console'
+          :`לא נמצאו קווים בין הנקודות האלה (${status})`;
+        setTransitSearch(p=>p?{...p,loading:false,results:null,error:errMsg}:null);return;
       }
       const routes=result.routes.map(r=>{
         const leg=r.legs[0];
@@ -2053,9 +2056,9 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
 
       {/* ── modal תחבורה ציבורית ── */}
       {transitSearch&&(
-        <div style={{position:'fixed',inset:0,zIndex:400,background:'rgba(0,0,0,.65)',display:'flex',flexDirection:'column',justifyContent:'flex-end'}}
+        <div style={{position:'fixed',inset:0,zIndex:1100,background:'rgba(0,0,0,.65)',display:'flex',flexDirection:'column',justifyContent:'flex-end'}}
           onClick={e=>{if(e.target===e.currentTarget)setTransitSearch(null);}}>
-          <div style={{background:'var(--bg2)',borderRadius:'18px 18px 0 0',maxHeight:'78vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+          <div style={{background:'var(--bg2)',borderRadius:'18px 18px 0 0',maxHeight:'78vh',display:'flex',flexDirection:'column',overflow:'hidden',paddingBottom:'calc(var(--nav-h) + var(--safe-b))'}}>
             <div style={{padding:'14px 16px 10px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:10}}>
               <span style={{fontWeight:700,fontSize:15,flex:1}}>🚌 תחבורה ציבורית</span>
               <button onClick={()=>setTransitSearch(null)} style={{background:'none',border:'none',color:'var(--text3)',fontSize:22,cursor:'pointer',lineHeight:1,padding:'0 4px'}}>✕</button>
@@ -2065,7 +2068,16 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                 <div style={{textAlign:'center',padding:'32px',color:'var(--text3)',fontSize:13}}>🔍 מחפש קווי תחבורה...</div>
               )}
               {!transitSearch.loading&&transitSearch.error&&(
-                <div style={{textAlign:'center',padding:'24px',color:'var(--red)',fontSize:12}}>{transitSearch.error}</div>
+                <div style={{padding:'20px 14px',textAlign:'center'}}>
+                  <div style={{color:'var(--red)',fontSize:12,marginBottom:12}}>{transitSearch.error}</div>
+                  {transitSearch.fromLat&&<a href={`https://www.google.com/maps/dir/?api=1&origin=${transitSearch.fromLat},${transitSearch.fromLng}&destination=${transitSearch.toLat},${transitSearch.toLng}&travelmode=transit`}
+                    target="_blank" rel="noreferrer"
+                    style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12,padding:'8px 14px',
+                      borderRadius:10,background:'rgba(79,142,247,.12)',color:'var(--accent)',
+                      border:'1px solid rgba(79,142,247,.3)',textDecoration:'none',fontWeight:700}}>
+                    🗺️ פתח מסלול ב-Google Maps
+                  </a>}
+                </div>
               )}
               {!transitSearch.loading&&transitSearch.results?.map((route,i)=>(
                 <button key={i} onClick={()=>{

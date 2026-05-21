@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v103';
+const APP_VERSION = 'v104';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -2066,7 +2066,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
     if(!window.google?.maps?.DirectionsService){toast('Google Maps לא זמין','error');return;}
     const{lat:fLat,lng:fLng}=fromBlock,{lat:tLat,lng:tLng}=toBlock;
     if(!fLat||!fLng||!tLat||!tLng){toast('חסרים נתוני מיקום','error');return;}
-    setTransitSearch({loading:true,fromBlockIdx:sorted.indexOf(fromBlock),insertMode,results:null,error:null});
+    setTransitSearch({loading:true,fromBlockIdx:sorted.indexOf(fromBlock),insertMode,fromLat:fLat,fromLng:fLng,toLat:tLat,toLng:tLng,results:null,error:null});
     let dep=new Date();
     if(day.date&&fromBlock.startTime){const dMins=bDur(fromBlock);const t=new Date(day.date+'T'+addMins(fromBlock.startTime,dMins)+':00');if(!isNaN(t)&&t>new Date())dep=t;}
     const tRouteOpts={departureTime:dep};
@@ -2079,7 +2079,10 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
     },(result,status)=>{
       if(status!=='OK'||!result?.routes?.length){
         console.warn('[transit]',status,result);
-        setTransitSearch(p=>p?{...p,loading:false,results:null,error:`לא נמצאו קווים בין הנקודות האלה (${status})`}:null);return;
+        const errMsg=status==='REQUEST_DENIED'
+          ?'הרשאה נדחתה — יש להפעיל את "Directions API" ב-Google Cloud Console עבור מפתח ה-API'
+          :`לא נמצאו קווים בין הנקודות האלה (${status})`;
+        setTransitSearch(p=>p?{...p,loading:false,results:null,error:errMsg}:null);return;
       }
       const routes=result.routes.map(r=>{
         const leg=r.legs[0];
@@ -2507,7 +2510,18 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
             </div>
             <div style={{overflowY:'auto',flex:1,padding:'12px 16px 16px'}}>
               {transitSearch.loading&&<div style={{textAlign:'center',padding:'32px',color:'var(--text3)',fontSize:13}}>🔍 מחפש קווי תחבורה...</div>}
-              {!transitSearch.loading&&transitSearch.error&&<div style={{textAlign:'center',padding:'24px',color:'var(--red)',fontSize:13}}>{transitSearch.error}</div>}
+              {!transitSearch.loading&&transitSearch.error&&(
+                <div style={{padding:'20px 16px',textAlign:'center'}}>
+                  <div style={{color:'var(--red)',fontSize:13,marginBottom:12}}>{transitSearch.error}</div>
+                  {transitSearch.fromLat&&<a href={`https://www.google.com/maps/dir/?api=1&origin=${transitSearch.fromLat},${transitSearch.fromLng}&destination=${transitSearch.toLat},${transitSearch.toLng}&travelmode=transit`}
+                    target="_blank" rel="noreferrer"
+                    style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12,padding:'7px 14px',
+                      borderRadius:8,background:'rgba(79,142,247,.12)',color:'var(--accent)',
+                      border:'1px solid rgba(79,142,247,.3)',textDecoration:'none',fontWeight:700}}>
+                    🗺️ פתח מסלול ב-Google Maps
+                  </a>}
+                </div>
+              )}
               {!transitSearch.loading&&transitSearch.results?.map((route,i)=>(
                 <button key={i} onClick={()=>{
                   const{insertMode,fromBlockIdx}=transitSearch;
