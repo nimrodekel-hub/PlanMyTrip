@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v94';
+const APP_VERSION = 'v95';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -583,6 +583,23 @@ const parseTakeoutCSV = text => {
 
 /* ── מזג אוויר ── */
 const fetchWeather = (lat,lon) => fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,weathercode&current_weather=true&timezone=auto&forecast_days=3`).then(r=>r.json());
+// מחזיר תחזית יומית לתאריך ספציפי (מוקשית ב-_wxCache לפי lat/lng)
+const _wxCache={};
+const fetchWeatherDay=async(lat,lng,date)=>{
+  if(!lat||!lng||!date)return null;
+  const key=`${parseFloat(lat).toFixed(2)}_${parseFloat(lng).toFixed(2)}`;
+  if(!_wxCache[key]){
+    try{const d=await fetchWeather(lat,lng);if(!d?.daily?.time)return null;
+      _wxCache[key]=d.daily.time.map((dt,i)=>({date:dt,code:d.daily.weathercode[i],tMax:Math.round(d.daily.temperature_2m_max[i]),tMin:Math.round(d.daily.temperature_2m_min[i])}));
+    }catch{return null;}
+  }
+  return _wxCache[key]?.find(f=>f.date===date)||null;
+};
+const getUserLoc=()=>new Promise(res=>{
+  if(window.__userLoc){res(window.__userLoc);return;}
+  if(!navigator.geolocation){res(null);return;}
+  navigator.geolocation.getCurrentPosition(p=>{window.__userLoc={lat:p.coords.latitude,lng:p.coords.longitude};res(window.__userLoc);},()=>res(null),{timeout:5000,maximumAge:300000});
+});
 const todayISO = () => new Date().toISOString().slice(0,10);
 const daysSince = d => { if(!d) return null; const diff=Date.now()-new Date(d).getTime(); return Math.floor(diff/(864e5)); };
 
@@ -1832,6 +1849,22 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
   const dayColor=DAY_COLORS[idx%DAY_COLORS.length];
   const hasMapBlocks=day.blocks.some(b=>b.lat&&b.lng);
 
+  // מזג אוויר — נקודת יעד היום, ואם אין — מיקום נוכחי
+  const[dayWx,setDayWx]=useState(null);
+  useEffect(()=>{
+    setDayWx(null);
+    if(!day.date)return;
+    let cancelled=false;
+    (async()=>{
+      const lat=day.endLat,lng=day.endLng;
+      const pos=lat&&lng?{lat,lng}:await getUserLoc();
+      if(!pos||cancelled)return;
+      const wx=await fetchWeatherDay(pos.lat,pos.lng,day.date);
+      if(wx&&!cancelled)setDayWx(wx);
+    })();
+    return()=>{cancelled=true;};
+  },[day.id,day.endLat,day.endLng,day.date]);// eslint-disable-next-line react-hooks/exhaustive-deps
+
   /* ── cascade / end-time helpers ── */
   const toMinsD=t=>{const[h,m]=(t||'00:00').split(':').map(Number);return h*60+m;};
   // תומך בפורמט מובייל (endTime) ובפורמט דסקטופ (durationMins)
@@ -1913,7 +1946,12 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
     <div className="day-header" onClick={()=>setOpen(o=>!o)}>
       <span style={{fontSize:20,color:dayColor}}>📅</span>
       <div style={{flex:1,minWidth:0}}>
-        <div style={{fontWeight:700,fontSize:14}}>יום {idx+1}{day.date?` — ${dateStr(day.date)}`:''}</div>
+        <div style={{fontWeight:700,fontSize:14,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+          <span>יום {idx+1}{day.date?` — ${dateStr(day.date)}`:''}</span>
+          {dayWx&&<span style={{fontWeight:400,fontSize:12,color:'var(--text2)',background:'rgba(255,255,255,.07)',borderRadius:6,padding:'1px 7px'}}>
+            {WMO[dayWx.code]?.[0]||'🌡️'} {dayWx.tMin}°–{dayWx.tMax}°
+          </span>}
+        </div>
         {/* תצוגת מסלול: מוצא → יעד */}
         {(day.startLocation||day.endLocation)
           ?<div style={{fontSize:11,color:'var(--text3)',display:'flex',alignItems:'center',gap:4,flexWrap:'wrap',marginTop:1}}>

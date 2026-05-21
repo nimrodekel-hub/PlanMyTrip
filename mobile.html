@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m36';
+const MOB_VER='m37';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -418,6 +418,28 @@ const getTypeEmoji=types=>{
   const row=SEARCH_ICON_MAP.find(([t])=>(types||[]).includes(t));
   return row?row[1]:'📍';
 };
+
+/* ── מזג אוויר — Open-Meteo (חינמי, ללא מפתח API) ── */
+const _wxCache={};
+const WMO={0:['☀️','בהיר'],1:['🌤️','בהיר בעיקר'],2:['⛅','מעונן חלקית'],3:['☁️','מעונן'],45:['🌫️','ערפל'],48:['🌫️','ערפל'],51:['🌦️','טפטוף קל'],53:['🌦️','טפטוף'],55:['🌧️','טפטוף כבד'],61:['🌧️','גשם קל'],63:['🌧️','גשם'],65:['🌧️','גשם כבד'],71:['🌨️','שלג קל'],73:['🌨️','שלג'],75:['❄️','שלג כבד'],80:['🌦️','מקלחות'],95:['⛈️','סערה'],96:['⛈️','סערה עם ברד'],99:['⛈️','סערה חזקה']};
+const fetchWeatherDay=async(lat,lng,date)=>{
+  if(!lat||!lng||!date)return null;
+  const key=`${parseFloat(lat).toFixed(2)}_${parseFloat(lng).toFixed(2)}`;
+  if(!_wxCache[key]){
+    try{
+      const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=weathercode,temperature_2m_max,temperature_2m_min&forecast_days=3&timezone=auto`);
+      const d=await r.json();
+      if(!d?.daily?.time)return null;
+      _wxCache[key]=d.daily.time.map((dt,i)=>({date:dt,code:d.daily.weathercode[i],tMax:Math.round(d.daily.temperature_2m_max[i]),tMin:Math.round(d.daily.temperature_2m_min[i])}));
+    }catch{return null;}
+  }
+  return _wxCache[key]?.find(f=>f.date===date)||null;
+};
+const getUserLoc=()=>new Promise(res=>{
+  if(window.__userLoc){res(window.__userLoc);return;}
+  if(!navigator.geolocation){res(null);return;}
+  navigator.geolocation.getCurrentPosition(p=>{window.__userLoc={lat:p.coords.latitude,lng:p.coords.longitude};res(window.__userLoc);},()=>res(null),{timeout:5000,maximumAge:300000});
+});
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1101,6 +1123,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
   const[bankPickForBlock,setBankPickForBlock]=useState(null); // {type} — show bank picker for adding block
   const[,setTick]=useState(0);
   const[inlineNote,setInlineNote]=useState(null); // {blockId, value}
+  const[dayWx,setDayWx]=useState(null); // מזג אוויר לכרטיס הנוכחי
   // drag-and-drop state
   const dragIdxRef=useRef(null);
   const[dragSrc,setDragSrc]=useState(null);
@@ -1112,6 +1135,21 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
 
   // clock tick for "now" indicator (every 30s)
   useEffect(()=>{const t=setInterval(()=>setTick(n=>n+1),30000);return()=>clearInterval(t);},[]);
+
+  // מזג אוויר — נקודת יעד היום, ואם אין — מיקום נוכחי
+  useEffect(()=>{
+    setDayWx(null);
+    if(!day?.date)return;
+    let cancelled=false;
+    (async()=>{
+      const lat=day.endLat,lng=day.endLng;
+      const pos=lat&&lng?{lat,lng}:await getUserLoc();
+      if(!pos||cancelled)return;
+      const wx=await fetchWeatherDay(pos.lat,pos.lng,day.date);
+      if(wx&&!cancelled)setDayWx(wx);
+    })();
+    return()=>{cancelled=true;};
+  },[day?.id,day?.endLat,day?.endLng,day?.date]);// eslint-disable-line
 
   // sorted blocks
   const sorted=useMemo(()=>
@@ -1388,8 +1426,12 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
         <div className="day-nav">
           <button className="day-nav-btn" onClick={()=>setDayIdx(i=>i+1)} disabled={safeIdx>=days.length-1}>‹</button>
           <div className="day-nav-center">
-            <div className="day-nav-title">יום {safeIdx+1}</div>
-            <div className="day-nav-sub">{sorted.length} פעילויות</div>
+            <div className="day-nav-title">
+              יום {safeIdx+1}{day.date?` — ${new Date(day.date+'T12:00:00').toLocaleDateString('he-IL',{weekday:'short',day:'numeric',month:'numeric'})}`:''}</div>
+            <div className="day-nav-sub">
+              {dayWx&&<span style={{marginLeft:5}}>{WMO[dayWx.code]?.[0]||'🌡️'} {dayWx.tMin}°–{dayWx.tMax}° ·</span>}
+              {sorted.length} פעילויות
+            </div>
           </div>
           <button className="day-nav-btn" onClick={()=>setDayIdx(i=>i-1)} disabled={safeIdx<=0}>›</button>
         </div>
