@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v101';
+const APP_VERSION = 'v102';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -2062,11 +2062,11 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
 
   /* ── תחבורה ציבורית ── */
   const getVehicleIcon=t=>({BUS:'🚌',RAIL:'🚆',SUBWAY:'🚇',TRAM:'🚊',FERRY:'⛴️',HEAVY_RAIL:'🚆',HIGH_SPEED_TRAIN:'🚅',COMMUTER_TRAIN:'🚃',METRO_RAIL:'🚇',MONORAIL:'🚝',CABLE_CAR:'🚡'}[t]||'🚌');
-  const searchTransit=(fromBlock,toBlock)=>{
+  const searchTransit=(fromBlock,toBlock,insertMode='between')=>{
     if(!window.google?.maps?.DirectionsService){toast('Google Maps לא זמין','error');return;}
     const{lat:fLat,lng:fLng}=fromBlock,{lat:tLat,lng:tLng}=toBlock;
     if(!fLat||!fLng||!tLat||!tLng){toast('חסרים נתוני מיקום','error');return;}
-    setTransitSearch({loading:true,fromBlockIdx:sorted.indexOf(fromBlock),results:null,error:null});
+    setTransitSearch({loading:true,fromBlockIdx:sorted.indexOf(fromBlock),insertMode,results:null,error:null});
     let dep=new Date();
     if(day.date&&fromBlock.startTime){const dMins=bDur(fromBlock);const t=new Date(day.date+'T'+addMins(fromBlock.startTime,dMins)+':00');if(!isNaN(t))dep=t;}
     new window.google.maps.DirectionsService().route({
@@ -2108,6 +2108,32 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
     onUpdate({...day,blocks:[...sorted.slice(0,si+1),nb,...tail]});
     setTransitSearch(null);
     toast(`${route.steps[0]?.icon||'🚌'} קו תחבורה נוסף`,'success');
+  };
+  const insertTransitBlockStart=(route)=>{
+    if(!sorted.length)return;
+    const firstStart=sorted[0].startTime;
+    const nb={id:uid(),type:'travel',
+      title:`${route.summary} (~${fmtTravelMin(route.durationMins)})`,
+      startTime:firstStart,durationMins:route.durationMins,
+      notes:route.steps.map(s=>`${s.icon} ${s.lineName||s.lineShort}: ${s.departure}→${s.arrival}${s.numStops>0?` (${s.numStops} תח')`:''}`).join(' | '),
+      isAutoTravel:true,isTransit:true};
+    const shifted=day.blocks.map(b=>({...b,startTime:addMins(b.startTime,route.durationMins)}));
+    onUpdate({...day,blocks:[nb,...shifted]});
+    setTransitSearch(null);
+    toast(`${route.steps[0]?.icon||'🚌'} קו תחבורה נוסף לתחילת הלוז`,'success');
+  };
+  const insertTransitBlockEnd=(route)=>{
+    if(!sorted.length)return;
+    const last2=sorted[sorted.length-1];
+    const travelStart=addMins(last2.startTime,bDur(last2));
+    const nb={id:uid(),type:'travel',
+      title:`${route.summary} (~${fmtTravelMin(route.durationMins)})`,
+      startTime:travelStart,durationMins:route.durationMins,
+      notes:route.steps.map(s=>`${s.icon} ${s.lineName||s.lineShort}: ${s.departure}→${s.arrival}${s.numStops>0?` (${s.numStops} תח')`:''}`).join(' | '),
+      isAutoTravel:true,isTransit:true};
+    onUpdate({...day,blocks:[...day.blocks,nb]});
+    setTransitSearch(null);
+    toast(`${route.steps[0]?.icon||'🚌'} קו תחבורה נוסף לסיום הלוז`,'success');
   };
 
   return <div className="card" style={{marginBottom:12,animation:'fadeIn .3s ease'}}>
@@ -2303,8 +2329,18 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
                   style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(34,197,94,.4)',
                     borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',
                     cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                  + הוסף ללוז
+                  🚗 הוסף
                 </button>
+                {sorted[0].lat&&sorted[0].lng&&(
+                  <button onClick={()=>searchTransit(
+                    {lat:day.startLat,lng:day.startLng,startTime:day.startTime||'08:00',durationMins:0},
+                    sorted[0],'start')}
+                    style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(34,197,94,.4)',
+                      borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',
+                      cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
+                    🚌 תחבורה
+                  </button>
+                )}
               </div>
             );
           })();
@@ -2336,8 +2372,16 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
                   style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(239,68,68,.4)',
                     borderRadius:6,background:'rgba(239,68,68,.12)',color:'var(--red)',
                     cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                  + הוסף ללוז
+                  🚗 הוסף
                 </button>
+                {last2.lat&&last2.lng&&(
+                  <button onClick={()=>searchTransit(last2,{lat:day.endLat,lng:day.endLng},'end')}
+                    style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(239,68,68,.4)',
+                      borderRadius:6,background:'rgba(239,68,68,.12)',color:'var(--red)',
+                      cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
+                    🚌 תחבורה
+                  </button>
+                )}
               </div>
             );
           })();
@@ -2462,7 +2506,12 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
               {transitSearch.loading&&<div style={{textAlign:'center',padding:'32px',color:'var(--text3)',fontSize:13}}>🔍 מחפש קווי תחבורה...</div>}
               {!transitSearch.loading&&transitSearch.error&&<div style={{textAlign:'center',padding:'24px',color:'var(--red)',fontSize:13}}>{transitSearch.error}</div>}
               {!transitSearch.loading&&transitSearch.results?.map((route,i)=>(
-                <button key={i} onClick={()=>insertTransitBlock(sorted[transitSearch.fromBlockIdx],route)}
+                <button key={i} onClick={()=>{
+                  const{insertMode,fromBlockIdx}=transitSearch;
+                  if(insertMode==='start')insertTransitBlockStart(route);
+                  else if(insertMode==='end')insertTransitBlockEnd(route);
+                  else insertTransitBlock(sorted[fromBlockIdx],route);
+                }}
                   style={{width:'100%',textAlign:'right',padding:'12px 14px',marginBottom:8,borderRadius:10,
                     border:'1px solid var(--border)',background:'var(--surface)',cursor:'pointer',
                     fontFamily:'Heebo,sans-serif',transition:'background .15s'}}>
