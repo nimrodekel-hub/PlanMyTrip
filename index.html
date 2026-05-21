@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v102';
+const APP_VERSION = 'v103';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -2068,15 +2068,18 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
     if(!fLat||!fLng||!tLat||!tLng){toast('חסרים נתוני מיקום','error');return;}
     setTransitSearch({loading:true,fromBlockIdx:sorted.indexOf(fromBlock),insertMode,results:null,error:null});
     let dep=new Date();
-    if(day.date&&fromBlock.startTime){const dMins=bDur(fromBlock);const t=new Date(day.date+'T'+addMins(fromBlock.startTime,dMins)+':00');if(!isNaN(t))dep=t;}
+    if(day.date&&fromBlock.startTime){const dMins=bDur(fromBlock);const t=new Date(day.date+'T'+addMins(fromBlock.startTime,dMins)+':00');if(!isNaN(t)&&t>new Date())dep=t;}
+    const tRouteOpts={departureTime:dep};
+    if(window.google.maps.TransitRoutePreference?.FEWER_TRANSFERS)tRouteOpts.routingPreference=window.google.maps.TransitRoutePreference.FEWER_TRANSFERS;
     new window.google.maps.DirectionsService().route({
       origin:{lat:fLat,lng:fLng},destination:{lat:tLat,lng:tLng},
       travelMode:window.google.maps.TravelMode.TRANSIT,
-      transitOptions:{departureTime:dep,routingPreference:window.google.maps.TransitRoutePreference.FEWER_TRANSFERS},
+      transitOptions:tRouteOpts,
       provideRouteAlternatives:true,
     },(result,status)=>{
       if(status!=='OK'||!result?.routes?.length){
-        setTransitSearch(p=>p?{...p,loading:false,results:null,error:'לא נמצאו קווים בין הנקודות האלה'}:null);return;
+        console.warn('[transit]',status,result);
+        setTransitSearch(p=>p?{...p,loading:false,results:null,error:`לא נמצאו קווים בין הנקודות האלה (${status})`}:null);return;
       }
       const routes=result.routes.map(r=>{
         const leg=r.legs[0];
