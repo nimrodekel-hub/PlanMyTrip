@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v98';
+const APP_VERSION = 'v99';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1585,7 +1585,6 @@ function BlockModal({block,onSave,onClose,onDelete,onBankNoteUpdate,prevEndTime,
   const hasPlaceInfo=!!(b.placeRating||b.placeOpenStatus||b.placeTodayHours||b.placePhone||b.placeWebsite||b.placeType);
   const doSave=(cascade)=>{
     if(cascade&&onCascadeSave){onCascadeSave(b);}else{onSave(b);}
-    if(b.placeId&&onBankNoteUpdate) onBankNoteUpdate(b.placeId,b.notes||'');
     onClose();
   };
   const handleSave=()=>{
@@ -4022,6 +4021,8 @@ function NotesTab({trip,onUpdate}){
   const[newNote,setNewNote]=useState('');
   const[weatherData,setWeatherData]=useState(null),[wLoading,setWLoading]=useState(false),[wLabel,setWLabel]=useState('');
   const[cityInput,setCityInput]=useState('');
+  const[newLinkUrl,setNewLinkUrl]=useState('');
+  const[newLinkName,setNewLinkName]=useState('');
 
   const loadWeather=(lat,lng,label)=>{
     setWLoading(true);
@@ -4058,6 +4059,14 @@ function NotesTab({trip,onUpdate}){
     setNewNote('');
   };
   const delNote=id=>onUpdate({...trip,quickNotes:(trip.quickNotes||[]).filter(n=>n.id!==id)});
+
+  const addLink=()=>{
+    const url=newLinkUrl.trim(); if(!url) return;
+    const name=newLinkName.trim();
+    onUpdate({...trip,links:[...(trip.links||[]),{id:uid(),url,name}]});
+    setNewLinkUrl('');setNewLinkName('');
+  };
+  const delLink=id=>onUpdate({...trip,links:(trip.links||[]).filter(l=>l.id!==id)});
 
   const[wIcon,wDesc]=weatherData?WMO[weatherData.current_weather?.weathercode]||['🌡️','לא ידוע']:[];
 
@@ -4149,6 +4158,41 @@ function NotesTab({trip,onUpdate}){
                 <span style={{fontSize:10,color:'var(--text3)'}}>{new Date(n.createdAt).toLocaleDateString('he-IL')}</span>
                 <button className="btn btn-danger btn-icon btn-sm" onClick={()=>delNote(n.id)}>✕</button>
               </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* קישורים לאתרים */}
+      <div className="card">
+        <div className="card-header">
+          <span style={{fontWeight:700}}>🔗 קישורים לאתרים</span>
+          <span className="chip chip-blue" style={{fontSize:11}}>{(trip.links||[]).length}</span>
+        </div>
+        <div className="card-body" style={{display:'flex',flexDirection:'column',gap:10}}>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            <input className="input" value={newLinkUrl} onChange={e=>setNewLinkUrl(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&addLink()}
+              placeholder="הדבק קישור (URL)..." style={{flex:'2 1 180px',minWidth:0}}/>
+            <input className="input" value={newLinkName} onChange={e=>setNewLinkName(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&addLink()}
+              placeholder="שם (אופציונלי)..." style={{flex:'1 1 120px',minWidth:0}}/>
+            <button className="btn btn-primary btn-sm" onClick={addLink} disabled={!newLinkUrl.trim()}>+ הוסף</button>
+          </div>
+          {(trip.links||[]).length===0&&(
+            <div style={{color:'var(--text3)',fontSize:13,textAlign:'center',padding:'8px 0'}}>אין קישורים עדיין</div>
+          )}
+          {(trip.links||[]).map(l=>(
+            <div key={l.id} className="interest-item" style={{justifyContent:'space-between',gap:8}}>
+              <span style={{fontSize:16,flexShrink:0}}>🔗</span>
+              <div style={{flex:1,minWidth:0}}>
+                <a href={l.url} target="_blank" rel="noreferrer"
+                   style={{fontSize:13,color:'var(--accent)',wordBreak:'break-all',display:'block',lineHeight:1.4}}>
+                  {l.name||l.url}
+                </a>
+                {l.name&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2,wordBreak:'break-all'}}>{l.url}</div>}
+              </div>
+              <button className="btn btn-danger btn-icon btn-sm" style={{flexShrink:0}} onClick={()=>delLink(l.id)}>✕</button>
             </div>
           ))}
         </div>
