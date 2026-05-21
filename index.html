@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v97';
+const APP_VERSION = 'v98';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1543,49 +1543,57 @@ function Weather({coordinates,location}){
   };
 
   const[icon,desc]=WMO[w?.current_weather?.weathercode]||['🌡️','לא ידוע'];
-  return <div className="weather-card" style={{marginBottom:12}}>
-    <div style={{display:'flex',gap:6,marginBottom:8}}>
+  return <div className="weather-card" style={{marginBottom:8,padding:'6px 10px'}}>
+    {/* שורה 1: חיפוש + מצב נוכחי */}
+    <div style={{display:'flex',alignItems:'center',gap:5,marginBottom:w?3:0}}>
       <input value={searchInput} onChange={e=>setSearchInput(e.target.value)}
         onKeyDown={e=>e.key==='Enter'&&searchPlace()}
-        placeholder="מיקום אחר (Enter לחיפוש)..."
-        style={{flex:1,background:'rgba(255,255,255,.15)',border:'1px solid rgba(255,255,255,.25)',borderRadius:7,padding:'5px 9px',fontSize:11,color:'inherit',fontFamily:'Heebo,sans-serif',direction:'rtl'}}/>
-      <button onClick={searchPlace} style={{background:'rgba(255,255,255,.2)',border:'none',borderRadius:7,padding:'5px 8px',cursor:'pointer',fontSize:13}}>🔍</button>
+        placeholder="מיקום..."
+        style={{width:72,background:'rgba(255,255,255,.15)',border:'1px solid rgba(255,255,255,.25)',borderRadius:5,padding:'2px 6px',fontSize:10,color:'inherit',fontFamily:'Heebo,sans-serif',direction:'rtl'}}/>
+      <button onClick={searchPlace} style={{background:'rgba(255,255,255,.2)',border:'none',borderRadius:5,padding:'2px 5px',cursor:'pointer',fontSize:11,lineHeight:1}}>🔍</button>
+      {loading&&<span style={{fontSize:11,opacity:.7}}>⏳</span>}
+      {!loading&&!w&&<span style={{fontSize:10,opacity:.5,flex:1}}>אין נתונים</span>}
+      {w&&<>
+        <span style={{fontSize:18,lineHeight:1}}>{icon}</span>
+        <span style={{fontSize:13,fontWeight:700,lineHeight:1}}>{Math.round(w.current_weather?.temperature)}°C</span>
+        <span style={{fontSize:10,opacity:.7,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{desc}{effLabel?` · ${effLabel}`:''}</span>
+      </>}
     </div>
-    {loading&&<div style={{fontSize:12,opacity:.7,textAlign:'center',padding:'8px 0'}}>⏳ טוען...</div>}
-    {!loading&&!w&&<div style={{fontSize:11,opacity:.6,textAlign:'center',padding:'4px 0'}}>מזג האוויר לא זמין</div>}
-    {w&&<>
-      <div style={{fontSize:11,fontWeight:600,opacity:.7,marginBottom:8,textTransform:'uppercase',letterSpacing:'.05em'}}>{effLabel||'מזג אוויר'} — 3 ימים קרובים</div>
-      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}>
-        <span style={{fontSize:32}}>{icon}</span>
-        <div><div style={{fontSize:22,fontWeight:700}}>{Math.round(w.current_weather?.temperature)}°C</div><div style={{fontSize:12,opacity:.8}}>{desc}</div></div>
-      </div>
-      <div style={{display:'flex',gap:8}}>
-        {(w.daily?.time||[]).slice(0,3).map((date,i)=>{
-          const[di]=WMO[w.daily.weathercode[i]]||['🌡️'];
-          return <div key={date} style={{flex:1,background:'rgba(255,255,255,.1)',borderRadius:8,padding:'6px 8px',textAlign:'center'}}>
-            <div style={{fontSize:10,opacity:.7,marginBottom:2}}>{new Date(date).toLocaleDateString('he-IL',{weekday:'short'})}</div>
-            <div style={{fontSize:16}}>{di}</div>
-            <div style={{fontSize:11,fontWeight:600}}>{Math.round(w.daily.temperature_2m_max[i])}°</div>
-            <div style={{fontSize:10,opacity:.6}}>{Math.round(w.daily.temperature_2m_min[i])}°</div>
-          </div>;
-        })}
-      </div>
-    </>}
+    {/* שורה 2: תחזית 3 ימים */}
+    {w&&<div style={{display:'flex',gap:4}}>
+      {(w.daily?.time||[]).slice(0,3).map((date,i)=>{
+        const[di]=WMO[w.daily.weathercode[i]]||['🌡️'];
+        return <div key={date} style={{flex:1,background:'rgba(255,255,255,.1)',borderRadius:5,padding:'2px 5px',textAlign:'center',lineHeight:1.3}}>
+          <span style={{fontSize:9,opacity:.65}}>{new Date(date).toLocaleDateString('he-IL',{weekday:'short'})} </span>
+          <span style={{fontSize:14}}>{di}</span>
+          <span style={{fontSize:10,fontWeight:600}}> {Math.round(w.daily.temperature_2m_max[i])}°</span>
+          <span style={{fontSize:9,opacity:.55}}>/{Math.round(w.daily.temperature_2m_min[i])}°</span>
+        </div>;
+      })}
+    </div>}
   </div>;
 }
 
 /* ══════════════════════════════════
    מודל עריכת בלוק
 ══════════════════════════════════ */
-function BlockModal({block,onSave,onClose,onDelete,onBankNoteUpdate}){
+function BlockModal({block,onSave,onClose,onDelete,onBankNoteUpdate,prevEndTime,onCascadeSave}){
   const[b,setB]=useState({...block});
-  const upd=(k,v)=>setB(p=>({...p,[k]:v}));
+  const[cascadePrompt,setCascadePrompt]=useState(false);
+  const origStartTime=useRef(block.startTime);
+  const upd=(k,v)=>{setB(p=>({...p,[k]:v}));if(k==='startTime')setCascadePrompt(false);};
   const hasPlaceInfo=!!(b.placeRating||b.placeOpenStatus||b.placeTodayHours||b.placePhone||b.placeWebsite||b.placeType);
-  const handleSave=()=>{
-    onSave(b);
-    // sync notes to matching bank item
+  const doSave=(cascade)=>{
+    if(cascade&&onCascadeSave){onCascadeSave(b);}else{onSave(b);}
     if(b.placeId&&onBankNoteUpdate) onBankNoteUpdate(b.placeId,b.notes||'');
     onClose();
+  };
+  const handleSave=()=>{
+    // אם שעת ההתחלה שונתה ויש פעילות קודמת — הצע עדכון שרשרתי
+    if(onCascadeSave&&prevEndTime&&b.startTime!==origStartTime.current&&b.startTime!==prevEndTime){
+      setCascadePrompt(true); return;
+    }
+    doSave(false);
   };
   return <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
     <div className="modal" style={{maxHeight:'90vh',display:'flex',flexDirection:'column'}}>
@@ -1602,7 +1610,13 @@ function BlockModal({block,onSave,onClose,onDelete,onBankNoteUpdate}){
           <input className="input" value={b.title} onChange={e=>upd('title',e.target.value)} placeholder="למשל: נסיעה לפירנצה" autoFocus/></div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
           <div><label className="label">שעת התחלה</label>
-            <input className="input" type="time" value={b.startTime} onChange={e=>upd('startTime',e.target.value)}/></div>
+            <input className="input" type="time" value={b.startTime} onChange={e=>upd('startTime',e.target.value)}/>
+            {prevEndTime&&b.startTime!==prevEndTime&&<div style={{fontSize:10,color:'var(--amber)',marginTop:3}}>
+              🔗 הפעילות הקודמת מסתיימת ב-{prevEndTime}
+              <button onClick={()=>upd('startTime',prevEndTime)}
+                style={{marginRight:5,fontSize:10,padding:'1px 6px',borderRadius:4,border:'1px solid var(--amber)',background:'rgba(234,179,8,.12)',color:'var(--amber)',cursor:'pointer',fontFamily:'Heebo,sans-serif'}}>סנכרן</button>
+            </div>}
+          </div>
           <div><label className="label">משך (דקות)</label>
             <input className="input" type="number" min="5" step="5" value={b.durationMins} onChange={e=>upd('durationMins',parseInt(e.target.value)||0)}/></div>
         </div>
@@ -1636,6 +1650,14 @@ function BlockModal({block,onSave,onClose,onDelete,onBankNoteUpdate}){
             🌐 {b.placeWebsite.replace(/^https?:\/\//,'').split('/')[0]}</a>}
         </div>}
       </div>
+      {cascadePrompt&&<div style={{background:'rgba(234,179,8,.12)',border:'1px solid var(--amber)',borderRadius:8,padding:'8px 12px',margin:'0 0 8px',flexShrink:0}}>
+        <div style={{fontSize:12,color:'var(--amber)',fontWeight:700,marginBottom:6}}>⏳ שעת ההתחלה שונתה מ-{origStartTime.current} ל-{b.startTime}</div>
+        <div style={{fontSize:11,color:'var(--text2)',marginBottom:8}}>לעדכן גם את הפעילויות הבאות בהתאם?</div>
+        <div style={{display:'flex',gap:8}}>
+          <button className="btn btn-sm" style={{background:'var(--amber)',color:'#000',border:'none',flex:1}} onClick={()=>doSave(true)}>כן, עדכן הבאים ↕</button>
+          <button className="btn btn-secondary btn-sm" style={{flex:1}} onClick={()=>doSave(false)}>לא, רק בלוק זה</button>
+        </div>
+      </div>}
       <div className="modal-footer" style={{flexShrink:0}}>
         {onDelete&&<button className="btn btn-danger btn-sm" onClick={onDelete}>🗑 מחק</button>}
         <div style={{flex:1}}/>
@@ -1913,6 +1935,29 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
     const reordered=sorted.map(b=>{const nb={...b,startTime:t};t=addMins(t,bDur(b));return nb;});
     onUpdate({...day,blocks:reordered});
     toast(`שעות עודכנו ${delta>0?'+':''}${delta} דקות ✓`,'success');
+  };
+  // קשר פעילויות — עדכן שעות של הבאים החל מ-fromIdx
+  const cascadeFrom=(fromIdx)=>{
+    if(fromIdx<=0||fromIdx>=sorted.length)return;
+    const prevEnd=addMins(sorted[fromIdx-1].startTime,bDur(sorted[fromIdx-1]));
+    let t=prevEnd;
+    const tail=sorted.slice(fromIdx).map(b=>{const nb={...b,startTime:t};t=addMins(t,bDur(b));return nb;});
+    const ids=new Set(tail.map(b=>b.id));
+    onUpdate({...day,blocks:[...day.blocks.filter(b=>!ids.has(b.id)),...tail]});
+    toast('פעילויות קושרו ✓','success');
+  };
+  // שמירה עם עדכון שרשרתי של כל הבאים
+  const cascadeSave=(updBlock)=>{
+    const si=sorted.findIndex(b=>b.id===updBlock.id);
+    const blocksUpd=day.blocks.map(b=>b.id===updBlock.id?updBlock:b);
+    if(si<0){onUpdate({...day,blocks:blocksUpd});return;}
+    const sortedUpd=[...blocksUpd].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+    const siNew=sortedUpd.findIndex(b=>b.id===updBlock.id);
+    let t=addMins(updBlock.startTime,bDur(updBlock));
+    const tail=sortedUpd.slice(siNew+1).map(b=>{const nb={...b,startTime:t};t=addMins(t,bDur(b));return nb;});
+    const ids=new Set(tail.map(b=>b.id));
+    onUpdate({...day,blocks:[...blocksUpd.filter(b=>!ids.has(b.id)),...tail]});
+    toast('שעות עודכנו ✓','success');
   };
   const pickLocationItem=(item,field)=>{
     onUpdate({...day,
@@ -2265,69 +2310,98 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
               onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move';if(dragOver!==si)setDragOver(si);}}
               onDrop={e=>{e.preventDefault();handleDrop(si);}}
               onDragEnd={()=>{dragIdxRef.current=null;setDragOver(null);}}/>,
-            /* ── travel time connector to next block ── */
+            /* ── connector: link status + travel time ── */
             (()=>{
               if(si>=sorted.length-1||bl.type==='travel'||sorted[si+1].type==='travel')return null;
-              const ttKey=`${bl.id}->${sorted[si+1].id}`;
+              const next=sorted[si+1];
+              const ttKey=`${bl.id}->${next.id}`;
               const tt=travelTimes[ttKey];
-              if(!tt||tt.loading||tt.min==null)return null;
+              const prevEnd=addMins(bl.startTime,bDur(bl));
+              const isLinked=prevEnd===next.startTime;
+              const gapMins=toMinsD(next.startTime)-toMinsD(prevEnd);
+              const connBase={display:'flex',alignItems:'center',gap:6,padding:'4px 8px 4px 40px',margin:'0 0 4px',borderRadius:8,marginRight:36};
               /* ── 10h cap ── */
-              if(tt.min>600){
+              if(tt&&!tt.loading&&tt.min>600){
                 return(
-                  <div key={`tt-${ttKey}`} style={{
-                    display:'flex',alignItems:'center',gap:8,
-                    padding:'4px 8px 4px 40px',margin:'0 0 4px',
-                    background:'rgba(239,68,68,.07)',
-                    borderRadius:8,border:'1px solid rgba(239,68,68,.25)',
-                    marginRight:36,
-                  }}>
+                  <div key={`tt-${ttKey}`} style={{...connBase,background:'rgba(239,68,68,.07)',border:'1px solid rgba(239,68,68,.25)'}}>
                     <span style={{fontSize:11,color:'var(--red)',flex:1}}>
                       🚨 נסיעה ארוכה מ-10 שעות ({fmtTravelMin(tt.min)}) — בדוק שהאתרים באותה מדינה / יבשת
                     </span>
                   </div>
                 );
               }
-              const buf=settings?.travelBuffer??1.2;
-              const buffered=Math.round(tt.min*buf);
-              const insertTravel=()=>{
-                const afterBlk=sorted[si];
-                const travelStart=addMins(afterBlk.startTime,bDur(afterBlk));
-                const nb2={id:uid(),type:'travel',
-                  title:`🚗 נסיעה (~${fmtTravelMin(buffered)})`,
-                  startTime:travelStart,durationMins:buffered,notes:'',isAutoTravel:true};
-                let t=addMins(travelStart,buffered);
-                const tail=sorted.slice(si+1).map(b2=>{const s={...b2,startTime:t};t=addMins(t,bDur(b2));return s;});
-                onUpdate({...day,blocks:[...sorted.slice(0,si+1),nb2,...tail]});
-                toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה`,'success');
-              };
-              return(
-                <div key={`tt-${ttKey}`} style={{
-                  display:'flex',alignItems:'center',gap:6,
-                  padding:'4px 8px 4px 40px',margin:'0 0 4px',
-                  background:'rgba(79,142,247,.06)',
-                  borderRadius:8,border:'1px solid rgba(79,142,247,.18)',
-                  marginRight:36,
-                }}>
-                  <span style={{fontSize:11,color:'var(--text3)',flex:1}}>
-                    🚗 {fmtTravelMin(tt.min)} נסיעה
-                    {buf>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf-1))} דק' = <b style={{color:'var(--text2)'}}>{fmtTravelMin(buffered)}</b></span>}
-                  </span>
-                  <button onClick={insertTravel}
-                    style={{fontSize:11,padding:'3px 9px',border:'1px solid rgba(79,142,247,.4)',
-                      borderRadius:6,background:'rgba(79,142,247,.12)',color:'var(--accent)',
-                      cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                    🚗 הוסף
-                  </button>
-                  {bl.lat&&bl.lng&&sorted[si+1].lat&&sorted[si+1].lng&&(
-                    <button onClick={()=>searchTransit(bl,sorted[si+1])}
-                      style={{fontSize:11,padding:'3px 9px',border:'1px solid rgba(34,197,94,.4)',
-                        borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',
-                        cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                      🚌 תחבורה
-                    </button>
-                  )}
-                </div>
+              /* ── פער / חפיפה — כפתור קישור ── */
+              const linkBtn=!isLinked&&(
+                <button key="lnkbtn" title="קשר פעילויות — עדכן שעה לפי סיום הקודם"
+                  onClick={()=>cascadeFrom(si+1)}
+                  style={{fontSize:10,padding:'2px 7px',border:'1px solid rgba(234,179,8,.5)',
+                    borderRadius:5,background:'rgba(234,179,8,.12)',color:'var(--amber)',
+                    cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap',flexShrink:0}}>
+                  🔗 קשר
+                </button>
               );
+              const gapLabel=!isLinked&&(
+                <span key="gaplbl" style={{fontSize:10,color:gapMins>=0?'var(--amber)':'var(--red)',opacity:.85}}>
+                  {gapMins>0?`⏳ פער ${fmtTravelMin(gapMins)}`:gapMins<0?`⚠️ חפיפה ${fmtTravelMin(-gapMins)}`:''}
+                </span>
+              );
+              /* ── OSRM travel time ── */
+              if(tt&&!tt.loading&&tt.min!=null){
+                const buf=settings?.travelBuffer??1.2;
+                const buffered=Math.round(tt.min*buf);
+                const insertTravel=()=>{
+                  const travelStart=addMins(bl.startTime,bDur(bl));
+                  const nb2={id:uid(),type:'travel',
+                    title:`🚗 נסיעה (~${fmtTravelMin(buffered)})`,
+                    startTime:travelStart,durationMins:buffered,notes:'',isAutoTravel:true};
+                  let t=addMins(travelStart,buffered);
+                  const tail=sorted.slice(si+1).map(b2=>{const s={...b2,startTime:t};t=addMins(t,bDur(b2));return s;});
+                  onUpdate({...day,blocks:[...sorted.slice(0,si+1),nb2,...tail]});
+                  toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה`,'success');
+                };
+                return(
+                  <div key={`tt-${ttKey}`} style={{...connBase,background:'rgba(79,142,247,.06)',border:'1px solid rgba(79,142,247,.18)'}}>
+                    {gapLabel}{linkBtn}
+                    <span style={{fontSize:11,color:'var(--text3)',flex:1}}>
+                      {isLinked&&<span style={{color:'var(--text3)',opacity:.4,marginLeft:4}}>🔗 </span>}
+                      🚗 {fmtTravelMin(tt.min)} נסיעה
+                      {buf>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf-1))} דק' = <b style={{color:'var(--text2)'}}>{fmtTravelMin(buffered)}</b></span>}
+                    </span>
+                    <button onClick={insertTravel}
+                      style={{fontSize:11,padding:'3px 9px',border:'1px solid rgba(79,142,247,.4)',
+                        borderRadius:6,background:'rgba(79,142,247,.12)',color:'var(--accent)',
+                        cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
+                      🚗 הוסף
+                    </button>
+                    {bl.lat&&bl.lng&&next.lat&&next.lng&&(
+                      <button onClick={()=>searchTransit(bl,next)}
+                        style={{fontSize:11,padding:'3px 9px',border:'1px solid rgba(34,197,94,.4)',
+                          borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',
+                          cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
+                        🚌 תחבורה
+                      </button>
+                    )}
+                  </div>
+                );
+              }
+              /* ── no OSRM: show link status only if relevant ── */
+              if(!isLinked){
+                return(
+                  <div key={`lnk-${ttKey}`} style={{...connBase,background:'rgba(234,179,8,.06)',border:'1px solid rgba(234,179,8,.2)'}}>
+                    {gapLabel}{linkBtn}
+                    {bl.lat&&bl.lng&&next.lat&&next.lng&&(
+                      <button onClick={()=>searchTransit(bl,next)}
+                        style={{fontSize:11,padding:'3px 9px',border:'1px solid rgba(34,197,94,.4)',
+                          borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',
+                          cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap',marginRight:'auto'}}>
+                        🚌 תחבורה
+                      </button>
+                    )}
+                  </div>
+                );
+              }
+              /* ── linked & no OSRM: tiny icon ── */
+              return <div key={`lnk-${ttKey}`} style={{textAlign:'center',padding:'0 0 3px',marginRight:36}}><span style={{fontSize:10,color:'var(--text3)',opacity:.3}}>🔗</span></div>;
             })(),
             nowInsert===sorted.length&&si===sorted.length-1&&nowLine,
           ]),endConn];
@@ -2397,7 +2471,11 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
       </div>
     </div>}
 
-    {editing&&<BlockModal block={editing} onSave={updBlock} onClose={()=>setEd(null)} onDelete={()=>{delBlock(editing.id);setEd(null);}} onBankNoteUpdate={onBankNoteUpdate}/>}
+    {editing&&(()=>{
+      const esi=sorted.findIndex(b=>b.id===editing.id);
+      const editPrevEnd=esi>0?addMins(sorted[esi-1].startTime,bDur(sorted[esi-1])):null;
+      return <BlockModal block={editing} onSave={updBlock} onClose={()=>setEd(null)} onDelete={()=>{delBlock(editing.id);setEd(null);}} onBankNoteUpdate={onBankNoteUpdate} prevEndTime={editPrevEnd} onCascadeSave={cascadeSave}/>;
+    })()}
 
     {locationPicking&&(
       <LocationPickerModal

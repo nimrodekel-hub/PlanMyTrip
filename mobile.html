@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m39';
+const MOB_VER='m40';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -978,9 +978,11 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
 /* ════════════════════════════════
    BLOCK EDIT SHEET (mobile)
 ════════════════════════════════ */
-function BlockEditSheet({block,onSave,onDelete,onClose,isNew}){
+function BlockEditSheet({block,onSave,onDelete,onClose,isNew,prevEndTime,onCascadeSave}){
   const[b,setB]=useState({...block});
-  const upd=(k,v)=>setB(p=>({...p,[k]:v}));
+  const[cascadePrompt,setCascadePrompt]=useState(false);
+  const origStartTime=useRef(block.startTime);
+  const upd=(k,v)=>{setB(p=>({...p,[k]:v}));if(k==='startTime')setCascadePrompt(false);};
   const inp={background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:8,
     padding:'9px 11px',color:'var(--text)',fontFamily:'Heebo,sans-serif',fontSize:14,outline:'none',direction:'rtl'};
   const lbl={fontSize:11,fontWeight:600,color:'var(--text3)',display:'block',marginBottom:4};
@@ -1018,6 +1020,11 @@ function BlockEditSheet({block,onSave,onDelete,onClose,isNew}){
               <label style={lbl}>שעת התחלה</label>
               <input type="time" value={b.startTime||''} onChange={e=>upd('startTime',e.target.value)}
                 style={{...inp,direction:'ltr',width:'100%'}}/>
+              {prevEndTime&&b.startTime&&b.startTime!==prevEndTime&&<div style={{fontSize:10,color:'var(--amber)',marginTop:3}}>
+                🔗 קודם: {prevEndTime}
+                <button onClick={()=>upd('startTime',prevEndTime)}
+                  style={{marginRight:5,fontSize:10,padding:'1px 6px',borderRadius:4,border:'1px solid var(--amber)',background:'rgba(234,179,8,.12)',color:'var(--amber)',cursor:'pointer',fontFamily:'Heebo,sans-serif'}}>סנכרן</button>
+              </div>}
             </div>
             <div style={{flex:1}}>
               <label style={lbl}>שעת סיום</label>
@@ -1054,9 +1061,29 @@ function BlockEditSheet({block,onSave,onDelete,onClose,isNew}){
               </a>}
             </div>
           )}
+          {/* שאלת cascade */}
+          {cascadePrompt&&<div style={{background:'rgba(234,179,8,.1)',border:'1px solid var(--amber)',borderRadius:10,padding:'10px 12px',marginBottom:10}}>
+            <div style={{fontSize:12,color:'var(--amber)',fontWeight:700,marginBottom:5}}>⏳ שעה שונתה: {origStartTime.current} → {b.startTime}</div>
+            <div style={{fontSize:11,color:'var(--text2)',marginBottom:8}}>לעדכן גם את הפעילויות הבאות?</div>
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={()=>{onCascadeSave&&onCascadeSave({...b});}}
+                style={{flex:1,background:'var(--amber)',color:'#000',border:'none',borderRadius:8,padding:'8px',fontFamily:'Heebo,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer'}}>
+                כן ↕ עדכן הבאים
+              </button>
+              <button onClick={()=>onSave(b)}
+                style={{flex:1,background:'var(--surface)',color:'var(--text)',border:'1px solid var(--border)',borderRadius:8,padding:'8px',fontFamily:'Heebo,sans-serif',fontSize:12,cursor:'pointer'}}>
+                לא, רק זו
+              </button>
+            </div>
+          </div>}
           {/* actions */}
           <div style={{display:'flex',gap:8}}>
-            <button onClick={()=>onSave(b)}
+            <button onClick={()=>{
+              if(!cascadePrompt&&!isNew&&onCascadeSave&&prevEndTime&&b.startTime!==origStartTime.current&&b.startTime!==prevEndTime){
+                setCascadePrompt(true); return;
+              }
+              onSave(b);
+            }}
               style={{flex:2,background:'var(--accent)',color:'#fff',border:'none',borderRadius:10,
                 padding:'13px',fontFamily:'Heebo,sans-serif',fontSize:14,fontWeight:700,cursor:'pointer'}}>
               ✓ שמור
@@ -1306,6 +1333,43 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
       :(trip.interestBank||[]);
     onUpdate({...trip,days:newDays,interestBank:newBank});
     setEditing(null);
+  };
+  // קשר פעילויות — עדכן שעות מ-fromIdx ואילך
+  const cascadeFrom=fromIdx=>{
+    if(fromIdx<=0||fromIdx>=sorted.length)return;
+    const prev=sorted[fromIdx-1];
+    const prevEnd=prev.endTime||addMins(prev.startTime||'09:00',60);
+    let t=prevEnd;
+    const tail=sorted.slice(fromIdx).map(b=>{
+      const dur=b.endTime&&b.startTime?Math.max(1,toMinsStr(b.endTime)-toMinsStr(b.startTime)):60;
+      const nb={...b,startTime:t,endTime:addMins(t,dur)};
+      t=nb.endTime;
+      return nb;
+    });
+    const ids=new Set(tail.map(b=>b.id));
+    const newBlocks=[...(day.blocks||[]).filter(b=>!ids.has(b.id)),...tail];
+    updDay({blocks:newBlocks});
+    toast('פעילויות קושרו ✓','s');
+  };
+  // שמירה עם עדכון שרשרתי
+  const cascadeSaveBlock=updated=>{
+    const {_isNew,...block}=updated;
+    const allBlocks=(day?.blocks||[]).map(b=>b.id===block.id?block:b);
+    const sortedUpd=[...allBlocks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
+    const siNew=sortedUpd.findIndex(b=>b.id===block.id);
+    let t=block.endTime||addMins(block.startTime||'09:00',60);
+    const tail=sortedUpd.slice(siNew+1).map(b=>{
+      const dur=b.endTime&&b.startTime?Math.max(1,toMinsStr(b.endTime)-toMinsStr(b.startTime)):60;
+      const nb={...b,startTime:t,endTime:addMins(t,dur)};
+      t=nb.endTime;
+      return nb;
+    });
+    const ids=new Set(tail.map(b=>b.id));
+    const finalBlocks=[...allBlocks.filter(b=>!ids.has(b.id)),...tail];
+    const newBank=block.placeId?(trip.interestBank||[]).map(i=>i.placeId===block.placeId?{...i,note:block.note||''}:i):(trip.interestBank||[]);
+    onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,blocks:finalBlocks}:d),interestBank:newBank});
+    setEditing(null);
+    toast('שעות עודכנו ✓','s');
   };
   const addBlock=type=>{
     setBankPickForBlock({type}); // show bank / map / manual picker
@@ -1763,37 +1827,54 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                       </div>
                     )}
                   </div>
-                  {/* OSRM connector */}
-                  {next&&b.type!=='travel'&&next.type!=='travel'&&tt&&!tt.loading&&tt.min!=null&&(
-                    tt.min>MAX_TRAVEL_MINS
-                      ?<div style={{display:'flex',alignItems:'center',gap:7,padding:'5px 10px',marginBottom:8,
-                          background:'rgba(239,68,68,.07)',borderRadius:8,border:'1px solid rgba(239,68,68,.25)'}}>
-                          <span style={{fontSize:11,color:'var(--red)',flex:1}}>
-                            🚨 נסיעה ארוכה מ-10 שעות ({fmtTravelMin(tt.min)}) — בדוק שהאתרים באותה מדינה/יבשת
-                          </span>
-                        </div>
-                      :<div style={{display:'flex',alignItems:'center',gap:5,padding:'5px 10px',marginBottom:8,
-                          background:'rgba(79,142,247,.06)',borderRadius:8,border:'1px solid rgba(79,142,247,.15)'}}>
-                          <span style={{fontSize:11,color:'var(--text3)',flex:1,lineHeight:1.45}}>
-                            🚗 {fmtTravelMin(tt.min)} נסיעה
-                            {buf>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf-1))} דק' = <b style={{color:'var(--text2)'}}>{fmtTravelMin(Math.round(tt.min*buf))}</b></span>}
-                          </span>
-                          <button onClick={()=>insertTravelBlock(day.id,b.id,tt.min)}
-                            style={{fontSize:10,padding:'4px 8px',border:'1px solid rgba(79,142,247,.4)',borderRadius:6,
-                              background:'rgba(79,142,247,.12)',color:'var(--accent2)',cursor:'pointer',
-                              fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap',flexShrink:0}}>
-                            🚗 הוסף
+                  {/* connector: link status + OSRM */}
+                  {next&&b.type!=='travel'&&next.type!=='travel'&&(()=>{
+                    const prevEnd=b.endTime||addMins(b.startTime||'09:00',60);
+                    const isLinked=prevEnd===next.startTime;
+                    const gapMins=toMinsStr(next.startTime||'00:00')-toMinsStr(prevEnd);
+                    const baseSt={fontSize:10,padding:'4px 8px',borderRadius:6,cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap',flexShrink:0};
+                    if(tt&&!tt.loading&&tt.min>MAX_TRAVEL_MINS){
+                      return <div style={{display:'flex',alignItems:'center',gap:7,padding:'5px 10px',marginBottom:8,background:'rgba(239,68,68,.07)',borderRadius:8,border:'1px solid rgba(239,68,68,.25)'}}>
+                        <span style={{fontSize:11,color:'var(--red)',flex:1}}>🚨 נסיעה ארוכה מ-10 שעות ({fmtTravelMin(tt.min)}) — בדוק שהאתרים באותה מדינה/יבשת</span>
+                      </div>;
+                    }
+                    const hasOSRM=tt&&!tt.loading&&tt.min!=null;
+                    const linkBtn=!isLinked&&(
+                      <button key="lnk" title="קשר לפעילות הקודמת" onClick={()=>cascadeFrom(bi+1)}
+                        style={{...baseSt,border:'1px solid rgba(234,179,8,.5)',background:'rgba(234,179,8,.12)',color:'var(--amber)'}}>
+                        🔗 קשר
+                      </button>
+                    );
+                    const gapLabel=!isLinked&&(
+                      <span key="gap" style={{fontSize:10,color:gapMins>=0?'var(--amber)':'var(--red)',flex:1}}>
+                        {gapMins>0?`⏳ פער ${fmtTravelMin(gapMins)}`:gapMins<0?`⚠️ חפיפה ${fmtTravelMin(-gapMins)}`:''}
+                      </span>
+                    );
+                    if(hasOSRM||!isLinked){
+                      return <div style={{display:'flex',alignItems:'center',gap:5,padding:'5px 10px',marginBottom:8,
+                          background:hasOSRM?'rgba(79,142,247,.06)':'rgba(234,179,8,.05)',
+                          borderRadius:8,border:`1px solid ${hasOSRM?'rgba(79,142,247,.15)':'rgba(234,179,8,.2)'}`}}>
+                        {gapLabel}{linkBtn}
+                        {hasOSRM&&<span style={{fontSize:11,color:'var(--text3)',flex:isLinked?1:undefined,lineHeight:1.45}}>
+                          {isLinked&&<span style={{opacity:.3}}>🔗 </span>}
+                          🚗 {fmtTravelMin(tt.min)} נסיעה
+                          {buf>1.01&&<span style={{opacity:.75}}> = <b style={{color:'var(--text2)'}}>{fmtTravelMin(Math.round(tt.min*buf))}</b></span>}
+                        </span>}
+                        {hasOSRM&&<button onClick={()=>insertTravelBlock(day.id,b.id,tt.min)}
+                          style={{...baseSt,border:'1px solid rgba(79,142,247,.4)',background:'rgba(79,142,247,.12)',color:'var(--accent2)'}}>
+                          🚗 הוסף
+                        </button>}
+                        {b.lat&&b.lng&&next.lat&&next.lng&&(
+                          <button onClick={()=>searchTransit(b,next)}
+                            style={{...baseSt,border:'1px solid rgba(34,197,94,.4)',background:'rgba(34,197,94,.12)',color:'var(--green)'}}>
+                            🚌 תחבורה
                           </button>
-                          {b.lat&&b.lng&&next.lat&&next.lng&&(
-                            <button onClick={()=>searchTransit(b,next)}
-                              style={{fontSize:10,padding:'4px 8px',border:'1px solid rgba(34,197,94,.4)',borderRadius:6,
-                                background:'rgba(34,197,94,.12)',color:'var(--green)',cursor:'pointer',
-                                fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap',flexShrink:0}}>
-                              🚌 תחבורה
-                            </button>
-                          )}
-                        </div>
-                  )}
+                        )}
+                      </div>;
+                    }
+                    /* linked, no OSRM: tiny icon */
+                    return <div style={{textAlign:'center',padding:'0 0 4px'}}><span style={{fontSize:10,color:'var(--text3)',opacity:.3}}>🔗</span></div>;
+                  })()}
                 </React.Fragment>
               );
             })}
@@ -1879,10 +1960,16 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
       )}
 
       {/* block edit sheet */}
-      {editing&&<BlockEditSheet
-        block={editing} isNew={!!editing._isNew} onSave={saveBlock}
-        onDelete={editing._isNew?()=>setEditing(null):()=>deleteBlock(editing.id)}
-        onClose={()=>setEditing(null)}/>}
+      {editing&&(()=>{
+        const esi=sorted.findIndex(b=>b.id===editing.id);
+        const editPrev=esi>0?sorted[esi-1]:null;
+        const editPrevEnd=editPrev?(editPrev.endTime||addMins(editPrev.startTime||'09:00',60)):null;
+        return <BlockEditSheet
+          block={editing} isNew={!!editing._isNew} onSave={saveBlock}
+          onDelete={editing._isNew?()=>setEditing(null):()=>deleteBlock(editing.id)}
+          onClose={()=>setEditing(null)}
+          prevEndTime={editPrevEnd} onCascadeSave={cascadeSaveBlock}/>;
+      })()}
 
       {/* location picker sheet */}
       {locationPicking&&(
