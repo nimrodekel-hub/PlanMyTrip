@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m38';
+const MOB_VER='m39';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -511,6 +511,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
   const mapRef=useRef(null);
   const bankMkRef=useRef([]);
   const dayMkRef=useRef([]);
+  const hlDayMkRef=useRef([]); // סמנים ממוספרים ל"הצג יום על מפה"
   const srchMkRef=useRef([]);
   const svcRef=useRef(null);
   const iwRef=useRef(null);
@@ -580,6 +581,34 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
       const req=mapFocusRef?.current;
       if(!req||!mapRef.current)return;
       mapFocusRef.current=null;
+      // ניקוי סמנים קודמים של יום
+      hlDayMkRef.current.forEach(m=>m.setMap(null)); hlDayMkRef.current=[];
+      // מצב fitBounds — הצג כל עצירות יום
+      if(req.fitBounds&&req.hlBlocks?.length>0&&window.google?.maps){
+        const DAY_C=DAY_COLORS_MAP[req.dayIndex%DAY_COLORS_MAP.length];
+        const bounds=new window.google.maps.LatLngBounds();
+        req.hlBlocks.forEach((block,i)=>{
+          if(!block.lat||!block.lng)return;
+          const isStart=block.id==='__start__';
+          const isEnd=block.id==='__end__';
+          const fc=isStart?'#16a34a':isEnd?'#dc2626':DAY_C;
+          const lbl=isStart?'▶':isEnd?'■':String(i);
+          const m=new window.google.maps.Marker({
+            position:{lat:block.lat,lng:block.lng},
+            map:mapRef.current,
+            label:{text:lbl,color:'#fff',fontSize:'11px',fontWeight:'bold'},
+            icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:16,fillColor:fc,fillOpacity:1,strokeColor:'#fff',strokeWeight:2},
+            title:block.title||'',
+            zIndex:110,
+          });
+          bounds.extend({lat:block.lat,lng:block.lng});
+          hlDayMkRef.current.push(m);
+        });
+        const valid=req.hlBlocks.filter(b=>b.lat&&b.lng);
+        if(valid.length===1){mapRef.current.panTo({lat:valid[0].lat,lng:valid[0].lng});mapRef.current.setZoom(15);}
+        else if(valid.length>1){mapRef.current.fitBounds(bounds,{top:60,right:60,bottom:60,left:60});}
+        return;
+      }
       if(req.lat&&req.lng){mapRef.current.panTo({lat:req.lat,lng:req.lng});mapRef.current.setZoom(16);}
       if(req.placeId)loadPlace(req.placeId,req.lat||0,req.lng||0);
       else if(req.name)setSheet({lat:req.lat,lng:req.lng,name:req.name,address:req.address||'',inBank:true});
@@ -1489,6 +1518,18 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
               {sorted.length} פעילויות{dayWx&&<span style={{opacity:.8}}> · {WMO[dayWx.code]?.[0]||'🌡️'}{dayWx.tMax}°</span>}
             </div>
           </div>
+          {onShowOnMap&&(sorted.some(b=>b.lat&&b.lng)||(day.startLat&&day.startLng)||(day.endLat&&day.endLng))&&(
+            <button title="הצג את כל עצירות היום על המפה"
+              onClick={()=>{
+                const hlBlocks=[
+                  ...(day.startLat&&day.startLng?[{id:'__start__',lat:day.startLat,lng:day.startLng,title:`🟢 ${day.startLocation||'מוצא'}`,startTime:'00:00'}]:[]),
+                  ...sorted.filter(b=>b.lat&&b.lng),
+                  ...(day.endLat&&day.endLng?[{id:'__end__',lat:day.endLat,lng:day.endLng,title:`🔴 ${day.endLocation||'יעד'}`,startTime:'23:59'}]:[]),
+                ];
+                onShowOnMap({fitBounds:true,hlBlocks,dayIndex:safeIdx});
+              }}
+              style={{fontSize:16,width:36,height:36,borderRadius:9,border:'1px solid var(--border)',background:'var(--surface)',cursor:'pointer',flexShrink:0}}>🗺️</button>
+          )}
           <button className="day-nav-btn" onClick={()=>setDayIdx(i=>i-1)} disabled={safeIdx<=0}>›</button>
         </div>
         {days.length>1&&<div className="day-dots">

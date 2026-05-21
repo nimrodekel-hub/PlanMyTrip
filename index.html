@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v96';
+const APP_VERSION = 'v97';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1333,17 +1333,35 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
     });
   },[trip,ready]);
 
-  // הדגשת יום שלם — סמנים ממוספרים גדולים
+  // הדגשת יום שלם — סמנים ממוספרים גדולים + נקודות התחלה/סיום
   useEffect(()=>{
     hlDayMarkers.current.forEach(m=>m.setMap(null)); hlDayMarkers.current=[];
     if (!highlightDay||!mapInst.current||!window.google?.maps) return;
     const color=DAY_COLORS[highlightDay.dayIndex%DAY_COLORS.length];
-    const validBlocks=[...highlightDay.blocks]
-      .filter(b=>b.lat&&b.lng)
-      .sort((a,b)=>a.startTime.localeCompare(b.startTime));
-    if (validBlocks.length===0) return;
+    const allBlocks=[...highlightDay.blocks];
+    const startPin=allBlocks.find(b=>b.id==='__start__');
+    const endPin=allBlocks.find(b=>b.id==='__end__');
+    const regularBlocks=allBlocks
+      .filter(b=>b.id!=='__start__'&&b.id!=='__end__'&&b.lat&&b.lng)
+      .sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
+    const allPins=[startPin,endPin,...regularBlocks].filter(p=>p?.lat&&p?.lng);
+    if (allPins.length===0) return;
     const bounds=new window.google.maps.LatLngBounds();
-    validBlocks.forEach((block,i)=>{
+    // נקודת מוצא — ירוקה
+    if (startPin?.lat&&startPin?.lng){
+      const m=new window.google.maps.Marker({
+        position:{lat:startPin.lat,lng:startPin.lng},
+        map:mapInst.current,
+        label:{text:'▶',color:'#fff',fontSize:'11px',fontWeight:'bold'},
+        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:18,fillColor:'#16a34a',fillOpacity:1,strokeColor:'#fff',strokeWeight:3},
+        title:startPin.title||'מוצא',
+        zIndex:102,
+      });
+      bounds.extend({lat:startPin.lat,lng:startPin.lng});
+      hlDayMarkers.current.push(m);
+    }
+    // פעילויות ממוספרות
+    regularBlocks.forEach((block,i)=>{
       const m=new window.google.maps.Marker({
         position:{lat:block.lat,lng:block.lng},
         map:mapInst.current,
@@ -1355,8 +1373,21 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       bounds.extend({lat:block.lat,lng:block.lng});
       hlDayMarkers.current.push(m);
     });
-    if (validBlocks.length===1){
-      mapInst.current.panTo({lat:validBlocks[0].lat,lng:validBlocks[0].lng});
+    // נקודת סיום — אדומה
+    if (endPin?.lat&&endPin?.lng){
+      const m=new window.google.maps.Marker({
+        position:{lat:endPin.lat,lng:endPin.lng},
+        map:mapInst.current,
+        label:{text:'■',color:'#fff',fontSize:'11px',fontWeight:'bold'},
+        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:18,fillColor:'#dc2626',fillOpacity:1,strokeColor:'#fff',strokeWeight:3},
+        title:endPin.title||'יעד',
+        zIndex:102,
+      });
+      bounds.extend({lat:endPin.lat,lng:endPin.lng});
+      hlDayMarkers.current.push(m);
+    }
+    if (allPins.length===1){
+      mapInst.current.panTo({lat:allPins[0].lat,lng:allPins[0].lng});
       mapInst.current.setZoom(15);
     } else {
       mapInst.current.fitBounds(bounds,{top:60,right:60,bottom:60,left:60});
@@ -1847,7 +1878,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
   const done=day.blocks.filter(b=>b.isCompleted).length;
   const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
   const dayColor=DAY_COLORS[idx%DAY_COLORS.length];
-  const hasMapBlocks=day.blocks.some(b=>b.lat&&b.lng);
+  const hasMapBlocks=day.blocks.some(b=>b.lat&&b.lng)||(day.startLat&&day.startLng)||(day.endLat&&day.endLng);
 
   // מזג אוויר — נקודת יעד היום, ואם אין — מיקום נוכחי
   const[dayWx,setDayWx]=useState(null);
@@ -2024,7 +2055,11 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
           <button className="btn btn-secondary btn-icon btn-sm"
             title="הצג את כל עצירות היום על המפה"
             style={{background:dayColor,color:'#fff',border:'none',fontSize:12,padding:'4px 8px'}}
-            onClick={e=>{e.stopPropagation();onFocusDay(day.id,idx,day.blocks);}}>
+            onClick={e=>{e.stopPropagation();onFocusDay(day.id,idx,[
+              ...(day.startLat&&day.startLng?[{id:'__start__',type:'travel',title:`🟢 ${day.startLocation||'מוצא'}`,lat:day.startLat,lng:day.startLng,startTime:'00:00'}]:[]),
+              ...day.blocks,
+              ...(day.endLat&&day.endLng?[{id:'__end__',type:'travel',title:`🔴 ${day.endLocation||'יעד'}`,lat:day.endLat,lng:day.endLng,startTime:'23:59'}]:[]),
+            ]);}}>
             🗺️
           </button>
         )}
