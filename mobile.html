@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m42';
+const MOB_VER='m43';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -1006,21 +1006,38 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
 /* ════════════════════════════════
    BLOCK EDIT SHEET (mobile)
 ════════════════════════════════ */
-function BlockEditSheet({block,onSave,onDelete,onClose,isNew,prevEndTime,onCascadeSave}){
+function BlockEditSheet({block,onSave,onDelete,onClose,isNew,prevEndTime,onCascadeSave,onCascadeSaveUnlink}){
   const[b,setB]=useState({...block});
-  const[cascadePrompt,setCascadePrompt]=useState(false);
+  const[timeError,setTimeError]=useState(false);
+  const[unlinkPrompt,setUnlinkPrompt]=useState(false);
   const origStartTime=useRef(block.startTime);
+  const origEndTime=useRef(block.endTime);
   const upd=(k,v)=>{
     if(k==='startTime'){
-      // כשמשנים שעת התחלה — שומרים על אותו משך ומעדכנים שעת סיום
       setB(p=>{
         const durMins=p.endTime&&p.startTime?Math.max(15,toMinsStr(p.endTime)-toMinsStr(p.startTime)):60;
         return{...p,startTime:v,endTime:addMins(v,durMins)};
       });
-      setCascadePrompt(false);
+      setTimeError(false);setUnlinkPrompt(false);
     }else{
       setB(p=>({...p,[k]:v}));
     }
+  };
+  const doSave=(unlink=false)=>{
+    const timeChanged=b.startTime!==origStartTime.current||b.endTime!==origEndTime.current;
+    if(unlink&&onCascadeSaveUnlink){onCascadeSaveUnlink(b);}
+    else if(!isNew&&timeChanged&&onCascadeSave){onCascadeSave(b);}
+    else{onSave(b);}
+  };
+  const handleSave=()=>{
+    if(prevEndTime){
+      const prevMins=toMinsStr(prevEndTime),newMins=toMinsStr(b.startTime||'00:00');
+      if(newMins<prevMins){setTimeError(true);return;}
+      setTimeError(false);
+      const wasLinked=origStartTime.current===prevEndTime;
+      if(wasLinked&&newMins>prevMins){setUnlinkPrompt(true);return;}
+    }
+    doSave(false);
   };
   const inp={background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:8,
     padding:'9px 11px',color:'var(--text)',fontFamily:'Heebo,sans-serif',fontSize:14,outline:'none',direction:'rtl'};
@@ -1059,7 +1076,7 @@ function BlockEditSheet({block,onSave,onDelete,onClose,isNew,prevEndTime,onCasca
               <label style={lbl}>שעת התחלה</label>
               <input type="time" value={b.startTime||''} onChange={e=>upd('startTime',e.target.value)}
                 style={{...inp,direction:'ltr',width:'100%'}}/>
-              {prevEndTime&&b.startTime&&b.startTime!==prevEndTime&&<div style={{fontSize:10,color:'var(--amber)',marginTop:3}}>
+              {prevEndTime&&!unlinkPrompt&&b.startTime&&toMinsStr(b.startTime)>toMinsStr(prevEndTime)&&<div style={{fontSize:10,color:'var(--amber)',marginTop:3}}>
                 🔗 קודם: {prevEndTime}
                 <button onClick={()=>upd('startTime',prevEndTime)}
                   style={{marginRight:5,fontSize:10,padding:'1px 6px',borderRadius:4,border:'1px solid var(--amber)',background:'rgba(234,179,8,.12)',color:'var(--amber)',cursor:'pointer',fontFamily:'Heebo,sans-serif'}}>סנכרן</button>
@@ -1100,29 +1117,28 @@ function BlockEditSheet({block,onSave,onDelete,onClose,isNew,prevEndTime,onCasca
               </a>}
             </div>
           )}
-          {/* שאלת cascade */}
-          {cascadePrompt&&<div style={{background:'rgba(234,179,8,.1)',border:'1px solid var(--amber)',borderRadius:10,padding:'10px 12px',marginBottom:10}}>
-            <div style={{fontSize:12,color:'var(--amber)',fontWeight:700,marginBottom:5}}>⏳ שעה שונתה: {origStartTime.current} → {b.startTime}</div>
-            <div style={{fontSize:11,color:'var(--text2)',marginBottom:8}}>לעדכן גם את הפעילויות הבאות?</div>
+          {/* שגיאת חפיפה */}
+          {timeError&&<div style={{background:'rgba(239,68,68,.12)',border:'1px solid var(--red)',borderRadius:10,padding:'10px 12px',marginBottom:10}}>
+            <div style={{fontSize:12,color:'var(--red)',fontWeight:700}}>⛔ חפיפה — הפעילות הקודמת מסתיימת ב-{prevEndTime}</div>
+          </div>}
+          {/* ניתוק קשר */}
+          {unlinkPrompt&&<div style={{background:'rgba(234,179,8,.1)',border:'1px solid var(--amber)',borderRadius:10,padding:'10px 12px',marginBottom:10}}>
+            <div style={{fontSize:12,color:'var(--amber)',fontWeight:700,marginBottom:4}}>🔓 נוצר פער מהפעילות הקודמת</div>
+            <div style={{fontSize:11,color:'var(--text2)',marginBottom:8}}>לנתק? הנסיעה (אם קיימת) תוסר. הפעילויות הבאות יתעדכנו אוטומטית.</div>
             <div style={{display:'flex',gap:8}}>
-              <button onClick={()=>{onCascadeSave&&onCascadeSave({...b});}}
+              <button onClick={()=>doSave(true)}
                 style={{flex:1,background:'var(--amber)',color:'#000',border:'none',borderRadius:8,padding:'8px',fontFamily:'Heebo,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer'}}>
-                כן ↕ עדכן הבאים
+                כן, נתק ועדכן ↕
               </button>
-              <button onClick={()=>onSave(b)}
+              <button onClick={()=>{setUnlinkPrompt(false);setB(p=>({...p,startTime:origStartTime.current,endTime:origEndTime.current}));}}
                 style={{flex:1,background:'var(--surface)',color:'var(--text)',border:'1px solid var(--border)',borderRadius:8,padding:'8px',fontFamily:'Heebo,sans-serif',fontSize:12,cursor:'pointer'}}>
-                לא, רק זו
+                לא, שמור קשר
               </button>
             </div>
           </div>}
           {/* actions */}
           <div style={{display:'flex',gap:8}}>
-            <button onClick={()=>{
-              if(!cascadePrompt&&!isNew&&onCascadeSave&&prevEndTime&&b.startTime!==origStartTime.current&&b.startTime!==prevEndTime){
-                setCascadePrompt(true); return;
-              }
-              onSave(b);
-            }}
+            <button onClick={handleSave}
               style={{flex:2,background:'var(--accent)',color:'#fff',border:'none',borderRadius:10,
                 padding:'13px',fontFamily:'Heebo,sans-serif',fontSize:14,fontWeight:700,cursor:'pointer'}}>
               ✓ שמור
@@ -1352,10 +1368,27 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
   const deleteBlock=id=>{
     const blks=[...(day.blocks||[])].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
     const idx=blks.findIndex(b=>b.id===id);
+    if(idx<0){setEditing(null);return;}
     const toRemove=new Set([id]);
     if(idx>0&&blks[idx-1].isAutoTravel)toRemove.add(blks[idx-1].id);
     if(idx<blks.length-1&&blks[idx+1].isAutoTravel)toRemove.add(blks[idx+1].id);
-    updDay({blocks:(day.blocks||[]).filter(b=>!toRemove.has(b.id))});
+    const remaining=blks.filter(b=>!toRemove.has(b.id));
+    // cascade הפעילויות שאחרי כדי לסגור את הפער
+    const deletedStart=blks[idx].startTime||'';
+    const pivotIdx=remaining.findIndex(b=>(b.startTime||'')>deletedStart);
+    if(pivotIdx>0){
+      const anchor=remaining[pivotIdx-1];
+      const anchorEnd=anchor.endTime||addMins(anchor.startTime||'09:00',60);
+      let t=anchorEnd;
+      const cascaded=remaining.map((b,i)=>{
+        if(i<pivotIdx)return b;
+        const dur=b.endTime&&b.startTime?Math.max(1,toMinsStr(b.endTime)-toMinsStr(b.startTime)):60;
+        const nb={...b,startTime:t,endTime:addMins(t,dur)};t=nb.endTime;return nb;
+      });
+      onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,blocks:cascaded}:d)});
+    }else{
+      updDay({blocks:remaining});
+    }
     setEditing(null);
     toast('פעילות הוסרה','i');
   };
@@ -1409,6 +1442,30 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
     onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,blocks:finalBlocks}:d),interestBank:newBank});
     setEditing(null);
     toast('שעות עודכנו ✓','s');
+  };
+  // ניתוק + cascade — מסיר נסיעה לפני הבלוק ומעדכן שרשרת
+  const cascadeSaveBlockUnlink=updated=>{
+    const {_isNew,...block}=updated;
+    let allBlocks=(day?.blocks||[]).map(b=>b.id===block.id?block:b);
+    // מסיר נסיעה אוטומטית שמיד לפני הבלוק המעודכן
+    const sortedAll=[...allBlocks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
+    const si=sortedAll.findIndex(b=>b.id===block.id);
+    if(si>0&&sortedAll[si-1].isAutoTravel){
+      allBlocks=allBlocks.filter(b=>b.id!==sortedAll[si-1].id);
+    }
+    const sortedUpd=[...allBlocks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
+    const siNew=sortedUpd.findIndex(b=>b.id===block.id);
+    let t=block.endTime||addMins(block.startTime||'09:00',60);
+    const tail=sortedUpd.slice(siNew+1).map(b=>{
+      const dur=b.endTime&&b.startTime?Math.max(1,toMinsStr(b.endTime)-toMinsStr(b.startTime)):60;
+      const nb={...b,startTime:t,endTime:addMins(t,dur)};t=nb.endTime;return nb;
+    });
+    const ids=new Set(tail.map(b=>b.id));
+    const finalBlocks=[...allBlocks.filter(b=>!ids.has(b.id)),...tail];
+    const newBank=block.placeId?(trip.interestBank||[]).map(i=>i.placeId===block.placeId?{...i,note:block.note||''}:i):(trip.interestBank||[]);
+    onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,blocks:finalBlocks}:d),interestBank:newBank});
+    setEditing(null);
+    toast('קשר נותק ושעות עודכנו ✓','s');
   };
   const addBlock=type=>{
     setBankPickForBlock({type}); // show bank / map / manual picker
@@ -2007,7 +2064,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
           block={editing} isNew={!!editing._isNew} onSave={saveBlock}
           onDelete={editing._isNew?()=>setEditing(null):()=>deleteBlock(editing.id)}
           onClose={()=>setEditing(null)}
-          prevEndTime={editPrevEnd} onCascadeSave={cascadeSaveBlock}/>;
+          prevEndTime={editPrevEnd} onCascadeSave={cascadeSaveBlock} onCascadeSaveUnlink={cascadeSaveBlockUnlink}/>;
       })()}
 
       {/* location picker sheet */}

@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v100';
+const APP_VERSION = 'v101';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1577,20 +1577,34 @@ function Weather({coordinates,location}){
 /* ══════════════════════════════════
    מודל עריכת בלוק
 ══════════════════════════════════ */
-function BlockModal({block,onSave,onClose,onDelete,onBankNoteUpdate,prevEndTime,onCascadeSave}){
+function BlockModal({block,onSave,onClose,onDelete,prevEndTime,onCascadeSave,onCascadeSaveUnlink}){
   const[b,setB]=useState({...block});
-  const[cascadePrompt,setCascadePrompt]=useState(false);
+  const[timeError,setTimeError]=useState(false);
+  const[unlinkPrompt,setUnlinkPrompt]=useState(false);
   const origStartTime=useRef(block.startTime);
-  const upd=(k,v)=>{setB(p=>({...p,[k]:v}));if(k==='startTime')setCascadePrompt(false);};
+  const toM=t=>{const[h,m]=(t||'00:00').split(':').map(Number);return h*60+m;};
+  const upd=(k,v)=>{
+    setB(p=>({...p,[k]:v}));
+    if(k==='startTime'){setTimeError(false);setUnlinkPrompt(false);}
+  };
   const hasPlaceInfo=!!(b.placeRating||b.placeOpenStatus||b.placeTodayHours||b.placePhone||b.placeWebsite||b.placeType);
-  const doSave=(cascade)=>{
-    if(cascade&&onCascadeSave){onCascadeSave(b);}else{onSave(b);}
+  const doSave=(unlink=false)=>{
+    // בחר את פונקציית השמירה הנכונה
+    if(unlink&&onCascadeSaveUnlink){onCascadeSaveUnlink(b);}
+    else if(onCascadeSave&&(b.startTime!==origStartTime.current||b.durationMins!==block.durationMins)){
+      onCascadeSave(b); // cascade אוטומטי כשמשתנים זמנים
+    }else{onSave(b);}
     onClose();
   };
   const handleSave=()=>{
-    // אם שעת ההתחלה שונתה ויש פעילות קודמת — הצע עדכון שרשרתי
-    if(onCascadeSave&&prevEndTime&&b.startTime!==origStartTime.current&&b.startTime!==prevEndTime){
-      setCascadePrompt(true); return;
+    if(prevEndTime){
+      const prevMins=toM(prevEndTime),newMins=toM(b.startTime);
+      // כלל 1: חפיפה עם פעילות קודמת — אסור
+      if(newMins<prevMins){setTimeError(true);return;}
+      setTimeError(false);
+      // כלל 2: היה מקושר ועכשיו נוצר פער — שאל על ניתוק
+      const wasLinked=origStartTime.current===prevEndTime;
+      if(wasLinked&&newMins>prevMins){setUnlinkPrompt(true);return;}
     }
     doSave(false);
   };
@@ -1610,7 +1624,7 @@ function BlockModal({block,onSave,onClose,onDelete,onBankNoteUpdate,prevEndTime,
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
           <div><label className="label">שעת התחלה</label>
             <input className="input" type="time" value={b.startTime} onChange={e=>upd('startTime',e.target.value)}/>
-            {prevEndTime&&b.startTime!==prevEndTime&&<div style={{fontSize:10,color:'var(--amber)',marginTop:3}}>
+            {prevEndTime&&!unlinkPrompt&&toM(b.startTime)>toM(prevEndTime)&&<div style={{fontSize:10,color:'var(--amber)',marginTop:3}}>
               🔗 הפעילות הקודמת מסתיימת ב-{prevEndTime}
               <button onClick={()=>upd('startTime',prevEndTime)}
                 style={{marginRight:5,fontSize:10,padding:'1px 6px',borderRadius:4,border:'1px solid var(--amber)',background:'rgba(234,179,8,.12)',color:'var(--amber)',cursor:'pointer',fontFamily:'Heebo,sans-serif'}}>סנכרן</button>
@@ -1649,12 +1663,15 @@ function BlockModal({block,onSave,onClose,onDelete,onBankNoteUpdate,prevEndTime,
             🌐 {b.placeWebsite.replace(/^https?:\/\//,'').split('/')[0]}</a>}
         </div>}
       </div>
-      {cascadePrompt&&<div style={{background:'rgba(234,179,8,.12)',border:'1px solid var(--amber)',borderRadius:8,padding:'8px 12px',margin:'0 0 8px',flexShrink:0}}>
-        <div style={{fontSize:12,color:'var(--amber)',fontWeight:700,marginBottom:6}}>⏳ שעת ההתחלה שונתה מ-{origStartTime.current} ל-{b.startTime}</div>
-        <div style={{fontSize:11,color:'var(--text2)',marginBottom:8}}>לעדכן גם את הפעילויות הבאות בהתאם?</div>
+      {timeError&&<div style={{background:'rgba(239,68,68,.15)',border:'1px solid var(--red)',borderRadius:8,padding:'8px 12px',margin:'0 0 8px',flexShrink:0}}>
+        <div style={{fontSize:12,color:'var(--red)',fontWeight:700}}>⛔ חפיפה עם הפעילות הקודמת — הפעילות הקודמת מסתיימת ב-{prevEndTime}</div>
+      </div>}
+      {unlinkPrompt&&<div style={{background:'rgba(234,179,8,.12)',border:'1px solid var(--amber)',borderRadius:8,padding:'8px 12px',margin:'0 0 8px',flexShrink:0}}>
+        <div style={{fontSize:12,color:'var(--amber)',fontWeight:700,marginBottom:4}}>🔓 שינוי יוצר פער מהפעילות הקודמת</div>
+        <div style={{fontSize:11,color:'var(--text2)',marginBottom:8}}>לנתק? הנסיעה (אם קיימת) תוסר. הפעילויות הבאות יתעדכנו אוטומטית לפי השעה החדשה.</div>
         <div style={{display:'flex',gap:8}}>
-          <button className="btn btn-sm" style={{background:'var(--amber)',color:'#000',border:'none',flex:1}} onClick={()=>doSave(true)}>כן, עדכן הבאים ↕</button>
-          <button className="btn btn-secondary btn-sm" style={{flex:1}} onClick={()=>doSave(false)}>לא, רק בלוק זה</button>
+          <button className="btn btn-sm" style={{background:'var(--amber)',color:'#000',border:'none',flex:1}} onClick={()=>doSave(true)}>כן, נתק ועדכן הבאים ↕</button>
+          <button className="btn btn-secondary btn-sm" style={{flex:1}} onClick={()=>{setUnlinkPrompt(false);setB(p=>({...p,startTime:origStartTime.current}));}}>לא, שמור קשר</button>
         </div>
       </div>}
       <div className="modal-footer" style={{flexShrink:0}}>
@@ -1848,10 +1865,22 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
   const delBlock=id=>{
     const blks=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
     const idx=blks.findIndex(b=>b.id===id);
+    if(idx<0)return;
     const toRemove=new Set([id]);
     if(idx>0&&blks[idx-1].isAutoTravel)toRemove.add(blks[idx-1].id);
     if(idx<blks.length-1&&blks[idx+1].isAutoTravel)toRemove.add(blks[idx+1].id);
-    onUpdate({...day,blocks:day.blocks.filter(b=>!toRemove.has(b.id))});
+    const remaining=blks.filter(b=>!toRemove.has(b.id));
+    // cascade הפעילויות שאחרי כדי לסגור את הפער
+    const deletedStart=blks[idx].startTime;
+    const pivotIdx=remaining.findIndex(b=>b.startTime>deletedStart);
+    if(pivotIdx>0){
+      const anchor=remaining[pivotIdx-1];
+      let t=addMins(anchor.startTime,bDur(anchor));
+      const cascaded=remaining.map((b,i)=>{if(i<pivotIdx)return b;const nb={...b,startTime:t};t=addMins(t,bDur(b));return nb;});
+      onUpdate({...day,blocks:cascaded});
+    }else{
+      onUpdate({...day,blocks:remaining});
+    }
   };
   const handleDrop=(toIdx)=>{
     const from=dragIdxRef.current;
@@ -1957,6 +1986,19 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
     const ids=new Set(tail.map(b=>b.id));
     onUpdate({...day,blocks:[...blocksUpd.filter(b=>!ids.has(b.id)),...tail]});
     toast('שעות עודכנו ✓','success');
+  };
+  // ניתוק + cascade — מסיר נסיעה אוטומטית לפני הבלוק ומעדכן שרשרת
+  const cascadeSaveUnlink=(updBlock)=>{
+    const si=sorted.findIndex(b=>b.id===updBlock.id);
+    let blocksUpd=day.blocks.map(b=>b.id===updBlock.id?updBlock:b);
+    if(si>0&&sorted[si-1].isAutoTravel)blocksUpd=blocksUpd.filter(b=>b.id!==sorted[si-1].id);
+    const sortedUpd=[...blocksUpd].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+    const siNew=sortedUpd.findIndex(b=>b.id===updBlock.id);
+    let t=addMins(updBlock.startTime,bDur(updBlock));
+    const tail=sortedUpd.slice(siNew+1).map(b=>{const nb={...b,startTime:t};t=addMins(t,bDur(b));return nb;});
+    const ids=new Set(tail.map(b=>b.id));
+    onUpdate({...day,blocks:[...blocksUpd.filter(b=>!ids.has(b.id)),...tail]});
+    toast('קשר נותק ושעות עודכנו ✓','success');
   };
   const pickLocationItem=(item,field)=>{
     onUpdate({...day,
@@ -2473,7 +2515,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
     {editing&&(()=>{
       const esi=sorted.findIndex(b=>b.id===editing.id);
       const editPrevEnd=esi>0?addMins(sorted[esi-1].startTime,bDur(sorted[esi-1])):null;
-      return <BlockModal block={editing} onSave={updBlock} onClose={()=>setEd(null)} onDelete={()=>{delBlock(editing.id);setEd(null);}} onBankNoteUpdate={onBankNoteUpdate} prevEndTime={editPrevEnd} onCascadeSave={cascadeSave}/>;
+      return <BlockModal block={editing} onSave={updBlock} onClose={()=>setEd(null)} onDelete={()=>{delBlock(editing.id);setEd(null);}} prevEndTime={editPrevEnd} onCascadeSave={cascadeSave} onCascadeSaveUnlink={cascadeSaveUnlink}/>;
     })()}
 
     {locationPicking&&(
