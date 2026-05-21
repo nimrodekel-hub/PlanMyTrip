@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v99';
+const APP_VERSION = 'v100';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1183,7 +1183,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         rating:p.rating,userRatingsTotal:p.userRatingsTotal,openStatus:p.openStatus,
         todayHours:p.todayHours,allHours:p.allHours,phone:p.phone,website:p.website,photoUrl:p.photoUrl,placeType:p.placeType||''});
       iw.close();
-      toast(`"${name}" נוסף ליום`,'success');
+      toast(`"${name}" נוסף ללוז היומי ולבנק האטרקציות ✓`,'success');
     };
     window.__gmSetStart=()=>{
       const sel=document.getElementById('gm-loc-sel');
@@ -1191,9 +1191,9 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       const p=iwPlace.data;
       const nameEl=document.getElementById('gm-name-edit');
       const name=nameEl?.value?.trim()||p.name;
-      onSetDayLocationRef.current(sel.value,'start',name,p.lat,p.lng);
+      onSetDayLocationRef.current(sel.value,'start',name,p.lat,p.lng,p);
       iw.close();
-      toast(`"${name}" הוגדר כנקודת מוצא ✓`,'success');
+      toast(`"${name}" הוגדר כנקודת מוצא ונוסף לבנק ✓`,'success');
     };
     window.__gmSetEnd=()=>{
       const sel=document.getElementById('gm-loc-sel');
@@ -1201,9 +1201,9 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       const p=iwPlace.data;
       const nameEl=document.getElementById('gm-name-edit');
       const name=nameEl?.value?.trim()||p.name;
-      onSetDayLocationRef.current(sel.value,'end',name,p.lat,p.lng);
+      onSetDayLocationRef.current(sel.value,'end',name,p.lat,p.lng,p);
       iw.close();
-      toast(`"${name}" הוגדר כנקודת יעד ✓`,'success');
+      toast(`"${name}" הוגדר כנקודת יעד ונוסף לבנק ✓`,'success');
     };
 
     map.addListener('click',async e=>{
@@ -5265,12 +5265,21 @@ function App(){
     updTrip({...trip,interestBank:trip.interestBank.map(i=>i.id===id?{...i,...patch}:i)});
   },[trip,updTrip]);
 
-  const setDayLocation=useCallback((dayId,field,name,lat,lng)=>{
+  const setDayLocation=useCallback((dayId,field,name,lat,lng,placeData=null)=>{
     if(!trip)return;
     const patch=field==='start'
       ?{startLocation:name,startLat:lat,startLng:lng}
       :{endLocation:name,endLat:lat,endLng:lng};
-    updTrip({...trip,days:trip.days.map(d=>d.id===dayId?{...d,...patch}:d)});
+    // גם הוסף לבנק האטרקציות אם יש placeId
+    const bankAlready=placeData?.placeId&&(trip.interestBank||[]).some(i=>i.placeId===placeData.placeId);
+    const newBank=(placeData?.placeId&&!bankAlready)
+      ?[...(trip.interestBank||[]),{id:uid(),name,address:placeData.address||'',
+          placeId:placeData.placeId,lat,lng,
+          types:placeData.types||[],placeType:placeData.placeType||'',
+          rating:placeData.rating,website:placeData.website||'',
+          openStatus:placeData.openStatus||'',todayHours:placeData.todayHours||'',phone:placeData.phone||''}]
+      :(trip.interestBank||[]);
+    updTrip({...trip,days:trip.days.map(d=>d.id===dayId?{...d,...patch}:d),interestBank:newBank});
   },[trip,updTrip]);
 
   const addToDay=useCallback((dayId,item)=>{
@@ -5294,7 +5303,16 @@ function App(){
     if(item.photoUrl) newBlock.placePhotoUrl=item.photoUrl;
     if(item.placeType) newBlock.placeType=item.placeType;
     const updatedDay={...day,blocks:[...day.blocks,newBlock]};
-    updTrip({...trip,days:trip.days.map(d=>d.id===dayId?updatedDay:d)});
+    // גם הוסף לבנק האטרקציות (אטומי — אותו updTrip)
+    const bankAlready=item.placeId&&(trip.interestBank||[]).some(i=>i.placeId===item.placeId);
+    const newBank=bankAlready
+      ?(trip.interestBank||[])
+      :[...(trip.interestBank||[]),{id:uid(),name:item.name,address:item.address||'',
+          placeId:item.placeId||'',lat:item.lat,lng:item.lng,
+          types:item.types||[],placeType:item.placeType||'',
+          rating:item.rating,website:item.website||'',
+          openStatus:item.openStatus||'',todayHours:item.todayHours||'',phone:item.phone||''}];
+    updTrip({...trip,days:trip.days.map(d=>d.id===dayId?updatedDay:d),interestBank:newBank});
   },[trip,updTrip]);
 
   const push=async(s=settings)=>{

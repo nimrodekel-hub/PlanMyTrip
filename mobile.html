@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m41';
+const MOB_VER='m42';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -857,22 +857,49 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
       placeOpenStatus:sheet.openStatus||'',placeTodayHours:sheet.todayHours||'',
       placePhone:sheet.phone||'',
       placeType:sheet.types?.length?getTypeLabel(sheet.types):''};
-    onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,blocks:[...(d.blocks||[]),block]}:d)});
-    toast(`"${sheet.name}" נוסף ליום ✓`,'s');
+    // גם הוסף לבנק אטרקציות — אותה פעולת onUpdate אטומית
+    const _bankAlreadySched=sheet.placeId&&(trip.interestBank||[]).some(i=>i.placeId===sheet.placeId);
+    const _newBankSched=_bankAlreadySched
+      ?(trip.interestBank||[])
+      :[...(trip.interestBank||[]),{id:uid(),name:sheet.name||'',address:sheet.address||'',
+          placeId:sheet.placeId||null,lat:sheet.lat,lng:sheet.lng,
+          types:sheet.types||[],placeType:sheet.placeType||'',
+          rating:sheet.rating,website:sheet.website||'',
+          openStatus:sheet.openStatus||'',todayHours:sheet.todayHours||'',phone:sheet.phone||''}];
+    onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,blocks:[...(d.blocks||[]),block]}:d),interestBank:_newBankSched});
+    toast(`"${sheet.name}" נוסף ללוז היומי ולבנק האטרקציות ✓`,'s');
     setDaySelPlace(null);setDaySelMode(null);
   };
   const setDayStart=(dayId)=>{
     if(!sheet||!onUpdate||!trip)return;
-    onUpdate({...trip,days:trip.days.map(d=>d.id===dayId
-      ?{...d,startLocation:sheet.name||'',startLat:sheet.lat||null,startLng:sheet.lng||null}:d)});
-    toast(`"${sheet.name}" הוגדר כנקודת מוצא ✓`,'s');
+    const _bankAlreadyStart=sheet.placeId&&(trip.interestBank||[]).some(i=>i.placeId===sheet.placeId);
+    const _newBankStart=(_bankAlreadyStart||!sheet.placeId)
+      ?(trip.interestBank||[])
+      :[...(trip.interestBank||[]),{id:uid(),name:sheet.name||'',address:sheet.address||'',
+          placeId:sheet.placeId,lat:sheet.lat,lng:sheet.lng,
+          types:sheet.types||[],placeType:sheet.placeType||'',
+          rating:sheet.rating,website:sheet.website||'',
+          openStatus:sheet.openStatus||'',todayHours:sheet.todayHours||'',phone:sheet.phone||''}];
+    onUpdate({...trip,
+      days:trip.days.map(d=>d.id===dayId?{...d,startLocation:sheet.name||'',startLat:sheet.lat||null,startLng:sheet.lng||null}:d),
+      interestBank:_newBankStart});
+    toast(`"${sheet.name}" הוגדר כנקודת מוצא ונוסף לבנק ✓`,'s');
     setDaySelPlace(null);setDaySelMode(null);
   };
   const setDayEnd=(dayId)=>{
     if(!sheet||!onUpdate||!trip)return;
-    onUpdate({...trip,days:trip.days.map(d=>d.id===dayId
-      ?{...d,endLocation:sheet.name||'',endLat:sheet.lat||null,endLng:sheet.lng||null}:d)});
-    toast(`"${sheet.name}" הוגדר כנקודת יעד ✓`,'s');
+    const _bankAlreadyEnd=sheet.placeId&&(trip.interestBank||[]).some(i=>i.placeId===sheet.placeId);
+    const _newBankEnd=(_bankAlreadyEnd||!sheet.placeId)
+      ?(trip.interestBank||[])
+      :[...(trip.interestBank||[]),{id:uid(),name:sheet.name||'',address:sheet.address||'',
+          placeId:sheet.placeId,lat:sheet.lat,lng:sheet.lng,
+          types:sheet.types||[],placeType:sheet.placeType||'',
+          rating:sheet.rating,website:sheet.website||'',
+          openStatus:sheet.openStatus||'',todayHours:sheet.todayHours||'',phone:sheet.phone||''}];
+    onUpdate({...trip,
+      days:trip.days.map(d=>d.id===dayId?{...d,endLocation:sheet.name||'',endLat:sheet.lat||null,endLng:sheet.lng||null}:d),
+      interestBank:_newBankEnd});
+    toast(`"${sheet.name}" הוגדר כנקודת יעד ונוסף לבנק ✓`,'s');
     setDaySelPlace(null);setDaySelMode(null);
   };
 
@@ -983,7 +1010,18 @@ function BlockEditSheet({block,onSave,onDelete,onClose,isNew,prevEndTime,onCasca
   const[b,setB]=useState({...block});
   const[cascadePrompt,setCascadePrompt]=useState(false);
   const origStartTime=useRef(block.startTime);
-  const upd=(k,v)=>{setB(p=>({...p,[k]:v}));if(k==='startTime')setCascadePrompt(false);};
+  const upd=(k,v)=>{
+    if(k==='startTime'){
+      // כשמשנים שעת התחלה — שומרים על אותו משך ומעדכנים שעת סיום
+      setB(p=>{
+        const durMins=p.endTime&&p.startTime?Math.max(15,toMinsStr(p.endTime)-toMinsStr(p.startTime)):60;
+        return{...p,startTime:v,endTime:addMins(v,durMins)};
+      });
+      setCascadePrompt(false);
+    }else{
+      setB(p=>({...p,[k]:v}));
+    }
+  };
   const inp={background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:8,
     padding:'9px 11px',color:'var(--text)',fontFamily:'Heebo,sans-serif',fontSize:14,outline:'none',direction:'rtl'};
   const lbl={fontSize:11,fontWeight:600,color:'var(--text3)',display:'block',marginBottom:4};
