@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m48';
+const MOB_VER='m49';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -512,6 +512,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
   const bankMkRef=useRef([]);
   const dayMkRef=useRef([]);
   const hlDayMkRef=useRef([]); // סמנים ממוספרים ל"הצג יום על מפה"
+  const hlDayRtRef=useRef([]); // מסלולים בין עצירות
   const srchMkRef=useRef([]);
   const svcRef=useRef(null);
   const iwRef=useRef(null);
@@ -581,18 +582,20 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
       const req=mapFocusRef?.current;
       if(!req||!mapRef.current)return;
       mapFocusRef.current=null;
-      // ניקוי סמנים קודמים של יום
+      // ניקוי סמנים ומסלולים קודמים של יום
       hlDayMkRef.current.forEach(m=>m.setMap(null)); hlDayMkRef.current=[];
+      hlDayRtRef.current.forEach(r=>{try{r.setMap(null);}catch(e){}});  hlDayRtRef.current=[];
       // מצב fitBounds — הצג כל עצירות יום
       if(req.fitBounds&&req.hlBlocks?.length>0&&window.google?.maps){
         const DAY_C=DAY_COLORS_MAP[req.dayIndex%DAY_COLORS_MAP.length];
         const bounds=new window.google.maps.LatLngBounds();
+        let pinNum=1;
         req.hlBlocks.forEach((block,i)=>{
           if(!block.lat||!block.lng)return;
           const isStart=block.id==='__start__';
           const isEnd=block.id==='__end__';
           const fc=isStart?'#16a34a':isEnd?'#dc2626':DAY_C;
-          const lbl=isStart?'▶':isEnd?'■':String(i);
+          const lbl=String(pinNum++);
           const m=new window.google.maps.Marker({
             position:{lat:block.lat,lng:block.lng},
             map:mapRef.current,
@@ -607,6 +610,57 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
         const valid=req.hlBlocks.filter(b=>b.lat&&b.lng);
         if(valid.length===1){mapRef.current.panTo({lat:valid[0].lat,lng:valid[0].lng});mapRef.current.setZoom(15);}
         else if(valid.length>1){mapRef.current.fitBounds(bounds,{top:60,right:60,bottom:60,left:60});}
+        // ── מסלולים בין עצירות ──
+        if(window.google.maps.DirectionsService){
+          const sortedAll=[...req.hlBlocks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
+          const startPin=req.hlBlocks.find(b=>b.id==='__start__');
+          const endPin=req.hlBlocks.find(b=>b.id==='__end__');
+          const regBlocks=req.hlBlocks
+            .filter(b=>b.id!=='__start__'&&b.id!=='__end__'&&b.lat&&b.lng&&!b.isAutoTravel)
+            .sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
+          const coordSeq=[];
+          if(startPin?.lat&&startPin?.lng)coordSeq.push(startPin);
+          regBlocks.forEach(b=>coordSeq.push(b));
+          if(endPin?.lat&&endPin?.lng)coordSeq.push(endPin);
+          const routeColor=DAY_C;
+          for(let ci=0;ci<coordSeq.length-1;ci++){
+            const from=coordSeq[ci],to=coordSeq[ci+1];
+            const travelBlock=sortedAll.find(b=>b.isAutoTravel&&
+              (b.startTime||'')>=(from.startTime||'00:00')&&
+              (b.startTime||'')<(to.startTime||'23:59'));
+            if(!travelBlock)continue;
+            const tMode=travelBlock.isTransit
+              ?window.google.maps.TravelMode.TRANSIT
+              :window.google.maps.TravelMode.DRIVING;
+            const renderer=new window.google.maps.DirectionsRenderer({
+              suppressMarkers:true,
+              polylineOptions:{strokeColor:routeColor,strokeWeight:4,strokeOpacity:0.65},
+              map:mapRef.current
+            });
+            hlDayRtRef.current.push(renderer);
+            new window.google.maps.DirectionsService().route({
+              origin:{lat:from.lat,lng:from.lng},
+              destination:{lat:to.lat,lng:to.lng},
+              travelMode:tMode,
+              ...(tMode===window.google.maps.TravelMode.TRANSIT?{transitOptions:{departureTime:new Date()}}:{})
+            },(result,status)=>{
+              if(status==='OK'&&result?.routes?.length){
+                renderer.setDirections(result);
+              } else {
+                renderer.setMap(null);
+                if(mapRef.current){
+                  const poly=new window.google.maps.Polyline({
+                    path:[{lat:from.lat,lng:from.lng},{lat:to.lat,lng:to.lng}],
+                    strokeColor:routeColor,strokeWeight:3,strokeOpacity:0.5,
+                    icons:[{icon:{path:'M 0,-1 0,1',strokeOpacity:1,scale:3},offset:'0',repeat:'12px'}],
+                    map:mapRef.current
+                  });
+                  hlDayRtRef.current.push(poly);
+                }
+              }
+            });
+          }
+        }
         return;
       }
       if(req.lat&&req.lng){mapRef.current.panTo({lat:req.lat,lng:req.lng});mapRef.current.setZoom(16);}
@@ -1724,7 +1778,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
               onClick={()=>{
                 const hlBlocks=[
                   ...(day.startLat&&day.startLng?[{id:'__start__',lat:day.startLat,lng:day.startLng,title:`🟢 ${day.startLocation||'מוצא'}`,startTime:'00:00'}]:[]),
-                  ...sorted.filter(b=>b.lat&&b.lng),
+                  ...sorted, // כולל בלוקי נסיעה (ללא lat/lng) לצורך ציור מסלולים
                   ...(day.endLat&&day.endLng?[{id:'__end__',lat:day.endLat,lng:day.endLng,title:`🔴 ${day.endLocation||'יעד'}`,startTime:'23:59'}]:[]),
                 ];
                 onShowOnMap({fitBounds:true,hlBlocks,dayIndex:safeIdx});
@@ -1906,6 +1960,20 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                             style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--text3)'}}>✏️</button>
                           <button onClick={()=>deleteBlock(b.id)}
                             style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--red)',fontWeight:700}}>✕</button>
+                          {/* קישור Google Maps לנסיעות */}
+                          {b.isAutoTravel&&(()=>{
+                            let fLat,fLng,tLat,tLng;
+                            for(let k=bi-1;k>=0;k--){if(!sorted[k].isAutoTravel&&sorted[k].lat&&sorted[k].lng){fLat=sorted[k].lat;fLng=sorted[k].lng;break;}}
+                            if(!fLat&&day.startLat&&day.startLng){fLat=day.startLat;fLng=day.startLng;}
+                            for(let k=bi+1;k<sorted.length;k++){if(!sorted[k].isAutoTravel&&sorted[k].lat&&sorted[k].lng){tLat=sorted[k].lat;tLng=sorted[k].lng;break;}}
+                            if(!tLat&&day.endLat&&day.endLng){tLat=day.endLat;tLng=day.endLng;}
+                            if(!fLat||!tLat)return null;
+                            const tm=b.isTransit?'transit':'driving';
+                            const url=`https://www.google.com/maps/dir/?api=1&origin=${fLat},${fLng}&destination=${tLat},${tLng}&travelmode=${tm}`;
+                            return<a key="rt-link" href={url} target="_blank" rel="noreferrer"
+                              style={{padding:'4px 5px',fontSize:15,color:'var(--accent2)',textDecoration:'none'}}
+                              onClick={e=>e.stopPropagation()}>🗺️</a>;
+                          })()}
                           {/* drag handle — מוסתר לנסיעות אוטומטיות */}
                           {b.isAutoTravel
                             ?<div style={{padding:'4px 5px',fontSize:13,color:'var(--text3)',opacity:.4,lineHeight:1,userSelect:'none'}}

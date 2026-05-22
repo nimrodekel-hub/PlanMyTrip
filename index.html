@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v106';
+const APP_VERSION = 'v107';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -853,9 +853,10 @@ const makeSearchMarkerIcon=types=>{
 /* ══════════════════════════════════
    מפת גוגל
 ══════════════════════════════════ */
-function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateBankItem,highlightDay,highlightItem,mapPickCallbackRef,mapPickLabel,onCancelMapPick}){
+function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateBankItem,highlightDay,highlightItem,routeHighlight,mapPickCallbackRef,mapPickLabel,onCancelMapPick}){
   const mapRef=useRef(null), mapInst=useRef(null), markers=useRef([]);
   const hlDayMarkers=useRef([]), hlItemMarker=useRef(null);
+  const hlDayRoutes=useRef([]), hlRouteRenderer=useRef(null);
   const [ready,setReady]=useState(false);
   const [wxOpen,setWxOpen]=useState(false);
   const [wxCity,setWxCity]=useState('');
@@ -1336,6 +1337,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
   // הדגשת יום שלם — סמנים ממוספרים גדולים + נקודות התחלה/סיום
   useEffect(()=>{
     hlDayMarkers.current.forEach(m=>m.setMap(null)); hlDayMarkers.current=[];
+    hlDayRoutes.current.forEach(r=>{try{r.setMap(null);}catch(e){}});  hlDayRoutes.current=[];
     if (!highlightDay||!mapInst.current||!window.google?.maps) return;
     const color=DAY_COLORS[highlightDay.dayIndex%DAY_COLORS.length];
     const allBlocks=[...highlightDay.blocks];
@@ -1352,7 +1354,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       const m=new window.google.maps.Marker({
         position:{lat:startPin.lat,lng:startPin.lng},
         map:mapInst.current,
-        label:{text:'▶',color:'#fff',fontSize:'11px',fontWeight:'bold'},
+        label:{text:'1',color:'#fff',fontSize:'13px',fontWeight:'bold'},
         icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:18,fillColor:'#16a34a',fillOpacity:1,strokeColor:'#fff',strokeWeight:3},
         title:startPin.title||'מוצא',
         zIndex:102,
@@ -1365,9 +1367,9 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       const m=new window.google.maps.Marker({
         position:{lat:block.lat,lng:block.lng},
         map:mapInst.current,
-        label:{text:String(i+1),color:'#fff',fontSize:'13px',fontWeight:'bold'},
+        label:{text:String(i+2),color:'#fff',fontSize:'13px',fontWeight:'bold'},
         icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:18,fillColor:color,fillOpacity:1,strokeColor:'#fff',strokeWeight:3},
-        title:`${i+1}. ${block.title||''}`,
+        title:`${i+2}. ${block.title||''}`,
         zIndex:100,
       });
       bounds.extend({lat:block.lat,lng:block.lng});
@@ -1378,7 +1380,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       const m=new window.google.maps.Marker({
         position:{lat:endPin.lat,lng:endPin.lng},
         map:mapInst.current,
-        label:{text:'■',color:'#fff',fontSize:'11px',fontWeight:'bold'},
+        label:{text:String(regularBlocks.length+2),color:'#fff',fontSize:'13px',fontWeight:'bold'},
         icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:18,fillColor:'#dc2626',fillOpacity:1,strokeColor:'#fff',strokeWeight:3},
         title:endPin.title||'יעד',
         zIndex:102,
@@ -1392,7 +1394,98 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
     } else {
       mapInst.current.fitBounds(bounds,{top:60,right:60,bottom:60,left:60});
     }
+    // ── מסלולים בין עצירות ──
+    if(window.google.maps.DirectionsService&&highlightDay.blocks){
+      const sortedAll=[...highlightDay.blocks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
+      // רצף מסודר: מוצא → פעילויות לפי זמן → יעד
+      const coordSeq=[];
+      if(startPin?.lat&&startPin?.lng)coordSeq.push(startPin);
+      regularBlocks.forEach(b=>coordSeq.push(b));
+      if(endPin?.lat&&endPin?.lng)coordSeq.push(endPin);
+      for(let ci=0;ci<coordSeq.length-1;ci++){
+        const from=coordSeq[ci],to=coordSeq[ci+1];
+        // מצא בלוק נסיעה בין שני האתרים
+        const travelBlock=sortedAll.find(b=>b.isAutoTravel&&
+          (b.startTime||'')>=(from.startTime||'00:00')&&
+          (b.startTime||'')<(to.startTime||'23:59'));
+        if(!travelBlock)continue;
+        const tMode=travelBlock.isTransit
+          ?window.google.maps.TravelMode.TRANSIT
+          :window.google.maps.TravelMode.DRIVING;
+        const renderer=new window.google.maps.DirectionsRenderer({
+          suppressMarkers:true,
+          polylineOptions:{strokeColor:color,strokeWeight:4,strokeOpacity:0.65},
+          map:mapInst.current
+        });
+        hlDayRoutes.current.push(renderer);
+        new window.google.maps.DirectionsService().route({
+          origin:{lat:from.lat,lng:from.lng},
+          destination:{lat:to.lat,lng:to.lng},
+          travelMode:tMode,
+          ...(tMode===window.google.maps.TravelMode.TRANSIT?{transitOptions:{departureTime:new Date()}}:{})
+        },(result,status)=>{
+          if(status==='OK'&&result?.routes?.length){
+            renderer.setDirections(result);
+          } else {
+            // fallback: קו מקווקו ישיר
+            renderer.setMap(null);
+            if(mapInst.current){
+              const poly=new window.google.maps.Polyline({
+                path:[{lat:from.lat,lng:from.lng},{lat:to.lat,lng:to.lng}],
+                strokeColor:color,strokeWeight:3,strokeOpacity:0.5,
+                icons:[{icon:{path:'M 0,-1 0,1',strokeOpacity:1,scale:3},offset:'0',repeat:'12px'}],
+                map:mapInst.current
+              });
+              hlDayRoutes.current.push(poly);
+            }
+          }
+        });
+      }
+    }
   },[highlightDay]);
+
+  // הצגת מסלול נסיעה ספציפי (לחיצה על חלונית נסיעה בלוז)
+  useEffect(()=>{
+    if(hlRouteRenderer.current){try{hlRouteRenderer.current.setMap(null);}catch(e){}  hlRouteRenderer.current=null;}
+    if(!routeHighlight||!mapInst.current||!window.google?.maps?.DirectionsService)return;
+    const{fromLat,fromLng,toLat,toLng,isTransit}=routeHighlight;
+    if(!fromLat||!fromLng||!toLat||!toLng)return;
+    const tMode=isTransit?window.google.maps.TravelMode.TRANSIT:window.google.maps.TravelMode.DRIVING;
+    const renderer=new window.google.maps.DirectionsRenderer({
+      suppressMarkers:true,
+      polylineOptions:{strokeColor:'#4f8ef7',strokeWeight:6,strokeOpacity:0.9},
+      map:mapInst.current
+    });
+    hlRouteRenderer.current=renderer;
+    new window.google.maps.DirectionsService().route({
+      origin:{lat:fromLat,lng:fromLng},
+      destination:{lat:toLat,lng:toLng},
+      travelMode:tMode,
+      ...(isTransit?{transitOptions:{departureTime:new Date()}}:{})
+    },(result,status)=>{
+      if(status==='OK'&&result?.routes?.length){
+        renderer.setDirections(result);
+        const leg=result.routes[0].legs[0];
+        if(leg&&mapInst.current){
+          const b=new window.google.maps.LatLngBounds();
+          leg.steps.forEach(s=>{b.extend(s.start_location);b.extend(s.end_location);});
+          mapInst.current.fitBounds(b,{top:60,right:60,bottom:60,left:60});
+        }
+      } else {
+        renderer.setMap(null);
+        if(mapInst.current){
+          hlRouteRenderer.current=new window.google.maps.Polyline({
+            path:[{lat:fromLat,lng:fromLng},{lat:toLat,lng:toLng}],
+            strokeColor:'#4f8ef7',strokeWeight:5,strokeOpacity:0.85,
+            map:mapInst.current
+          });
+          const b=new window.google.maps.LatLngBounds();
+          b.extend({lat:fromLat,lng:fromLng});b.extend({lat:toLat,lng:toLng});
+          mapInst.current.fitBounds(b,{top:80,right:80,bottom:80,left:80});
+        }
+      }
+    });
+  },[routeHighlight]);
 
   // הדגשת פריט בודד — סיכה אדומה רגילה מנפנפת
   useEffect(()=>{
@@ -1687,7 +1780,7 @@ function BlockModal({block,onSave,onClose,onDelete,prevEndTime,onCascadeSave,onC
 /* ══════════════════════════════════
    בלוק בציר הזמן
 ══════════════════════════════════ */
-function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,onNoteChange,dragging,dragOver,onDragStart,onDragOver,onDrop,onDragEnd,nowProgress}){
+function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,onFocusRoute,onNoteChange,dragging,dragOver,onDragStart,onDragOver,onDrop,onDragEnd,nowProgress}){
   // תומך בשני פורמטים: durationMins (דסקטופ) ו-endTime (מובייל)
   const end=block.durationMins!=null?addMins(block.startTime,block.durationMins):(block.endTime||'');
   const col=BLOCK_COLOR[block.type]||'var(--text3)';
@@ -1718,6 +1811,10 @@ function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,
           <div style={{display:'flex',alignItems:'center',gap:2}}>
             {block.isCompleted&&<span className="chip chip-green" style={{fontSize:10,padding:'2px 6px'}}>✓</span>}
             {block.rating>0&&<Stars value={block.rating} size={12}/>}
+            {locked&&onFocusRoute&&(
+              <button style={{...btnStyle,color:'#4f8ef7'}} title="הצג מסלול נסיעה על המפה"
+                onClick={e=>{e.stopPropagation();onFocusRoute(block);}}>🗺️</button>
+            )}
             {block.lat&&onFocusItem&&(
               <button style={{...btnStyle,color:'#6b7280'}} title="הצג במפה"
                 onClick={e=>{e.stopPropagation();onFocusItem(block.lat,block.lng,block.title);}}>📍</button>
@@ -1854,7 +1951,7 @@ function LocationPickerModal({bank,title,onPick,onPickFromMap,onClose,onCreateEm
   );
 }
 
-function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank,settings,onPickFromMap,onBankNoteUpdate}){
+function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute,onMoveToBank,settings,onPickFromMap,onBankNoteUpdate}){
   const[open,setOpen]=useState(true),[editing,setEd]=useState(null);
   const[travelTimes,setTravelTimes]=useState({});
   const[locationPicking,setLocationPicking]=useState(null); // {field:'start'|'end'}
@@ -1928,6 +2025,17 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
   const done=day.blocks.filter(b=>b.isCompleted).length;
   const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
   const dayColor=DAY_COLORS[idx%DAY_COLORS.length];
+  // מציאת נקודות מוצא/יעד של בלוק נסיעה והעברתן למפה
+  const focusRoute=React.useCallback((block)=>{
+    if(!onFocusRoute)return;
+    const bi=sorted.indexOf(block);
+    let fromLat,fromLng,toLat,toLng;
+    for(let i=bi-1;i>=0;i--){if(!sorted[i].isAutoTravel&&sorted[i].lat&&sorted[i].lng){fromLat=sorted[i].lat;fromLng=sorted[i].lng;break;}}
+    if(!fromLat&&day.startLat&&day.startLng){fromLat=day.startLat;fromLng=day.startLng;}
+    for(let i=bi+1;i<sorted.length;i++){if(!sorted[i].isAutoTravel&&sorted[i].lat&&sorted[i].lng){toLat=sorted[i].lat;toLng=sorted[i].lng;break;}}
+    if(!toLat&&day.endLat&&day.endLng){toLat=day.endLat;toLng=day.endLng;}
+    if(fromLat&&toLat)onFocusRoute({fromLat,fromLng,toLat,toLng,isTransit:!!block.isTransit});
+  },[sorted,day,onFocusRoute]);
   const hasMapBlocks=day.blocks.some(b=>b.lat&&b.lng)||(day.startLat&&day.startLng)||(day.endLat&&day.endLng);
 
   // מזג אוויר — נקודת יעד היום, ואם אין — מיקום נוכחי
@@ -2399,7 +2507,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
           })();
           return [startConn,...sorted.map((bl,si)=>[
             nowInsert===si&&nowLine,
-            <BlockItem key={bl.id} block={bl} interestBank={day._tripBank||[]} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onFocusItem={onFocusItem}
+            <BlockItem key={bl.id} block={bl} interestBank={day._tripBank||[]} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onFocusItem={onFocusItem} onFocusRoute={focusRoute}
               onNoteChange={(id,note)=>{const b=day.blocks.find(x=>x.id===id);if(b)updBlock({...b,notes:note});}}
               dragging={dragOver!==null&&dragIdxRef.current===si} dragOver={dragOver===si}
               nowProgress={activeIdx===si?nowBlockProgress:null}
@@ -2739,7 +2847,7 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
 
 const DAYS_PER_PAGE=4;
 
-function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=false,settings,onPickFromMap}){
+function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,onFocusRoute,compact=false,settings,onPickFromMap}){
   const[showBank,setShowBank]=useState(!compact);
   const[dayOffset,setDayOffset]=useState(0);
 
@@ -2793,7 +2901,7 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=fals
              <button className="btn btn-primary btn-sm" style={{marginTop:8}} onClick={addDay}>+ הוסף יום</button></div>
           :trip.days.map((day,i)=>(
             <DayPanel key={day.id} day={{...day,_tripBank:trip.interestBank||[]}} idx={i} onUpdate={updDay} onDelete={()=>delDay(day.id)}
-              onFocusDay={onFocusDay} onFocusItem={onFocusItem}
+              onFocusDay={onFocusDay} onFocusItem={onFocusItem} onFocusRoute={onFocusRoute}
               onMoveToBank={(block)=>moveBlockToBank(block,day.id)} settings={settings} onPickFromMap={onPickFromMap}
               onBankNoteUpdate={updateBankNote}/>
           ))
@@ -2852,7 +2960,7 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,compact=fals
           }}>
             <div className="scroll-y flex-1" style={{padding:'8px'}}>
               <DayPanel day={{...day,_tripBank:trip.interestBank||[]}} idx={clampedOffset+i} onUpdate={updDay} onDelete={()=>delDay(day.id)}
-                onFocusDay={onFocusDay} onFocusItem={onFocusItem}
+                onFocusDay={onFocusDay} onFocusItem={onFocusItem} onFocusRoute={onFocusRoute}
                 onMoveToBank={(block)=>moveBlockToBank(block,day.id)} settings={settings} onPickFromMap={onPickFromMap}
                 onBankNoteUpdate={updateBankNote}/>
             </div>
@@ -5259,6 +5367,7 @@ function App(){
   const[syncStatus,setSyncStatus]=useState('idle'); // 'idle'|'syncing'|'synced'|'error'
   const[hlDay,setHlDay]=useState(null);
   const[hlItem,setHlItem]=useState(null);
+  const[hlRoute,setHlRoute]=useState(null);
   const ghSha=useRef(null);
   const autoSyncTimer=useRef(null);
   const skipNextPush=useRef(false);
@@ -5503,7 +5612,7 @@ function App(){
           <div className="map-col map-col-map">
             <MapView mapsKey={settings.googleMapsKey} trip={trip} onAddToBank={addToBank} onAddToDay={addToDay}
               onSetDayLocation={setDayLocation} onUpdateBankItem={updateBankItem}
-              highlightDay={hlDay} highlightItem={hlItem}
+              highlightDay={hlDay} highlightItem={hlItem} routeHighlight={hlRoute}
               mapPickCallbackRef={mapPickCallbackRef} mapPickLabel={mapPickLabel} onCancelMapPick={cancelMapPick}/>
           </div>
           {/* backdrop בסלולר */}
@@ -5513,8 +5622,9 @@ function App(){
           <div className={`map-col map-col-timeline${mobilePanel==='timeline'?' mob-open':''}`}>
             {trip?<TimelineTab trip={trip} onUpdate={updTrip} compact={true}
               onLocate={(lat,lng)=>window.__gmFocus?.(lat,lng)}
-              onFocusDay={(dayId,dayIndex,blocks)=>setHlDay({dayId,dayIndex,blocks})}
-              onFocusItem={(lat,lng,name)=>{setHlItem({lat,lng,name});setHlDay(null);}}
+              onFocusDay={(dayId,dayIndex,blocks)=>{setHlDay({dayId,dayIndex,blocks});setHlRoute(null);}}
+              onFocusItem={(lat,lng,name)=>{setHlItem({lat,lng,name});setHlDay(null);setHlRoute(null);}}
+              onFocusRoute={r=>setHlRoute(r)}
               settings={settings} onPickFromMap={pickLocationFromMap}
             />:noTrip}
           </div>
