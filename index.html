@@ -315,17 +315,18 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v107';
+const APP_VERSION = 'v108';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
-const fetchOsrmMinutes=async(fromLat,fromLng,toLat,toLng)=>{
-  const key=`${fromLng.toFixed(4)},${fromLat.toFixed(4)}|${toLng.toFixed(4)},${toLat.toFixed(4)}`;
+// profile: 'driving' | 'foot' | 'bike'
+const fetchOsrmMinutes=async(fromLat,fromLng,toLat,toLng,profile='driving')=>{
+  const key=`${profile}:${fromLng.toFixed(4)},${fromLat.toFixed(4)}|${toLng.toFixed(4)},${toLat.toFixed(4)}`;
   if(key in _osrmCache)return _osrmCache[key];
   try{
     const ctrl=new AbortController();
     const tid=setTimeout(()=>ctrl.abort(),9000);
-    const url=`https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=false`;
+    const url=`https://router.project-osrm.org/route/v1/${profile}/${fromLng},${fromLat};${toLng},${toLat}?overview=false`;
     const r=await fetch(url,{signal:ctrl.signal});
     clearTimeout(tid);
     if(!r.ok){_osrmCache[key]=null;return null;}
@@ -1411,7 +1412,9 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         if(!travelBlock)continue;
         const tMode=travelBlock.isTransit
           ?window.google.maps.TravelMode.TRANSIT
-          :window.google.maps.TravelMode.DRIVING;
+          :travelBlock.isWalking
+            ?window.google.maps.TravelMode.WALKING
+            :window.google.maps.TravelMode.DRIVING;
         const renderer=new window.google.maps.DirectionsRenderer({
           suppressMarkers:true,
           polylineOptions:{strokeColor:color,strokeWeight:4,strokeOpacity:0.65},
@@ -1448,9 +1451,9 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
   useEffect(()=>{
     if(hlRouteRenderer.current){try{hlRouteRenderer.current.setMap(null);}catch(e){}  hlRouteRenderer.current=null;}
     if(!routeHighlight||!mapInst.current||!window.google?.maps?.DirectionsService)return;
-    const{fromLat,fromLng,toLat,toLng,isTransit}=routeHighlight;
+    const{fromLat,fromLng,toLat,toLng,isTransit,isWalking}=routeHighlight;
     if(!fromLat||!fromLng||!toLat||!toLng)return;
-    const tMode=isTransit?window.google.maps.TravelMode.TRANSIT:window.google.maps.TravelMode.DRIVING;
+    const tMode=isTransit?window.google.maps.TravelMode.TRANSIT:isWalking?window.google.maps.TravelMode.WALKING:window.google.maps.TravelMode.DRIVING;
     const renderer=new window.google.maps.DirectionsRenderer({
       suppressMarkers:true,
       polylineOptions:{strokeColor:'#4f8ef7',strokeWeight:6,strokeOpacity:0.9},
@@ -1670,7 +1673,7 @@ function Weather({coordinates,location}){
 /* ══════════════════════════════════
    מודל עריכת בלוק
 ══════════════════════════════════ */
-function BlockModal({block,onSave,onClose,onDelete,prevEndTime,onCascadeSave,onCascadeSaveUnlink}){
+function BlockModal({block,onSave,onClose,onDelete,prevEndTime,onCascadeSave,onCascadeSaveUnlink,onPickFromMap}){
   const[b,setB]=useState({...block});
   const[timeError,setTimeError]=useState(false);
   const[unlinkPrompt,setUnlinkPrompt]=useState(false);
@@ -1727,7 +1730,28 @@ function BlockModal({block,onSave,onClose,onDelete,prevEndTime,onCascadeSave,onC
             <input className="input" type="number" min="5" step="5" value={b.durationMins} onChange={e=>upd('durationMins',parseInt(e.target.value)||0)}/></div>
         </div>
         <div><label className="label">מיקום</label>
-          <input className="input" value={b.location} onChange={e=>upd('location',e.target.value)} placeholder="אופציונלי"/></div>
+          <div style={{display:'flex',gap:6}}>
+            <input className="input" style={{flex:1}} value={b.location||''} onChange={e=>upd('location',e.target.value)} placeholder="שם המיקום (אופציונלי)"/>
+            {onPickFromMap&&!b.isAutoTravel&&(
+              <button type="button" title="בחר מיקום על המפה"
+                onClick={()=>onPickFromMap(`📍 ${b.title||'פעילות'}`,place=>{
+                  if(place.lat)upd('lat',place.lat);
+                  if(place.lng)upd('lng',place.lng);
+                  if(place.name)upd('location',place.name);
+                  if(place.address&&!place.name)upd('location',place.address);
+                })}
+                style={{padding:'0 10px',border:'1px solid var(--border)',borderRadius:6,background:'var(--bg3)',cursor:'pointer',fontSize:15,flexShrink:0,color:'var(--accent)'}}>📍</button>
+            )}
+          </div>
+          {(b.lat||b.lng)&&(
+            <div style={{display:'flex',alignItems:'center',gap:8,marginTop:4,fontSize:11}}>
+              <span style={{color:'var(--text3)',flex:1}}>📐 {b.lat?.toFixed(5)}, {b.lng?.toFixed(5)}</span>
+              {!b.isAutoTravel&&<button type="button" onClick={()=>{upd('lat',null);upd('lng',null);}}
+                style={{padding:'1px 7px',border:'1px solid rgba(239,68,68,.4)',borderRadius:4,
+                  background:'rgba(239,68,68,.08)',color:'var(--red)',cursor:'pointer'}}>✕ נקה</button>}
+            </div>
+          )}
+        </div>
         <div><label className="label">עלות (₪)</label>
           <input className="input" type="number" min="0" step="1" value={b.cost} onChange={e=>upd('cost',parseFloat(e.target.value)||0)}/></div>
         {/* הערות — מסונכרנות עם הבנק אם יש placeId */}
@@ -2034,7 +2058,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     if(!fromLat&&day.startLat&&day.startLng){fromLat=day.startLat;fromLng=day.startLng;}
     for(let i=bi+1;i<sorted.length;i++){if(!sorted[i].isAutoTravel&&sorted[i].lat&&sorted[i].lng){toLat=sorted[i].lat;toLng=sorted[i].lng;break;}}
     if(!toLat&&day.endLat&&day.endLng){toLat=day.endLat;toLng=day.endLng;}
-    if(fromLat&&toLat)onFocusRoute({fromLat,fromLng,toLat,toLng,isTransit:!!block.isTransit});
+    if(fromLat&&toLat)onFocusRoute({fromLat,fromLng,toLat,toLng,isTransit:!!block.isTransit,isWalking:!!block.isWalking});
   },[sorted,day,onFocusRoute]);
   const hasMapBlocks=day.blocks.some(b=>b.lat&&b.lng)||(day.startLat&&day.startLng)||(day.endLat&&day.endLng);
 
@@ -2125,6 +2149,8 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
 
   /* ── OSRM travel times (including start/end location) ── */
   const blocksKey=sorted.map(b=>b.id).join(',');
+  // helper: approximate straight-line distance in km
+  const distKm=(a,b)=>{const dLat=a.lat-b.lat,dLng=(a.lng-b.lng)*Math.cos(a.lat*Math.PI/180);return Math.sqrt(dLat*dLat+dLng*dLng)*111;};
   useEffect(()=>{
     setTravelTimes({});
     if(sorted.length<1)return;
@@ -2139,6 +2165,14 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
           setTravelTimes(prev=>({...prev,[key]:{loading:true,min:null}}));
           const min=await fetchOsrmMinutes(day.startLat,day.startLng,fc.lat,fc.lng);
           if(!cancelled)setTravelTimes(prev=>({...prev,[key]:{loading:false,min}}));
+          // walking time (only if close enough)
+          const startC={lat:day.startLat,lng:day.startLng};
+          if(!cancelled&&distKm(startC,fc)<=10){
+            const wkey=`walk:__start__->${sorted[0].id}`;
+            setTravelTimes(prev=>({...prev,[wkey]:{loading:true,min:null}}));
+            const wmin=await fetchOsrmMinutes(day.startLat,day.startLng,fc.lat,fc.lng,'foot');
+            if(!cancelled)setTravelTimes(prev=>({...prev,[wkey]:{loading:false,min:wmin}}));
+          }
         }
       }
       // between consecutive blocks
@@ -2152,6 +2186,13 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
         setTravelTimes(prev=>({...prev,[key]:{loading:true,min:null}}));
         const min=await fetchOsrmMinutes(ac.lat,ac.lng,bc.lat,bc.lng);
         if(!cancelled)setTravelTimes(prev=>({...prev,[key]:{loading:false,min}}));
+        // walking time (only if close enough)
+        if(!cancelled&&distKm(ac,bc)<=10){
+          const wkey=`walk:${a.id}->${nb.id}`;
+          setTravelTimes(prev=>({...prev,[wkey]:{loading:true,min:null}}));
+          const wmin=await fetchOsrmMinutes(ac.lat,ac.lng,bc.lat,bc.lng,'foot');
+          if(!cancelled)setTravelTimes(prev=>({...prev,[wkey]:{loading:false,min:wmin}}));
+        }
       }
       // last block → end location
       const last=sorted[sorted.length-1];
@@ -2162,6 +2203,14 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
           setTravelTimes(prev=>({...prev,[key]:{loading:true,min:null}}));
           const min=await fetchOsrmMinutes(lc.lat,lc.lng,day.endLat,day.endLng);
           if(!cancelled)setTravelTimes(prev=>({...prev,[key]:{loading:false,min}}));
+          // walking time
+          const endC={lat:day.endLat,lng:day.endLng};
+          if(!cancelled&&distKm(lc,endC)<=10){
+            const wkey=`walk:${last.id}->__end__`;
+            setTravelTimes(prev=>({...prev,[wkey]:{loading:true,min:null}}));
+            const wmin=await fetchOsrmMinutes(lc.lat,lc.lng,day.endLat,day.endLng,'foot');
+            if(!cancelled)setTravelTimes(prev=>({...prev,[wkey]:{loading:false,min:wmin}}));
+          }
         }
       }
     })();
@@ -2424,6 +2473,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
             if(!sorted.length||!day.startLat||!day.startLng||sorted[0].type==='travel')return null;
             const key=`__start__->${sorted[0].id}`;
             const tt=travelTimes[key];
+            const wt=travelTimes[`walk:__start__->${sorted[0].id}`];
             if(!tt||tt.loading||tt.min==null)return null;
             const buf2=settings?.travelBuffer??1.2;
             const buffered=Math.round(tt.min*buf2);
@@ -2432,14 +2482,22 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
               const nb={id:uid(),type:'travel',
                 title:`🚗 נסיעה (~${fmtTravelMin(buffered)})`,
                 startTime:firstStart,durationMins:buffered,notes:'',isAutoTravel:true};
-              // כל הבלוקים הקיימים מוזזים קדימה ב-buffered דקות
               const shifted=day.blocks.map(b=>({...b,startTime:addMins(b.startTime,buffered)}));
               onUpdate({...day,blocks:[nb,...shifted]});
               toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה לתחילת הלוז`,'success');
             };
+            const insertWalkStart=()=>{
+              if(!wt?.min)return;
+              const firstStart=sorted[0].startTime;
+              const nb={id:uid(),type:'travel',title:`🚶 הליכה (~${fmtTravelMin(wt.min)})`,
+                startTime:firstStart,durationMins:wt.min,notes:'',isAutoTravel:true,isWalking:true};
+              const shifted=day.blocks.map(b=>({...b,startTime:addMins(b.startTime,wt.min)}));
+              onUpdate({...day,blocks:[nb,...shifted]});
+              toast(`🚶 הליכה של ${fmtTravelMin(wt.min)} נוספה לתחילת הלוז`,'success');
+            };
             return(
               <div key="__start_conn__" style={{display:'flex',alignItems:'center',gap:8,
-                padding:'6px 8px 6px 40px',margin:'0 0 6px',
+                padding:'6px 8px 6px 40px',margin:'0 0 6px',flexWrap:'wrap',
                 background:'rgba(34,197,94,.07)',borderRadius:8,border:'1px solid rgba(34,197,94,.25)',marginRight:36}}>
                 <span style={{fontSize:11,color:'var(--green)',flex:1}}>
                   🟢 {day.startLocation||'מוצא'} → ראשון: {fmtTravelMin(tt.min)} נסיעה
@@ -2451,6 +2509,14 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                     cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
                   🚗 הוסף
                 </button>
+                {wt&&!wt.loading&&wt.min&&wt.min<=90&&(
+                  <button onClick={insertWalkStart}
+                    style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(234,179,8,.4)',
+                      borderRadius:6,background:'rgba(234,179,8,.12)',color:'var(--amber)',
+                      cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
+                    🚶 {fmtTravelMin(wt.min)}
+                  </button>
+                )}
                 {sorted[0].lat&&sorted[0].lng&&(
                   <button onClick={()=>searchTransit(
                     {lat:day.startLat,lng:day.startLng,startTime:day.startTime||'08:00',durationMins:0},
@@ -2469,6 +2535,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
             const last2=sorted[sorted.length-1];
             const key=`${last2.id}->__end__`;
             const tt=travelTimes[key];
+            const wt=travelTimes[`walk:${last2.id}->__end__`];
             if(!tt||tt.loading||tt.min==null)return null;
             const buf2=settings?.travelBuffer??1.2;
             const buffered=Math.round(tt.min*buf2);
@@ -2480,9 +2547,17 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
               onUpdate({...day,blocks:[...day.blocks,nb]});
               toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה לסיום הלוז`,'success');
             };
+            const insertWalkEnd=()=>{
+              if(!wt?.min)return;
+              const travelStart=addMins(last2.startTime,bDur(last2));
+              const nb={id:uid(),type:'travel',title:`🚶 הליכה (~${fmtTravelMin(wt.min)})`,
+                startTime:travelStart,durationMins:wt.min,notes:'',isAutoTravel:true,isWalking:true};
+              onUpdate({...day,blocks:[...day.blocks,nb]});
+              toast(`🚶 הליכה של ${fmtTravelMin(wt.min)} נוספה לסיום הלוז`,'success');
+            };
             return(
               <div key="__end_conn__" style={{display:'flex',alignItems:'center',gap:8,
-                padding:'6px 8px 6px 40px',margin:'0 0 6px',
+                padding:'6px 8px 6px 40px',margin:'0 0 6px',flexWrap:'wrap',
                 background:'rgba(239,68,68,.07)',borderRadius:8,border:'1px solid rgba(239,68,68,.25)',marginRight:36}}>
                 <span style={{fontSize:11,color:'var(--red)',flex:1}}>
                   🔴 אחרון → {day.endLocation||'יעד'}: {fmtTravelMin(tt.min)} נסיעה
@@ -2494,6 +2569,14 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                     cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
                   🚗 הוסף
                 </button>
+                {wt&&!wt.loading&&wt.min&&wt.min<=90&&(
+                  <button onClick={insertWalkEnd}
+                    style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(234,179,8,.4)',
+                      borderRadius:6,background:'rgba(234,179,8,.12)',color:'var(--amber)',
+                      cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
+                    🚶 {fmtTravelMin(wt.min)}
+                  </button>
+                )}
                 {last2.lat&&last2.lng&&(
                   <button onClick={()=>searchTransit(last2,{lat:day.endLat,lng:day.endLng},'end')}
                     style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(239,68,68,.4)',
@@ -2551,6 +2634,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                 </span>
               );
               /* ── OSRM travel time ── */
+              const wt=travelTimes[`walk:${ttKey}`];
               if(tt&&!tt.loading&&tt.min!=null){
                 const buf=settings?.travelBuffer??1.2;
                 const buffered=Math.round(tt.min*buf);
@@ -2564,8 +2648,18 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                   onUpdate({...day,blocks:[...sorted.slice(0,si+1),nb2,...tail]});
                   toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה`,'success');
                 };
+                const insertWalk=()=>{
+                  if(!wt?.min)return;
+                  const travelStart=addMins(bl.startTime,bDur(bl));
+                  const nb2={id:uid(),type:'travel',title:`🚶 הליכה (~${fmtTravelMin(wt.min)})`,
+                    startTime:travelStart,durationMins:wt.min,notes:'',isAutoTravel:true,isWalking:true};
+                  let t=addMins(travelStart,wt.min);
+                  const tail=sorted.slice(si+1).map(b2=>{const s={...b2,startTime:t};t=addMins(t,bDur(b2));return s;});
+                  onUpdate({...day,blocks:[...sorted.slice(0,si+1),nb2,...tail]});
+                  toast(`🚶 הליכה של ${fmtTravelMin(wt.min)} נוספה`,'success');
+                };
                 return(
-                  <div key={`tt-${ttKey}`} style={{...connBase,background:'rgba(79,142,247,.06)',border:'1px solid rgba(79,142,247,.18)'}}>
+                  <div key={`tt-${ttKey}`} style={{...connBase,background:'rgba(79,142,247,.06)',border:'1px solid rgba(79,142,247,.18)',flexWrap:'wrap'}}>
                     {gapLabel}{linkBtn}
                     <span style={{fontSize:11,color:'var(--text3)',flex:1}}>
                       {isLinked&&<span style={{color:'var(--text3)',opacity:.4,marginLeft:4}}>🔗 </span>}
@@ -2578,6 +2672,14 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                         cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
                       🚗 הוסף
                     </button>
+                    {wt&&!wt.loading&&wt.min&&wt.min<=90&&(
+                      <button onClick={insertWalk}
+                        style={{fontSize:11,padding:'3px 9px',border:'1px solid rgba(234,179,8,.4)',
+                          borderRadius:6,background:'rgba(234,179,8,.12)',color:'var(--amber)',
+                          cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
+                        🚶 {fmtTravelMin(wt.min)}
+                      </button>
+                    )}
                     {bl.lat&&bl.lng&&next.lat&&next.lng&&(
                       <button onClick={()=>searchTransit(bl,next)}
                         style={{fontSize:11,padding:'3px 9px',border:'1px solid rgba(34,197,94,.4)',
@@ -2592,7 +2694,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
               /* ── no OSRM: show link status only if relevant ── */
               if(!isLinked){
                 return(
-                  <div key={`lnk-${ttKey}`} style={{...connBase,background:'rgba(234,179,8,.06)',border:'1px solid rgba(234,179,8,.2)'}}>
+                  <div key={`lnk-${ttKey}`} style={{...connBase,background:'rgba(234,179,8,.06)',border:'1px solid rgba(234,179,8,.2)',flexWrap:'wrap'}}>
                     {gapLabel}{linkBtn}
                     {bl.lat&&bl.lng&&next.lat&&next.lng&&(
                       <button onClick={()=>searchTransit(bl,next)}
@@ -2699,7 +2801,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     {editing&&(()=>{
       const esi=sorted.findIndex(b=>b.id===editing.id);
       const editPrevEnd=esi>0?addMins(sorted[esi-1].startTime,bDur(sorted[esi-1])):null;
-      return <BlockModal block={editing} onSave={updBlock} onClose={()=>setEd(null)} onDelete={()=>{delBlock(editing.id);setEd(null);}} prevEndTime={editPrevEnd} onCascadeSave={cascadeSave} onCascadeSaveUnlink={cascadeSaveUnlink}/>;
+      return <BlockModal block={editing} onSave={updBlock} onClose={()=>setEd(null)} onDelete={()=>{delBlock(editing.id);setEd(null);}} prevEndTime={editPrevEnd} onCascadeSave={cascadeSave} onCascadeSaveUnlink={cascadeSaveUnlink} onPickFromMap={onPickFromMap}/>;
     })()}
 
     {locationPicking&&(
@@ -5374,21 +5476,23 @@ function App(){
   const syncMounted=useRef(false);
   const mapPickCallbackRef=useRef(null);
   const[mapPickLabel,setMapPickLabel]=useState(null);
+  const prevTabRef=useRef('timeline'); // tab to return to after map pick
 
   const pickLocationFromMap=useCallback((label,callback)=>{
+    prevTabRef.current=tab; // capture current tab before switching
     mapPickCallbackRef.current=place=>{
       callback(place);
       setMapPickLabel(null);
-      setTab('timeline'); // return to timeline after pick
+      setTab(prevTabRef.current); // return to where we came from
     };
     window.__gmIw?.close(); // close any open InfoWindow before switching
     setMapPickLabel(label);
     setTab('map');
-  },[]);
+  },[tab]);
   const cancelMapPick=useCallback(()=>{
     mapPickCallbackRef.current=null;
     setMapPickLabel(null);
-    setTab('timeline');
+    setTab(prevTabRef.current); // return to where we came from
   },[]);
 
   useEffect(()=>saveState({settings,trips,activeId}),[settings,trips,activeId]);
