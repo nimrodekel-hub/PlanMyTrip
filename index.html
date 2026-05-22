@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v104';
+const APP_VERSION = 'v105';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -2080,7 +2080,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
       if(status!=='OK'||!result?.routes?.length){
         console.warn('[transit]',status,result);
         const errMsg=status==='REQUEST_DENIED'
-          ?'הרשאה נדחתה — יש להפעיל את "Directions API" ב-Google Cloud Console עבור מפתח ה-API'
+          ?'REQUEST_DENIED — נסיעות רכב עובדות כי הן משתמשות ב-OSRM (ללא Google). תחבורה ציבורית משתמשת ב-Directions API של Google. יש לוודא: ב-Google Cloud Console → Credentials → לחץ על מפתח ה-API → "API restrictions" → הוסף "Directions API" לרשימת ה-APIs המורשים למפתח.'
           :`לא נמצאו קווים בין הנקודות האלה (${status})`;
         setTransitSearch(p=>p?{...p,loading:false,results:null,error:errMsg}:null);return;
       }

@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m46';
+const MOB_VER='m47';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -1535,7 +1535,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
       if(status!=='OK'||!result?.routes?.length){
         console.warn('[transit]',status,result);
         const errMsg=status==='REQUEST_DENIED'
-          ?'הרשאה נדחתה — יש להפעיל "Directions API" ב-Google Cloud Console'
+          ?'REQUEST_DENIED — ב-Google Cloud Console → Credentials → לחץ על המפתח → "API restrictions" → הוסף "Directions API" לרשימת ה-APIs של המפתח (לא רק בפרויקט)'
           :`לא נמצאו קווים בין הנקודות האלה (${status})`;
         setTransitSearch(p=>p?{...p,loading:false,results:null,error:errMsg}:null);return;
       }
