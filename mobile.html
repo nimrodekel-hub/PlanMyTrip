@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m47';
+const MOB_VER='m48';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -1542,29 +1542,38 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
       const routes=result.routes.map(r=>{
         const leg=r.legs[0];
         const durationMins=Math.ceil(leg.duration.value/60);
-        const steps=(leg.steps||[]).filter(s=>s.travel_mode==='TRANSIT').map(s=>({
-          icon:getVehicleIcon(s.transit.line.vehicle.type),
-          lineName:s.transit.line.name||s.transit.line.short_name||'',
-          lineShort:s.transit.line.short_name||'',
-          departure:s.transit.departure_stop?.name||'',
-          arrival:s.transit.arrival_stop?.name||'',
-          numStops:s.transit.num_stops||0,
-        }));
-        const summary=steps.map(s=>`${s.icon}${s.lineShort||s.lineName}`).join('+');
-        return{durationMins,summary,transfers:Math.max(0,steps.length-1),steps};
+        const steps=(leg.steps||[])
+          .filter(s=>s.travel_mode==='TRANSIT'||s.travel_mode==='WALKING')
+          .map(s=>s.travel_mode==='WALKING'
+            ?{type:'walk',icon:'🚶',durationMins:Math.ceil((s.duration?.value||0)/60),distanceM:s.distance?.value||0}
+            :{type:'transit',icon:getVehicleIcon(s.transit.line.vehicle.type),
+              lineName:s.transit.line.name||s.transit.line.short_name||'',
+              lineShort:s.transit.line.short_name||'',
+              departure:s.transit.departure_stop?.name||'',
+              arrival:s.transit.arrival_stop?.name||'',
+              numStops:s.transit.num_stops||0,
+              durationMins:Math.ceil((s.duration?.value||0)/60)});
+        const summary=steps.filter(s=>s.type==='transit').map(s=>`${s.icon}${s.lineShort||s.lineName}`).join('+');
+        return{durationMins,summary,transfers:Math.max(0,steps.filter(s=>s.type==='transit').length-1),steps};
       });
       setTransitSearch(p=>p?{...p,loading:false,results:routes,error:null}:null);
     });
   };
+
+  const fmtTransitNote=steps=>steps.map(s=>
+    s.type==='walk'
+      ?`🚶 ${s.durationMins} דק' הליכה${s.distanceM>=50?' ('+( s.distanceM>=1000?(s.distanceM/1000).toFixed(1)+'ק"מ':s.distanceM+'מ\'')+')'  :''}`
+      :`${s.icon} ${s.lineName||s.lineShort}: ${s.departure}→${s.arrival}${s.numStops>0?` (${s.numStops} תח')`:''}`
+  ).join(' | ');
+  const transitFirstIcon=steps=>{const t=steps.find(s=>s.type==='transit');return t?.icon||'🚌';};
 
   const insertTransitBlock=(dayId,afterBlockId,route)=>{
     const dayBlks=trip.days.find(d=>d.id===dayId)?.blocks||[];
     const afterBlk=dayBlks.find(b=>b.id===afterBlockId);
     const tStart=afterBlk?.endTime||'';
     const tEnd=tStart?addMins(tStart,route.durationMins):'';
-    const lineDesc=route.steps.map(s=>`${s.icon} ${s.lineName||s.lineShort}: ${s.departure}→${s.arrival}${s.numStops>0?` (${s.numStops} תח')`:''}`).join(' | ');
     const blk={id:uid(),type:'travel',title:`${route.summary} (~${fmtTravelMin(route.durationMins)})`,
-      startTime:tStart,endTime:tEnd,note:lineDesc,isAutoTravel:true,isTransit:true};
+      startTime:tStart,endTime:tEnd,note:fmtTransitNote(route.steps),isAutoTravel:true,isTransit:true};
     onUpdate({...trip,days:trip.days.map(d=>{
       if(d.id!==dayId)return d;
       const blks=d.blocks||[];
@@ -1573,33 +1582,33 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
       return{...d,blocks:[...blks.slice(0,idx+1),blk,...blks.slice(idx+1)]};
     })});
     setTransitSearch(null);
-    toast(`${route.steps[0]?.icon||'🚌'} קו תחבורה נוסף ✓`,'s');
+    toast(`${transitFirstIcon(route.steps)} קו תחבורה נוסף ✓`,'s');
   };
 
   const insertTransitBlockBeforeFirst=(route)=>{
     if(!sorted.length)return;
     const dayBlks=day?.blocks||[];
     const firstStart=sorted[0].startTime||'09:00';
-    const lineDesc=route.steps.map(s=>`${s.icon} ${s.lineName||s.lineShort}: ${s.departure}→${s.arrival}${s.numStops>0?` (${s.numStops} תח')`:''}`).join(' | ');
     const blk={id:uid(),type:'travel',title:`${route.summary} (~${fmtTravelMin(route.durationMins)})`,
-      startTime:firstStart,endTime:addMins(firstStart,route.durationMins),note:lineDesc,isAutoTravel:true,isTransit:true};
+      startTime:firstStart,endTime:addMins(firstStart,route.durationMins),
+      note:fmtTransitNote(route.steps),isAutoTravel:true,isTransit:true};
     const shifted=dayBlks.map(b=>({...b,
       startTime:addMins(b.startTime,route.durationMins),
       endTime:b.endTime?addMins(b.endTime,route.durationMins):b.endTime}));
     onUpdate({...trip,days:trip.days.map(d=>d.id!==day.id?d:{...d,blocks:[blk,...shifted]})});
     setTransitSearch(null);
-    toast(`${route.steps[0]?.icon||'🚌'} קו תחבורה נוסף לתחילת הלוז ✓`,'s');
+    toast(`${transitFirstIcon(route.steps)} קו תחבורה נוסף לתחילת הלוז ✓`,'s');
   };
   const insertTransitBlockEndMob=(route)=>{
     if(!sorted.length)return;
     const last2=sorted[sorted.length-1];
     const tStart=last2.endTime||addMins(last2.startTime||'09:00',60);
-    const lineDesc=route.steps.map(s=>`${s.icon} ${s.lineName||s.lineShort}: ${s.departure}→${s.arrival}${s.numStops>0?` (${s.numStops} תח')`:''}`).join(' | ');
     const blk={id:uid(),type:'travel',title:`${route.summary} (~${fmtTravelMin(route.durationMins)})`,
-      startTime:tStart,endTime:addMins(tStart,route.durationMins),note:lineDesc,isAutoTravel:true,isTransit:true};
+      startTime:tStart,endTime:addMins(tStart,route.durationMins),
+      note:fmtTransitNote(route.steps),isAutoTravel:true,isTransit:true};
     onUpdate({...trip,days:trip.days.map(d=>d.id!==day.id?d:{...d,blocks:[...(d.blocks||[]),blk]})});
     setTransitSearch(null);
-    toast(`${route.steps[0]?.icon||'🚌'} קו תחבורה נוסף לסיום הלוז ✓`,'s');
+    toast(`${transitFirstIcon(route.steps)} קו תחבורה נוסף לסיום הלוז ✓`,'s');
   };
 
   // הוספת נסיעה לפני הבלוק הראשון (מוצא → ראשון)
@@ -2095,8 +2104,12 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                     <span style={{fontWeight:700,color:'var(--accent2)',fontSize:13,flexShrink:0}}>{fmtTravelMin(route.durationMins)}</span>
                   </div>
                   {route.steps.map((s,j)=>(
-                    <div key={j} style={{fontSize:11,color:'var(--text3)',paddingRight:24,marginTop:2,textAlign:'right'}}>
-                      {s.icon} {s.lineName||s.lineShort}: {s.departure}→{s.arrival}{s.numStops>0?` · ${s.numStops} תח'`:''}
+                    <div key={j} style={{fontSize:11,paddingRight:24,marginTop:2,textAlign:'right',
+                      color:s.type==='walk'?'var(--text3)':'var(--text2)',
+                      fontStyle:s.type==='walk'?'italic':'normal'}}>
+                      {s.type==='walk'
+                        ?`🚶 ${s.durationMins} דק' הליכה${s.distanceM>=50?' · '+(s.distanceM>=1000?(s.distanceM/1000).toFixed(1)+'ק"מ':s.distanceM+'מ\''):''}`
+                        :`${s.icon} ${s.lineName||s.lineShort}: ${s.departure}→${s.arrival}${s.numStops>0?` · ${s.numStops} תח'`:''} (${s.durationMins} דק')`}
                     </div>
                   ))}
                   {route.transfers>0&&<div style={{fontSize:10,color:'var(--amber)',paddingRight:24,marginTop:3}}>↔️ {route.transfers} החלפות</div>}

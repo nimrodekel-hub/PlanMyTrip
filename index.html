@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v105';
+const APP_VERSION = 'v106';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -2087,33 +2087,41 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
       const routes=result.routes.map(r=>{
         const leg=r.legs[0];
         const durationMins=Math.ceil(leg.duration.value/60);
-        const steps=(leg.steps||[]).filter(s=>s.travel_mode==='TRANSIT').map(s=>({
-          icon:getVehicleIcon(s.transit.line.vehicle.type),
-          lineName:s.transit.line.name||s.transit.line.short_name||'',
-          lineShort:s.transit.line.short_name||'',
-          departure:s.transit.departure_stop?.name||'',
-          arrival:s.transit.arrival_stop?.name||'',
-          numStops:s.transit.num_stops||0,
-        }));
-        const summary=steps.map(s=>`${s.icon}${s.lineShort||s.lineName}`).join('+');
+        const steps=(leg.steps||[])
+          .filter(s=>s.travel_mode==='TRANSIT'||s.travel_mode==='WALKING')
+          .map(s=>s.travel_mode==='WALKING'
+            ?{type:'walk',icon:'🚶',durationMins:Math.ceil((s.duration?.value||0)/60),distanceM:s.distance?.value||0}
+            :{type:'transit',icon:getVehicleIcon(s.transit.line.vehicle.type),
+              lineName:s.transit.line.name||s.transit.line.short_name||'',
+              lineShort:s.transit.line.short_name||'',
+              departure:s.transit.departure_stop?.name||'',
+              arrival:s.transit.arrival_stop?.name||'',
+              numStops:s.transit.num_stops||0,
+              durationMins:Math.ceil((s.duration?.value||0)/60)});
+        const summary=steps.filter(s=>s.type==='transit').map(s=>`${s.icon}${s.lineShort||s.lineName}`).join('+');
         return{durationMins,summary,transfers:Math.max(0,steps.length-1),steps};
       });
       setTransitSearch(p=>p?{...p,loading:false,results:routes,error:null}:null);
     });
   };
+  const fmtTransitNotes=steps=>steps.map(s=>
+    s.type==='walk'
+      ?`🚶 ${s.durationMins} דק' הליכה${s.distanceM>=50?' ('+( s.distanceM>=1000?(s.distanceM/1000).toFixed(1)+'ק"מ':s.distanceM+'מ\'')+')'  :''}`
+      :`${s.icon} ${s.lineName||s.lineShort}: ${s.departure}→${s.arrival}${s.numStops>0?` (${s.numStops} תח')`:''}`
+  ).join(' | ');
+  const transitFirstIcon=steps=>{const t=steps.find(s=>s.type==='transit');return t?.icon||'🚌';};
   const insertTransitBlock=(afterBlock,route)=>{
     const si=sorted.findIndex(b=>b.id===afterBlock.id);
     const travelStart=addMins(afterBlock.startTime,bDur(afterBlock));
     const nb={id:uid(),type:'travel',
       title:`${route.summary} (~${fmtTravelMin(route.durationMins)})`,
       startTime:travelStart,durationMins:route.durationMins,
-      notes:route.steps.map(s=>`${s.icon} ${s.lineName||s.lineShort}: ${s.departure}→${s.arrival}${s.numStops>0?` (${s.numStops} תח')`:''}`).join(' | '),
-      isAutoTravel:true,isTransit:true};
+      notes:fmtTransitNotes(route.steps),isAutoTravel:true,isTransit:true};
     let t=addMins(travelStart,route.durationMins);
     const tail=sorted.slice(si+1).map(b2=>{const s={...b2,startTime:t};t=addMins(t,bDur(b2));return s;});
     onUpdate({...day,blocks:[...sorted.slice(0,si+1),nb,...tail]});
     setTransitSearch(null);
-    toast(`${route.steps[0]?.icon||'🚌'} קו תחבורה נוסף`,'success');
+    toast(`${transitFirstIcon(route.steps)} קו תחבורה נוסף`,'success');
   };
   const insertTransitBlockStart=(route)=>{
     if(!sorted.length)return;
@@ -2121,12 +2129,11 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
     const nb={id:uid(),type:'travel',
       title:`${route.summary} (~${fmtTravelMin(route.durationMins)})`,
       startTime:firstStart,durationMins:route.durationMins,
-      notes:route.steps.map(s=>`${s.icon} ${s.lineName||s.lineShort}: ${s.departure}→${s.arrival}${s.numStops>0?` (${s.numStops} תח')`:''}`).join(' | '),
-      isAutoTravel:true,isTransit:true};
+      notes:fmtTransitNotes(route.steps),isAutoTravel:true,isTransit:true};
     const shifted=day.blocks.map(b=>({...b,startTime:addMins(b.startTime,route.durationMins)}));
     onUpdate({...day,blocks:[nb,...shifted]});
     setTransitSearch(null);
-    toast(`${route.steps[0]?.icon||'🚌'} קו תחבורה נוסף לתחילת הלוז`,'success');
+    toast(`${transitFirstIcon(route.steps)} קו תחבורה נוסף לתחילת הלוז`,'success');
   };
   const insertTransitBlockEnd=(route)=>{
     if(!sorted.length)return;
@@ -2135,11 +2142,10 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
     const nb={id:uid(),type:'travel',
       title:`${route.summary} (~${fmtTravelMin(route.durationMins)})`,
       startTime:travelStart,durationMins:route.durationMins,
-      notes:route.steps.map(s=>`${s.icon} ${s.lineName||s.lineShort}: ${s.departure}→${s.arrival}${s.numStops>0?` (${s.numStops} תח')`:''}`).join(' | '),
-      isAutoTravel:true,isTransit:true};
+      notes:fmtTransitNotes(route.steps),isAutoTravel:true,isTransit:true};
     onUpdate({...day,blocks:[...day.blocks,nb]});
     setTransitSearch(null);
-    toast(`${route.steps[0]?.icon||'🚌'} קו תחבורה נוסף לסיום הלוז`,'success');
+    toast(`${transitFirstIcon(route.steps)} קו תחבורה נוסף לסיום הלוז`,'success');
   };
 
   return <div className="card" style={{marginBottom:12,animation:'fadeIn .3s ease'}}>
@@ -2538,8 +2544,12 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onMoveToBank
                     <span style={{fontWeight:700,color:'var(--accent)',fontSize:14}}>{fmtTravelMin(route.durationMins)}</span>
                   </div>
                   {route.steps.map((s,j)=>(
-                    <div key={j} style={{fontSize:11,color:'var(--text3)',paddingRight:26,marginTop:3}}>
-                      {s.icon} {s.lineName||s.lineShort}: {s.departure}→{s.arrival}{s.numStops>0?` · ${s.numStops} תח'`:''}
+                    <div key={j} style={{fontSize:11,paddingRight:26,marginTop:3,
+                      color:s.type==='walk'?'var(--text3)':'var(--text2)',
+                      fontStyle:s.type==='walk'?'italic':'normal'}}>
+                      {s.type==='walk'
+                        ?`🚶 ${s.durationMins} דק' הליכה${s.distanceM>=50?' · '+(s.distanceM>=1000?(s.distanceM/1000).toFixed(1)+'ק"מ':s.distanceM+'מ\''):''}`
+                        :`${s.icon} ${s.lineName||s.lineShort}: ${s.departure}→${s.arrival}${s.numStops>0?` · ${s.numStops} תח'`:''} (${s.durationMins} דק')`}
                     </div>
                   ))}
                   {route.transfers>0&&<div style={{fontSize:10,color:'var(--amber)',paddingRight:26,marginTop:4}}>↔️ {route.transfers} החלפות</div>}
