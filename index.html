@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v114';
+const APP_VERSION = 'v115';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -2425,12 +2425,12 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
       {/* ── נקודת מוצא ויעד ── */}
       <div style={{background:'var(--bg3)',borderRadius:10,padding:12,marginBottom:12}}>
         <div style={{fontSize:11,fontWeight:700,color:'var(--text2)',marginBottom:8}}>🗺️ מסלול היום</div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <div style={{display:'flex',flexDirection:'column',gap:6}}>
           {/* מוצא */}
           <div>
-            <label className="label" style={{color:'var(--green)'}}>🟢 נקודת מוצא</label>
-            <div style={{display:'flex',gap:4,alignItems:'center'}}>
-              <input className="input" style={{flex:1,
+            <div style={{display:'flex',alignItems:'center',gap:5}}>
+              <span style={{fontSize:11,color:'var(--green)',fontWeight:700,width:48,flexShrink:0}}>🟢 מוצא</span>
+              <input className="input" style={{flex:1,minWidth:0,
                 background:day.startPending?'rgba(234,179,8,0.13)':'',
                 borderColor:day.startPending?'var(--amber)':''}}
                 value={day.startLocation}
@@ -2445,15 +2445,15 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                 className="btn btn-secondary btn-icon btn-sm" style={{flexShrink:0,fontSize:14}}>📍</button>
             </div>
             {cascadeNeeded&&(
-              <div style={{display:'flex',alignItems:'center',gap:6,marginTop:5}}>
-                <span style={{fontSize:11,color:'var(--text3)'}}>פעילות ראשונה ב-{sorted[0].startTime} — שעה שונה מהיום</span>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginTop:4,paddingRight:52}}>
+                <span style={{fontSize:11,color:'var(--text3)',flex:1}}>פעילות ראשונה ב-{sorted[0].startTime} — שעה שונה מהיום</span>
                 <button className="btn btn-sm" style={{padding:'2px 8px',fontSize:11,
                   background:'rgba(79,142,247,.12)',color:'var(--accent)',border:'1px solid var(--accent)',borderRadius:5,cursor:'pointer'}}
                   onClick={cascadeBlocks}>↕ הזז הכל</button>
               </div>
             )}
-            {day.startPending&&<div style={{display:'flex',alignItems:'center',gap:6,marginTop:5}}>
-              <span style={{fontSize:11,color:'var(--amber)'}}>❓ הועתק מיעד אתמול — לאשר?</span>
+            {day.startPending&&<div style={{display:'flex',alignItems:'center',gap:6,marginTop:4,paddingRight:52}}>
+              <span style={{fontSize:11,color:'var(--amber)',flex:1}}>❓ הועתק מיעד אתמול — לאשר?</span>
               <button className="btn btn-sm" style={{padding:'1px 8px',fontSize:11,
                 background:'var(--amber)',color:'#000',border:'none',borderRadius:5,cursor:'pointer'}}
                 onClick={()=>onUpdate({...day,startPending:false})}>✓ אשר</button>
@@ -2464,9 +2464,9 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
           </div>
           {/* יעד */}
           <div>
-            <label className="label" style={{color:'var(--red)'}}>🔴 נקודת יעד</label>
-            <div style={{display:'flex',gap:4,alignItems:'center'}}>
-              <input className="input" style={{flex:1}}
+            <div style={{display:'flex',alignItems:'center',gap:5}}>
+              <span style={{fontSize:11,color:'var(--red)',fontWeight:700,width:48,flexShrink:0}}>🔴 יעד</span>
+              <input className="input" style={{flex:1,minWidth:0}}
                 value={day.endLocation}
                 onChange={e=>onUpdate({...day,endLocation:e.target.value})}
                 placeholder="לאן מגיעים..."/>
