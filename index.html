@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v112';
+const APP_VERSION = 'v113';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -2256,8 +2256,9 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
               arrival:s.transit.arrival_stop?.name||'',
               numStops:s.transit.num_stops||0,
               durationMins:Math.ceil((s.duration?.value||0)/60)});
-        const summary=steps.filter(s=>s.type==='transit').map(s=>`${s.icon}${s.lineShort||s.lineName}`).join('+');
-        return{durationMins,summary,transfers:Math.max(0,steps.length-1),steps};
+        const ts=steps.filter(s=>s.type==='transit');
+        const summary=ts.map(s=>`${s.icon}${s.lineShort||s.lineName}`).join('+');
+        return{durationMins,summary,transfers:Math.max(0,ts.length-1),steps};
       });
       setTransitSearch(p=>p?{...p,loading:false,results:routes,error:null}:null);
     });
@@ -2825,20 +2826,32 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                   ):(
                     <>
                       <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
-                        <span style={{fontSize:18}}>{route.steps[0]?.icon||'🚌'}</span>
+                        <span style={{fontSize:18}}>{route.steps.find(s=>s.type==='transit')?.icon||'🚌'}</span>
                         <span style={{fontWeight:700,fontSize:14,color:'var(--text)',flex:1}}>{route.summary}</span>
                         <span style={{fontWeight:700,color:'var(--accent)',fontSize:14}}>{fmtTravelMin(route.durationMins)}</span>
                       </div>
-                      {route.steps.map((s,j)=>(
-                        <div key={j} style={{fontSize:11,paddingRight:26,marginTop:3,
-                          color:s.type==='walk'?'var(--text3)':'var(--text2)',
-                          fontStyle:s.type==='walk'?'italic':'normal'}}>
-                          {s.type==='walk'
-                            ?`🚶 ${s.durationMins} דק' הליכה${s.distanceM>=50?' · '+(s.distanceM>=1000?(s.distanceM/1000).toFixed(1)+'ק"מ':s.distanceM+'מ\''):''}`
-                            :`${s.icon} ${s.lineName||s.lineShort}: ${s.departure}→${s.arrival}${s.numStops>0?` · ${s.numStops} תח'`:''} (${s.durationMins} דק')`}
-                        </div>
-                      ))}
-                      {route.transfers>0&&<div style={{fontSize:10,color:'var(--amber)',paddingRight:26,marginTop:4}}>↔️ {route.transfers} החלפות</div>}
+                      {(()=>{
+                        const ts=route.steps.filter(s=>s.type==='transit');
+                        if(!ts.length)return null;
+                        return(
+                          <div style={{fontSize:11,marginTop:4,color:'var(--text2)',lineHeight:1.8}}>
+                            {ts.map((s,i)=>(
+                              <React.Fragment key={i}>
+                                {i===0&&<div>📍 <b>עולים:</b> {s.departure}</div>}
+                                <div style={{paddingRight:12,color:'var(--text3)'}}>
+                                  {s.icon} {s.lineShort||s.lineName}{s.numStops>0?` · ${s.numStops} תח'`:''}
+                                </div>
+                                <div style={{color:i<ts.length-1?'var(--amber)':'inherit'}}>
+                                  {i<ts.length-1
+                                    ?<span>↔️ <b>החלפה:</b> {s.arrival}</span>
+                                    :<span>📍 <b>יורדים:</b> {s.arrival}</span>
+                                  }
+                                </div>
+                              </React.Fragment>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </>
                   )}
                 </button>
