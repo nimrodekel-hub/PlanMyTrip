@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m53';
+const MOB_VER='m54';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -354,11 +354,11 @@ const normTrip=t=>{
 
 /* ── bank item list-source styles ── */
 const BANK_SRC={
-  liked:    {color:'#e91e63',emoji:'❤️',label:'מועדפים'},
-  wantToGo: {color:'#1b8a3e',emoji:'🚩',label:'רוצה לבקר'},
+  liked:    {color:'#ec4899',emoji:'❤️',label:'מועדפים'},
+  wantToGo: {color:'#22c55e',emoji:'🚩',label:'רוצה לבקר'},
   saved:    {color:'#f59e0b',emoji:'⭐',label:'שמור'},
-  list:     {color:'#7c3aed',emoji:'📋',label:'רשימה'},
-  itinerary:{color:'#1565c0',emoji:'🧳',label:'תוכנית נסיעה'},
+  list:     {color:'#6366f1',emoji:'📋',label:'רשימה'},
+  itinerary:{color:'#2563eb',emoji:'🧳',label:'תוכנית נסיעה'},
 };
 const getBankSrc=item=>BANK_SRC[item._listSource]||null;
 
@@ -368,14 +368,14 @@ const makeBankIcon=src=>{
   const svg=
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 44" width="44" height="44">`+
     `<circle cx="22" cy="22" r="20" fill="${src.color}" stroke="white" stroke-width="2.5"/>`+
-    `<text x="22" y="30" text-anchor="middle" `+
+    `<text x="22" y="29" text-anchor="middle" `+
       `font-family="Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif" `+
-      `font-size="19">${src.emoji}</text>`+
+      `font-size="16">${src.emoji}</text>`+
     `</svg>`;
   return{
     url:'data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(svg),
-    scaledSize:new window.google.maps.Size(38,38),
-    anchor:new window.google.maps.Point(19,19),
+    scaledSize:new window.google.maps.Size(28,28),
+    anchor:new window.google.maps.Point(14,14),
   };
 };
 
@@ -631,7 +631,9 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
             if(!travelBlock)continue;
             const tMode=travelBlock.isTransit
               ?window.google.maps.TravelMode.TRANSIT
-              :window.google.maps.TravelMode.DRIVING;
+              :travelBlock.isWalking
+                ?window.google.maps.TravelMode.WALKING
+                :window.google.maps.TravelMode.DRIVING;
             const renderer=new window.google.maps.DirectionsRenderer({
               suppressMarkers:true,
               polylineOptions:{strokeColor:routeColor,strokeWeight:4,strokeOpacity:0.65},
@@ -2076,7 +2078,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                             for(let k=bi+1;k<sorted.length;k++){if(!sorted[k].isAutoTravel&&sorted[k].lat&&sorted[k].lng){tLat=sorted[k].lat;tLng=sorted[k].lng;break;}}
                             if(!tLat&&day.endLat&&day.endLng){tLat=day.endLat;tLng=day.endLng;}
                             if(!fLat||!tLat)return null;
-                            const tm=b.isTransit?'transit':'driving';
+                            const tm=b.isTransit?'transit':b.isWalking?'walking':'driving';
                             const url=`https://www.google.com/maps/dir/?api=1&origin=${fLat},${fLng}&destination=${tLat},${tLng}&travelmode=${tm}`;
                             return<a key="rt-link" href={url} target="_blank" rel="noreferrer"
                               style={{padding:'4px 5px',fontSize:15,color:'var(--accent2)',textDecoration:'none'}}
