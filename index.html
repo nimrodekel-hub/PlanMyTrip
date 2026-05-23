@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v111';
+const APP_VERSION = 'v112';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -2564,31 +2564,28 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                   {hasCar&&<>: {fmtTravelMin(tt.min)} נסיעה{buf2>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf2-1))} דק' = <b>{fmtTravelMin(Math.round(tt.min*buf2))}</b></span>}</>}
                 </span>
                 {hasCar&&(
-                  <button onClick={insertTravelStart}
-                    style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(34,197,94,.4)',
-                      borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',
-                      cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                    🚗 הוסף
+                  <button title="הוסף נסיעה ברכב" onClick={insertTravelStart}
+                    style={{fontSize:15,padding:'2px 8px',border:'1px solid rgba(34,197,94,.4)',
+                      borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',cursor:'pointer'}}>
+                    🚗
                   </button>
                 )}
                 {firstHasCoords&&(
-                  <button onClick={()=>searchWalking(
+                  <button title="הוסף מסלול הליכה" onClick={()=>searchWalking(
                     {lat:day.startLat,lng:day.startLng,startTime:day.startTime||'08:00',durationMins:0},
                     first,'start')}
-                    style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(234,179,8,.4)',
-                      borderRadius:6,background:'rgba(234,179,8,.12)',color:'var(--amber)',
-                      cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                    🚶{wt&&!wt.loading&&wt.min?` ${fmtTravelMin(wt.min)}`:''}
+                    style={{fontSize:15,padding:'2px 8px',border:'1px solid rgba(234,179,8,.4)',
+                      borderRadius:6,background:'rgba(234,179,8,.12)',color:'var(--amber)',cursor:'pointer'}}>
+                    🚶
                   </button>
                 )}
                 {firstHasCoords&&(
-                  <button onClick={()=>searchTransit(
+                  <button title="תחבורה ציבורית" onClick={()=>searchTransit(
                     {lat:day.startLat,lng:day.startLng,startTime:day.startTime||'08:00',durationMins:0},
                     first,'start')}
-                    style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(34,197,94,.4)',
-                      borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',
-                      cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                    🚌 תחבורה
+                    style={{fontSize:15,padding:'2px 8px',border:'1px solid rgba(34,197,94,.4)',
+                      borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',cursor:'pointer'}}>
+                    🚌
                   </button>
                 )}
               </div>
@@ -2624,27 +2621,24 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                   </>}
                 </span>
                 {hasCar&&(
-                  <button onClick={insertTravelEnd}
-                    style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(239,68,68,.4)',
-                      borderRadius:6,background:'rgba(239,68,68,.12)',color:'var(--red)',
-                      cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                    🚗 הוסף
+                  <button title="הוסף נסיעה ברכב" onClick={insertTravelEnd}
+                    style={{fontSize:15,padding:'2px 8px',border:'1px solid rgba(239,68,68,.4)',
+                      borderRadius:6,background:'rgba(239,68,68,.12)',color:'var(--red)',cursor:'pointer'}}>
+                    🚗
                   </button>
                 )}
                 {lastHasCoords&&(
-                  <button onClick={()=>searchWalking(last2,{lat:day.endLat,lng:day.endLng},'end')}
-                    style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(234,179,8,.4)',
-                      borderRadius:6,background:'rgba(234,179,8,.12)',color:'var(--amber)',
-                      cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                    🚶{wt&&!wt.loading&&wt.min?` ${fmtTravelMin(wt.min)}`:''}
+                  <button title="הוסף מסלול הליכה" onClick={()=>searchWalking(last2,{lat:day.endLat,lng:day.endLng},'end')}
+                    style={{fontSize:15,padding:'2px 8px',border:'1px solid rgba(234,179,8,.4)',
+                      borderRadius:6,background:'rgba(234,179,8,.12)',color:'var(--amber)',cursor:'pointer'}}>
+                    🚶
                   </button>
                 )}
                 {lastHasCoords&&(
-                  <button onClick={()=>searchTransit(last2,{lat:day.endLat,lng:day.endLng},'end')}
-                    style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(239,68,68,.4)',
-                      borderRadius:6,background:'rgba(239,68,68,.12)',color:'var(--red)',
-                      cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                    🚌 תחבורה
+                  <button title="תחבורה ציבורית" onClick={()=>searchTransit(last2,{lat:day.endLat,lng:day.endLng},'end')}
+                    style={{fontSize:15,padding:'2px 8px',border:'1px solid rgba(239,68,68,.4)',
+                      borderRadius:6,background:'rgba(239,68,68,.12)',color:'var(--red)',cursor:'pointer'}}>
+                    🚌
                   </button>
                 )}
               </div>
@@ -2718,26 +2712,23 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                       🚗 {fmtTravelMin(tt.min)} נסיעה
                       {buf>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf-1))} דק' = <b style={{color:'var(--text2)'}}>{fmtTravelMin(buffered)}</b></span>}
                     </span>
-                    <button onClick={insertTravel}
-                      style={{fontSize:11,padding:'3px 9px',border:'1px solid rgba(79,142,247,.4)',
-                        borderRadius:6,background:'rgba(79,142,247,.12)',color:'var(--accent)',
-                        cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                      🚗 הוסף
+                    <button title="הוסף נסיעה ברכב" onClick={insertTravel}
+                      style={{fontSize:15,padding:'2px 8px',border:'1px solid rgba(79,142,247,.4)',
+                        borderRadius:6,background:'rgba(79,142,247,.12)',color:'var(--accent)',cursor:'pointer'}}>
+                      🚗
                     </button>
                     {bl.lat&&bl.lng&&next.lat&&next.lng&&(
-                      <button onClick={()=>searchWalking(bl,next)}
-                        style={{fontSize:11,padding:'3px 9px',border:'1px solid rgba(234,179,8,.4)',
-                          borderRadius:6,background:'rgba(234,179,8,.12)',color:'var(--amber)',
-                          cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                        🚶{wt&&!wt.loading&&wt.min?` ${fmtTravelMin(wt.min)}`:''}
+                      <button title="הוסף מסלול הליכה" onClick={()=>searchWalking(bl,next)}
+                        style={{fontSize:15,padding:'2px 8px',border:'1px solid rgba(234,179,8,.4)',
+                          borderRadius:6,background:'rgba(234,179,8,.12)',color:'var(--amber)',cursor:'pointer'}}>
+                        🚶
                       </button>
                     )}
                     {bl.lat&&bl.lng&&next.lat&&next.lng&&(
-                      <button onClick={()=>searchTransit(bl,next)}
-                        style={{fontSize:11,padding:'3px 9px',border:'1px solid rgba(34,197,94,.4)',
-                          borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',
-                          cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                        🚌 תחבורה
+                      <button title="תחבורה ציבורית" onClick={()=>searchTransit(bl,next)}
+                        style={{fontSize:15,padding:'2px 8px',border:'1px solid rgba(34,197,94,.4)',
+                          borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',cursor:'pointer'}}>
+                        🚌
                       </button>
                     )}
                   </div>
@@ -2757,11 +2748,10 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                       </button>
                     )}
                     {bl.lat&&bl.lng&&next.lat&&next.lng&&(
-                      <button onClick={()=>searchTransit(bl,next)}
-                        style={{fontSize:11,padding:'3px 9px',border:'1px solid rgba(34,197,94,.4)',
-                          borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',
-                          cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                        🚌 תחבורה
+                      <button title="תחבורה ציבורית" onClick={()=>searchTransit(bl,next)}
+                        style={{fontSize:15,padding:'2px 8px',border:'1px solid rgba(34,197,94,.4)',
+                          borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',cursor:'pointer'}}>
+                        🚌
                       </button>
                     )}
                   </div>
