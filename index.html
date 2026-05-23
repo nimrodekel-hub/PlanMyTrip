@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v115';
+const APP_VERSION = 'v116';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1804,7 +1804,7 @@ function BlockModal({block,onSave,onClose,onDelete,prevEndTime,onCascadeSave,onC
 /* ══════════════════════════════════
    בלוק בציר הזמן
 ══════════════════════════════════ */
-function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,onFocusRoute,onNoteChange,dragging,dragOver,onDragStart,onDragOver,onDrop,onDragEnd,nowProgress}){
+function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,onFocusRoute,onNoteChange,dragging,dragOver,onDragStart,onDragOver,onDrop,onDragEnd,nowProgress,mapNum}){
   // תומך בשני פורמטים: durationMins (דסקטופ) ו-endTime (מובייל)
   const end=block.durationMins!=null?addMins(block.startTime,block.durationMins):(block.endTime||'');
   const col=BLOCK_COLOR[block.type]||'var(--text3)';
@@ -1831,7 +1831,10 @@ function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,
       <div style={{padding:'8px 12px'}}>
         {/* שורת כותרת: שעה + כפתורי פעולה */}
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:6,marginBottom:4}}>
-          <span style={{fontSize:11,fontWeight:700,color:col,flexShrink:0}}>{block.startTime}–{end}</span>
+          <div style={{display:'flex',alignItems:'center',gap:5,flexShrink:0}}>
+            {mapNum!=null&&<span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',minWidth:18,height:18,borderRadius:9,background:'var(--accent)',color:'#fff',fontSize:10,fontWeight:700,padding:'0 4px',lineHeight:1,flexShrink:0}}>{mapNum}</span>}
+            <span style={{fontSize:11,fontWeight:700,color:col}}>{block.startTime}–{end}</span>
+          </div>
           <div style={{display:'flex',alignItems:'center',gap:2}}>
             {block.isCompleted&&<span className="chip chip-green" style={{fontSize:10,padding:'2px 6px'}}>✓</span>}
             {block.rating>0&&<Stars value={block.rating} size={12}/>}
@@ -2650,6 +2653,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
               onNoteChange={(id,note)=>{const b=day.blocks.find(x=>x.id===id);if(b)updBlock({...b,notes:note});}}
               dragging={dragOver!==null&&dragIdxRef.current===si} dragOver={dragOver===si}
               nowProgress={activeIdx===si?nowBlockProgress:null}
+              mapNum={bl.lat&&bl.lng?si+1:null}
               onDragStart={e=>{e.dataTransfer.effectAllowed='move';dragIdxRef.current=si;}}
               onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move';if(dragOver!==si)setDragOver(si);}}
               onDrop={e=>{e.preventDefault();handleDrop(si);}}
