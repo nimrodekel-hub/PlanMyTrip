@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m54';
+const MOB_VER='m55';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -2921,14 +2921,14 @@ function TripScreen({trips,activeId,onSelectTrip,syncStatus,onRefresh,active,set
           </div>
         </div>
       </>:<div className="empty"><div className="eicon">✈️</div><div className="etitle">לא נמצאו טיולים</div><div className="edesc">צור טיול דרך אפליקציית המחשב</div></div>}
-      <div style={{margin:'20px 14px 0',padding:'12px 14px',background:'var(--bg3)',borderRadius:10,display:'flex',flexDirection:'column',alignItems:'center',gap:7}}>
+      <div style={{margin:'14px 14px 0',padding:'12px 14px',background:'var(--bg3)',borderRadius:10,display:'flex',flexDirection:'column',alignItems:'center',gap:7}}>
         <div style={{fontSize:11,color:'var(--text3)',fontWeight:600}}>PlanMyTrip</div>
         <div style={{display:'flex',gap:8,flexWrap:'wrap',justifyContent:'center'}}>
           <span className="ver-badge"><span className="v-mob">📱 Mobile</span><span className="v-mob">{MOB_VER}</span></span>
         </div>
         <div style={{fontSize:10,color:'var(--text3)',opacity:.6}}>© {new Date().getFullYear()} PlanMyTrip</div>
       </div>
-      <div style={{height:16}}/>
+      <div style={{height:'calc(var(--nav-h) + var(--safe-b) + 12px)'}}/>
     </div>
   );
 }
