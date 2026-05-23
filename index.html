@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v113';
+const APP_VERSION = 'v114';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1243,7 +1243,6 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
     if (!mapInst.current) return;
     markers.current.forEach(m=>m.setMap(null)); markers.current=[];
     if (!trip) return;
-    const iw=window.__gmIw, build=window.__gmBuild, iwPlace=window.__gmIwPlace;
 
     trip.days.forEach((day,i)=>{
       const color=DAY_COLORS[i%DAY_COLORS.length];
@@ -1271,15 +1270,15 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
           icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:10,fillColor:color,fillOpacity:0.9,strokeColor:'#fff',strokeWeight:1.5},
           zIndex:5,
         });
-        if (iw&&build&&iwPlace){
-          bm.addListener('click',()=>{
-            if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:block.title||'פעילות',lat:block.lat,lng:block.lng,address:block.location||''});return;}
-            iwPlace.data={name:block.title||'פעילות',address:block.location||'',lat:block.lat,lng:block.lng,placeId:null};
-            iw.setContent(build({name:block.title||'פעילות',address:block.location||'',lat:block.lat,lng:block.lng}));
-            iw.setPosition({lat:block.lat,lng:block.lng});
-            iw.open(mapInst.current);
-          });
-        }
+        bm.addListener('click',()=>{
+          if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:block.title||'פעילות',lat:block.lat,lng:block.lng,address:block.location||''});return;}
+          const iw=window.__gmIw,build=window.__gmBuild,iwPlace=window.__gmIwPlace;
+          if(!iw||!build||!iwPlace)return;
+          iwPlace.data={name:block.title||'פעילות',address:block.location||'',lat:block.lat,lng:block.lng,placeId:null};
+          iw.setContent(build({name:block.title||'פעילות',address:block.location||'',lat:block.lat,lng:block.lng}));
+          iw.setPosition({lat:block.lat,lng:block.lng});
+          iw.open(mapInst.current);
+        });
         markers.current.push(bm);
       });
     });
@@ -1310,28 +1309,28 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         icon:iconSpec,
         zIndex:3,
       });
-      if (iw&&build&&iwPlace){
-        m.addListener('click',()=>{
-          if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:item.name||'',lat:item.lat,lng:item.lng,address:item.address||''});return;}
-          // always show stored bank data immediately
-          const cached=item.placeId?window.__placeCache?.[item.placeId]:null;
-          const p=cached||{name:item.name,address:item.address||'',lat:item.lat,lng:item.lng,
-            placeId:item.placeId||null,rating:item.rating??null,
-            openStatus:item.openStatus||'',todayHours:item.todayHours||'',
-            phone:item.phone||'',website:item.website||'',placeType:item.placeType||''};
-          iwPlace.data=p;
-          iw.setContent(build(p));
-          iw.setPosition({lat:item.lat,lng:item.lng});
-          iw.open(mapInst.current);
-          // שלח ל-Google רק אם: לא בcache סשן AND הנתונים ישנים (יותר מ-7 ימים)
-          const _staleSec=7*24*3600;
-          const _nowSec=Math.floor(Date.now()/1000);
-          const _isStale=!item.lastFetched||((_nowSec-item.lastFetched)>_staleSec);
-          if(item.placeId&&!cached&&_isStale&&window.__gmShowPlace){
-            window.__gmShowPlace(item.placeId,item.lat,item.lng);
-          }
-        });
-      }
+      m.addListener('click',()=>{
+        if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:item.name||'',lat:item.lat,lng:item.lng,address:item.address||''});return;}
+        const iw=window.__gmIw,build=window.__gmBuild,iwPlace=window.__gmIwPlace;
+        if(!iw||!build||!iwPlace)return;
+        // always show stored bank data immediately
+        const cached=item.placeId?window.__placeCache?.[item.placeId]:null;
+        const p=cached||{name:item.name,address:item.address||'',lat:item.lat,lng:item.lng,
+          placeId:item.placeId||null,rating:item.rating??null,
+          openStatus:item.openStatus||'',todayHours:item.todayHours||'',
+          phone:item.phone||'',website:item.website||'',placeType:item.placeType||''};
+        iwPlace.data=p;
+        iw.setContent(build(p));
+        iw.setPosition({lat:item.lat,lng:item.lng});
+        iw.open(mapInst.current);
+        // שלח ל-Google רק אם: לא בcache סשן AND הנתונים ישנים (יותר מ-7 ימים)
+        const _staleSec=7*24*3600;
+        const _nowSec=Math.floor(Date.now()/1000);
+        const _isStale=!item.lastFetched||((_nowSec-item.lastFetched)>_staleSec);
+        if(item.placeId&&!cached&&_isStale&&window.__gmShowPlace){
+          window.__gmShowPlace(item.placeId,item.lat,item.lng);
+        }
+      });
       markers.current.push(m);
     });
   },[trip,ready]);
