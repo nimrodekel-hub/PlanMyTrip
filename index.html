@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v108';
+const APP_VERSION = 'v109';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1288,10 +1288,10 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
     // נתיב SVG של מזוודה: גוף + ידית עליונה + רצועה אמצעית
     const SUITCASE_PATH='M-7,-2 L-7,7 L7,7 L7,-2 Z M-3,-2 L-3,-7 L3,-7 L3,-2 Z M-5,2 L5,2';
     const BANK_ICON={
-      liked:    {color:'#ec4899',label:'♥',scale:9},   // ❤️ מועדפים
-      wantToGo: {color:'#22c55e',label:'⚑',scale:9},   // 🏴 רוצה להגיע
-      saved:    {color:'#f59e0b',label:'★',scale:8},   // ⭐ מקומות שמורים
-      list:     {color:'#6366f1',label:'♦',scale:8},   // 📋 רשימה
+      liked:    {color:'#ec4899',label:'♥',scale:7},   // ❤️ מועדפים
+      wantToGo: {color:'#22c55e',label:'⚑',scale:7},   // 🏴 רוצה להגיע
+      saved:    {color:'#f59e0b',label:'★',scale:6},   // ⭐ מקומות שמורים
+      list:     {color:'#6366f1',label:'♦',scale:6},   // 📋 רשימה
       itinerary:{color:'#16a34a',label:'',  scale:1, svgPath:SUITCASE_PATH}, // 🧳 תוכנית נסיעה — ירוק + מזוודה
     };
     const TITLE_EMOJI={liked:'❤️',wantToGo:'🏴',saved:'⭐',list:'📋',itinerary:'🧳'};
@@ -1305,7 +1305,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         position:{lat:item.lat,lng:item.lng},
         map:mapInst.current,
         title:`${TITLE_EMOJI[item._listSource]||'📍'} ${item.name}`,
-        ...(ic.label?{label:{text:ic.label,color:'#fff',fontSize:'11px',fontWeight:'bold'}}:{}),
+        ...(ic.label?{label:{text:ic.label,color:'#fff',fontSize:'9px',fontWeight:'bold'}}:{}),
         icon:iconSpec,
         zIndex:3,
       });
@@ -2261,6 +2261,71 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
       setTransitSearch(p=>p?{...p,loading:false,results:routes,error:null}:null);
     });
   };
+  const searchWalking=(fromBlock,toBlock,insertMode='between')=>{
+    if(!window.google?.maps?.DirectionsService){toast('Google Maps לא זמין','error');return;}
+    const{lat:fLat,lng:fLng}=fromBlock,{lat:tLat,lng:tLng}=toBlock;
+    if(!fLat||!fLng||!tLat||!tLng){toast('חסרים נתוני מיקום','error');return;}
+    setTransitSearch({loading:true,fromBlockIdx:sorted.indexOf(fromBlock),insertMode,
+      fromLat:fLat,fromLng:fLng,toLat:tLat,toLng:tLng,results:null,error:null,isWalking:true});
+    new window.google.maps.DirectionsService().route({
+      origin:{lat:fLat,lng:fLng},destination:{lat:tLat,lng:tLng},
+      travelMode:window.google.maps.TravelMode.WALKING,
+      provideRouteAlternatives:true,
+    },(result,status)=>{
+      if(status!=='OK'||!result?.routes?.length){
+        const errMsg=status==='REQUEST_DENIED'
+          ?'REQUEST_DENIED — יש לוודא ש-Directions API מופעל במפתח ה-API שלך'
+          :`לא נמצא מסלול הליכה (${status})`;
+        setTransitSearch(p=>p?{...p,loading:false,results:null,error:errMsg}:null);return;
+      }
+      const routes=result.routes.map(r=>{
+        const leg=r.legs[0];
+        const durationMins=Math.ceil(leg.duration.value/60);
+        const distanceM=leg.distance?.value||0;
+        const distanceText=distanceM>=1000?(distanceM/1000).toFixed(1)+'ק"מ':distanceM+'מ\'';
+        const steps=(leg.steps||[]).map(s=>({
+          type:'walk_step',
+          instruction:(s.html_instructions||'').replace(/<[^>]+>/g,'').trim(),
+          durationMins:Math.ceil((s.duration?.value||0)/60),
+          distanceM:s.distance?.value||0,
+        }));
+        return{durationMins,distanceM,distanceText,steps};
+      });
+      setTransitSearch(p=>p?{...p,loading:false,results:routes,error:null}:null);
+    });
+  };
+  const fmtWalkingNotes=steps=>steps.filter(s=>s.instruction).map(s=>`🚶 ${s.instruction}${s.distanceM>=20?' ('+( s.distanceM>=1000?(s.distanceM/1000).toFixed(1)+'ק"מ':s.distanceM+'מ\'')+')':''}`.trim()).join(' | ');
+  const insertWalkingRouteBlock=(afterBlock,route)=>{
+    const si=sorted.findIndex(b=>b.id===afterBlock.id);
+    const travelStart=addMins(afterBlock.startTime,bDur(afterBlock));
+    const nb={id:uid(),type:'travel',title:`🚶 הליכה (~${fmtTravelMin(route.durationMins)})`,
+      startTime:travelStart,durationMins:route.durationMins,notes:fmtWalkingNotes(route.steps),
+      isAutoTravel:true,isWalking:true};
+    let t=addMins(travelStart,route.durationMins);
+    const tail=sorted.slice(si+1).map(b2=>{const s={...b2,startTime:t};t=addMins(t,bDur(b2));return s;});
+    onUpdate({...day,blocks:[...sorted.slice(0,si+1),nb,...tail]});
+    setTransitSearch(null);toast(`🚶 הליכה נוספה`,'success');
+  };
+  const insertWalkingRouteBlockStart=(route)=>{
+    if(!sorted.length)return;
+    const firstStart=sorted[0].startTime;
+    const nb={id:uid(),type:'travel',title:`🚶 הליכה (~${fmtTravelMin(route.durationMins)})`,
+      startTime:firstStart,durationMins:route.durationMins,notes:fmtWalkingNotes(route.steps),
+      isAutoTravel:true,isWalking:true};
+    const shifted=day.blocks.map(b=>({...b,startTime:addMins(b.startTime,route.durationMins)}));
+    onUpdate({...day,blocks:[nb,...shifted]});
+    setTransitSearch(null);toast(`🚶 הליכה נוספה לתחילת הלוז`,'success');
+  };
+  const insertWalkingRouteBlockEnd=(route)=>{
+    if(!sorted.length)return;
+    const last2=sorted[sorted.length-1];
+    const travelStart=addMins(last2.startTime,bDur(last2));
+    const nb={id:uid(),type:'travel',title:`🚶 הליכה (~${fmtTravelMin(route.durationMins)})`,
+      startTime:travelStart,durationMins:route.durationMins,notes:fmtWalkingNotes(route.steps),
+      isAutoTravel:true,isWalking:true};
+    onUpdate({...day,blocks:[...day.blocks,nb]});
+    setTransitSearch(null);toast(`🚶 הליכה נוספה לסיום הלוז`,'success');
+  };
   const fmtTransitNotes=steps=>steps.map(s=>
     s.type==='walk'
       ?`🚶 ${s.durationMins} דק' הליכה${s.distanceM>=50?' ('+( s.distanceM>=1000?(s.distanceM/1000).toFixed(1)+'ק"מ':s.distanceM+'מ\'')+')'  :''}`
@@ -2486,15 +2551,6 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
               onUpdate({...day,blocks:[nb,...shifted]});
               toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה לתחילת הלוז`,'success');
             };
-            const insertWalkStart=()=>{
-              if(!wt?.min)return;
-              const firstStart=sorted[0].startTime;
-              const nb={id:uid(),type:'travel',title:`🚶 הליכה (~${fmtTravelMin(wt.min)})`,
-                startTime:firstStart,durationMins:wt.min,notes:'',isAutoTravel:true,isWalking:true};
-              const shifted=day.blocks.map(b=>({...b,startTime:addMins(b.startTime,wt.min)}));
-              onUpdate({...day,blocks:[nb,...shifted]});
-              toast(`🚶 הליכה של ${fmtTravelMin(wt.min)} נוספה לתחילת הלוז`,'success');
-            };
             return(
               <div key="__start_conn__" style={{display:'flex',alignItems:'center',gap:8,
                 padding:'6px 8px 6px 40px',margin:'0 0 6px',flexWrap:'wrap',
@@ -2509,12 +2565,14 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                     cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
                   🚗 הוסף
                 </button>
-                {wt&&!wt.loading&&wt.min&&wt.min<=90&&(
-                  <button onClick={insertWalkStart}
+                {sorted[0].lat&&sorted[0].lng&&(
+                  <button onClick={()=>searchWalking(
+                    {lat:day.startLat,lng:day.startLng,startTime:day.startTime||'08:00',durationMins:0},
+                    sorted[0],'start')}
                     style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(234,179,8,.4)',
                       borderRadius:6,background:'rgba(234,179,8,.12)',color:'var(--amber)',
                       cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                    🚶 {fmtTravelMin(wt.min)}
+                    🚶{wt&&!wt.loading&&wt.min?` ${fmtTravelMin(wt.min)}`:''}
                   </button>
                 )}
                 {sorted[0].lat&&sorted[0].lng&&(
@@ -2547,14 +2605,6 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
               onUpdate({...day,blocks:[...day.blocks,nb]});
               toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה לסיום הלוז`,'success');
             };
-            const insertWalkEnd=()=>{
-              if(!wt?.min)return;
-              const travelStart=addMins(last2.startTime,bDur(last2));
-              const nb={id:uid(),type:'travel',title:`🚶 הליכה (~${fmtTravelMin(wt.min)})`,
-                startTime:travelStart,durationMins:wt.min,notes:'',isAutoTravel:true,isWalking:true};
-              onUpdate({...day,blocks:[...day.blocks,nb]});
-              toast(`🚶 הליכה של ${fmtTravelMin(wt.min)} נוספה לסיום הלוז`,'success');
-            };
             return(
               <div key="__end_conn__" style={{display:'flex',alignItems:'center',gap:8,
                 padding:'6px 8px 6px 40px',margin:'0 0 6px',flexWrap:'wrap',
@@ -2569,12 +2619,12 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                     cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
                   🚗 הוסף
                 </button>
-                {wt&&!wt.loading&&wt.min&&wt.min<=90&&(
-                  <button onClick={insertWalkEnd}
+                {last2.lat&&last2.lng&&(
+                  <button onClick={()=>searchWalking(last2,{lat:day.endLat,lng:day.endLng},'end')}
                     style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(234,179,8,.4)',
                       borderRadius:6,background:'rgba(234,179,8,.12)',color:'var(--amber)',
                       cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                    🚶 {fmtTravelMin(wt.min)}
+                    🚶{wt&&!wt.loading&&wt.min?` ${fmtTravelMin(wt.min)}`:''}
                   </button>
                 )}
                 {last2.lat&&last2.lng&&(
@@ -2648,16 +2698,6 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                   onUpdate({...day,blocks:[...sorted.slice(0,si+1),nb2,...tail]});
                   toast(`🚗 נסיעה של ${fmtTravelMin(buffered)} נוספה`,'success');
                 };
-                const insertWalk=()=>{
-                  if(!wt?.min)return;
-                  const travelStart=addMins(bl.startTime,bDur(bl));
-                  const nb2={id:uid(),type:'travel',title:`🚶 הליכה (~${fmtTravelMin(wt.min)})`,
-                    startTime:travelStart,durationMins:wt.min,notes:'',isAutoTravel:true,isWalking:true};
-                  let t=addMins(travelStart,wt.min);
-                  const tail=sorted.slice(si+1).map(b2=>{const s={...b2,startTime:t};t=addMins(t,bDur(b2));return s;});
-                  onUpdate({...day,blocks:[...sorted.slice(0,si+1),nb2,...tail]});
-                  toast(`🚶 הליכה של ${fmtTravelMin(wt.min)} נוספה`,'success');
-                };
                 return(
                   <div key={`tt-${ttKey}`} style={{...connBase,background:'rgba(79,142,247,.06)',border:'1px solid rgba(79,142,247,.18)',flexWrap:'wrap'}}>
                     {gapLabel}{linkBtn}
@@ -2672,12 +2712,12 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                         cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
                       🚗 הוסף
                     </button>
-                    {wt&&!wt.loading&&wt.min&&wt.min<=90&&(
-                      <button onClick={insertWalk}
+                    {bl.lat&&bl.lng&&next.lat&&next.lng&&(
+                      <button onClick={()=>searchWalking(bl,next)}
                         style={{fontSize:11,padding:'3px 9px',border:'1px solid rgba(234,179,8,.4)',
                           borderRadius:6,background:'rgba(234,179,8,.12)',color:'var(--amber)',
                           cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                        🚶 {fmtTravelMin(wt.min)}
+                        🚶{wt&&!wt.loading&&wt.min?` ${fmtTravelMin(wt.min)}`:''}
                       </button>
                     )}
                     {bl.lat&&bl.lng&&next.lat&&next.lng&&(
@@ -2697,10 +2737,18 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                   <div key={`lnk-${ttKey}`} style={{...connBase,background:'rgba(234,179,8,.06)',border:'1px solid rgba(234,179,8,.2)',flexWrap:'wrap'}}>
                     {gapLabel}{linkBtn}
                     {bl.lat&&bl.lng&&next.lat&&next.lng&&(
+                      <button onClick={()=>searchWalking(bl,next)}
+                        style={{fontSize:11,padding:'3px 9px',border:'1px solid rgba(234,179,8,.4)',
+                          borderRadius:6,background:'rgba(234,179,8,.12)',color:'var(--amber)',
+                          cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
+                        🚶
+                      </button>
+                    )}
+                    {bl.lat&&bl.lng&&next.lat&&next.lng&&(
                       <button onClick={()=>searchTransit(bl,next)}
                         style={{fontSize:11,padding:'3px 9px',border:'1px solid rgba(34,197,94,.4)',
                           borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',
-                          cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap',marginRight:'auto'}}>
+                          cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
                         🚌 תחבורה
                       </button>
                     )}
@@ -2715,54 +2763,82 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
         })()}
       </div>
 
-      {/* ── modal תחבורה ציבורית ── */}
+      {/* ── modal תחבורה ציבורית / הליכה ── */}
       {transitSearch&&(
         <div style={{position:'fixed',inset:0,zIndex:500,background:'rgba(0,0,0,.6)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}}
           onClick={e=>{if(e.target===e.currentTarget)setTransitSearch(null);}}>
           <div style={{background:'var(--bg2)',borderRadius:16,width:'100%',maxWidth:480,maxHeight:'80vh',display:'flex',flexDirection:'column',overflow:'hidden',boxShadow:'0 20px 60px rgba(0,0,0,.5)'}}>
             <div style={{padding:'14px 18px 12px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:10}}>
-              <span style={{fontWeight:700,fontSize:15,flex:1}}>🚌 תחבורה ציבורית</span>
+              <span style={{fontWeight:700,fontSize:15,flex:1}}>{transitSearch.isWalking?'🚶 הליכה רגלית':'🚌 תחבורה ציבורית'}</span>
               <button onClick={()=>setTransitSearch(null)} style={{background:'none',border:'none',color:'var(--text3)',fontSize:20,cursor:'pointer',lineHeight:1}}>✕</button>
             </div>
             <div style={{overflowY:'auto',flex:1,padding:'12px 16px 16px'}}>
-              {transitSearch.loading&&<div style={{textAlign:'center',padding:'32px',color:'var(--text3)',fontSize:13}}>🔍 מחפש קווי תחבורה...</div>}
+              {transitSearch.loading&&<div style={{textAlign:'center',padding:'32px',color:'var(--text3)',fontSize:13}}>
+                🔍 {transitSearch.isWalking?'מחפש מסלול הליכה...':'מחפש קווי תחבורה...'}
+              </div>}
               {!transitSearch.loading&&transitSearch.error&&(
                 <div style={{padding:'20px 16px',textAlign:'center'}}>
                   <div style={{color:'var(--red)',fontSize:13,marginBottom:12}}>{transitSearch.error}</div>
-                  {transitSearch.fromLat&&<a href={`https://www.google.com/maps/dir/?api=1&origin=${transitSearch.fromLat},${transitSearch.fromLng}&destination=${transitSearch.toLat},${transitSearch.toLng}&travelmode=transit`}
+                  {transitSearch.fromLat&&<a href={`https://www.google.com/maps/dir/?api=1&origin=${transitSearch.fromLat},${transitSearch.fromLng}&destination=${transitSearch.toLat},${transitSearch.toLng}&travelmode=${transitSearch.isWalking?'walking':'transit'}`}
                     target="_blank" rel="noreferrer"
                     style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12,padding:'7px 14px',
                       borderRadius:8,background:'rgba(79,142,247,.12)',color:'var(--accent)',
                       border:'1px solid rgba(79,142,247,.3)',textDecoration:'none',fontWeight:700}}>
-                    🗺️ פתח מסלול ב-Google Maps
+                    🗺️ פתח ב-Google Maps
                   </a>}
                 </div>
               )}
               {!transitSearch.loading&&transitSearch.results?.map((route,i)=>(
                 <button key={i} onClick={()=>{
-                  const{insertMode,fromBlockIdx}=transitSearch;
-                  if(insertMode==='start')insertTransitBlockStart(route);
-                  else if(insertMode==='end')insertTransitBlockEnd(route);
-                  else insertTransitBlock(sorted[fromBlockIdx],route);
+                  const{insertMode,fromBlockIdx,isWalking:iw}=transitSearch;
+                  if(iw){
+                    if(insertMode==='start')insertWalkingRouteBlockStart(route);
+                    else if(insertMode==='end')insertWalkingRouteBlockEnd(route);
+                    else insertWalkingRouteBlock(sorted[fromBlockIdx],route);
+                  } else {
+                    if(insertMode==='start')insertTransitBlockStart(route);
+                    else if(insertMode==='end')insertTransitBlockEnd(route);
+                    else insertTransitBlock(sorted[fromBlockIdx],route);
+                  }
                 }}
                   style={{width:'100%',textAlign:'right',padding:'12px 14px',marginBottom:8,borderRadius:10,
                     border:'1px solid var(--border)',background:'var(--surface)',cursor:'pointer',
                     fontFamily:'Heebo,sans-serif',transition:'background .15s'}}>
-                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
-                    <span style={{fontSize:18}}>{route.steps[0]?.icon||'🚌'}</span>
-                    <span style={{fontWeight:700,fontSize:14,color:'var(--text)',flex:1}}>{route.summary}</span>
-                    <span style={{fontWeight:700,color:'var(--accent)',fontSize:14}}>{fmtTravelMin(route.durationMins)}</span>
-                  </div>
-                  {route.steps.map((s,j)=>(
-                    <div key={j} style={{fontSize:11,paddingRight:26,marginTop:3,
-                      color:s.type==='walk'?'var(--text3)':'var(--text2)',
-                      fontStyle:s.type==='walk'?'italic':'normal'}}>
-                      {s.type==='walk'
-                        ?`🚶 ${s.durationMins} דק' הליכה${s.distanceM>=50?' · '+(s.distanceM>=1000?(s.distanceM/1000).toFixed(1)+'ק"מ':s.distanceM+'מ\''):''}`
-                        :`${s.icon} ${s.lineName||s.lineShort}: ${s.departure}→${s.arrival}${s.numStops>0?` · ${s.numStops} תח'`:''} (${s.durationMins} דק')`}
-                    </div>
-                  ))}
-                  {route.transfers>0&&<div style={{fontSize:10,color:'var(--amber)',paddingRight:26,marginTop:4}}>↔️ {route.transfers} החלפות</div>}
+                  {transitSearch.isWalking?(
+                    <>
+                      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                        <span style={{fontSize:18}}>🚶</span>
+                        <span style={{fontWeight:700,fontSize:14,color:'var(--text)',flex:1}}>
+                          {route.distanceText}
+                        </span>
+                        <span style={{fontWeight:700,color:'var(--amber)',fontSize:14}}>{fmtTravelMin(route.durationMins)}</span>
+                      </div>
+                      {route.steps.slice(0,5).map((s,j)=>(
+                        <div key={j} style={{fontSize:11,paddingRight:26,marginTop:3,color:'var(--text2)'}}>
+                          🚶 {s.instruction}{s.distanceM>=20?` (${s.distanceM>=1000?(s.distanceM/1000).toFixed(1)+'ק"מ':s.distanceM+'מ\''})`:''}
+                        </div>
+                      ))}
+                      {route.steps.length>5&&<div style={{fontSize:10,color:'var(--text3)',paddingRight:26,marginTop:3}}>...ועוד {route.steps.length-5} צעדים</div>}
+                    </>
+                  ):(
+                    <>
+                      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                        <span style={{fontSize:18}}>{route.steps[0]?.icon||'🚌'}</span>
+                        <span style={{fontWeight:700,fontSize:14,color:'var(--text)',flex:1}}>{route.summary}</span>
+                        <span style={{fontWeight:700,color:'var(--accent)',fontSize:14}}>{fmtTravelMin(route.durationMins)}</span>
+                      </div>
+                      {route.steps.map((s,j)=>(
+                        <div key={j} style={{fontSize:11,paddingRight:26,marginTop:3,
+                          color:s.type==='walk'?'var(--text3)':'var(--text2)',
+                          fontStyle:s.type==='walk'?'italic':'normal'}}>
+                          {s.type==='walk'
+                            ?`🚶 ${s.durationMins} דק' הליכה${s.distanceM>=50?' · '+(s.distanceM>=1000?(s.distanceM/1000).toFixed(1)+'ק"מ':s.distanceM+'מ\''):''}`
+                            :`${s.icon} ${s.lineName||s.lineShort}: ${s.departure}→${s.arrival}${s.numStops>0?` · ${s.numStops} תח'`:''} (${s.durationMins} דק')`}
+                        </div>
+                      ))}
+                      {route.transfers>0&&<div style={{fontSize:10,color:'var(--amber)',paddingRight:26,marginTop:4}}>↔️ {route.transfers} החלפות</div>}
+                    </>
+                  )}
                 </button>
               ))}
             </div>
