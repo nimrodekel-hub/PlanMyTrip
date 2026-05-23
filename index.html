@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v109';
+const APP_VERSION = 'v110';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -2536,16 +2536,19 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
 
           const startConn=(()=>{
             if(!sorted.length||!day.startLat||!day.startLng||sorted[0].type==='travel')return null;
-            const key=`__start__->${sorted[0].id}`;
+            const first=sorted[0];
+            const firstHasCoords=!!(first.lat&&first.lng);
+            const key=`__start__->${first.id}`;
             const tt=travelTimes[key];
-            const wt=travelTimes[`walk:__start__->${sorted[0].id}`];
-            if(!tt||tt.loading||tt.min==null)return null;
+            const wt=travelTimes[`walk:__start__->${first.id}`];
+            const hasCar=tt&&!tt.loading&&tt.min!=null;
+            // הצג קונקטור אם יש נסיעה ברכב OR אם לפעילות הראשונה יש קואורדינטות (להליכה/תחבורה)
+            if(!hasCar&&!firstHasCoords)return null;
             const buf2=settings?.travelBuffer??1.2;
-            const buffered=Math.round(tt.min*buf2);
             const insertTravelStart=()=>{
-              const firstStart=sorted[0].startTime;
-              const nb={id:uid(),type:'travel',
-                title:`🚗 נסיעה (~${fmtTravelMin(buffered)})`,
+              const buffered=Math.round(tt.min*buf2);
+              const firstStart=first.startTime;
+              const nb={id:uid(),type:'travel',title:`🚗 נסיעה (~${fmtTravelMin(buffered)})`,
                 startTime:firstStart,durationMins:buffered,notes:'',isAutoTravel:true};
               const shifted=day.blocks.map(b=>({...b,startTime:addMins(b.startTime,buffered)}));
               onUpdate({...day,blocks:[nb,...shifted]});
@@ -2556,29 +2559,31 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                 padding:'6px 8px 6px 40px',margin:'0 0 6px',flexWrap:'wrap',
                 background:'rgba(34,197,94,.07)',borderRadius:8,border:'1px solid rgba(34,197,94,.25)',marginRight:36}}>
                 <span style={{fontSize:11,color:'var(--green)',flex:1}}>
-                  🟢 {day.startLocation||'מוצא'} → ראשון: {fmtTravelMin(tt.min)} נסיעה
-                  {buf2>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf2-1))} דק' = <b>{fmtTravelMin(buffered)}</b></span>}
+                  🟢 {day.startLocation||'מוצא'} → ראשון
+                  {hasCar&&<>: {fmtTravelMin(tt.min)} נסיעה{buf2>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf2-1))} דק' = <b>{fmtTravelMin(Math.round(tt.min*buf2))}</b></span>}</>}
                 </span>
-                <button onClick={insertTravelStart}
-                  style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(34,197,94,.4)',
-                    borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',
-                    cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                  🚗 הוסף
-                </button>
-                {sorted[0].lat&&sorted[0].lng&&(
+                {hasCar&&(
+                  <button onClick={insertTravelStart}
+                    style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(34,197,94,.4)',
+                      borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',
+                      cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
+                    🚗 הוסף
+                  </button>
+                )}
+                {firstHasCoords&&(
                   <button onClick={()=>searchWalking(
                     {lat:day.startLat,lng:day.startLng,startTime:day.startTime||'08:00',durationMins:0},
-                    sorted[0],'start')}
+                    first,'start')}
                     style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(234,179,8,.4)',
                       borderRadius:6,background:'rgba(234,179,8,.12)',color:'var(--amber)',
                       cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
                     🚶{wt&&!wt.loading&&wt.min?` ${fmtTravelMin(wt.min)}`:''}
                   </button>
                 )}
-                {sorted[0].lat&&sorted[0].lng&&(
+                {firstHasCoords&&(
                   <button onClick={()=>searchTransit(
                     {lat:day.startLat,lng:day.startLng,startTime:day.startTime||'08:00',durationMins:0},
-                    sorted[0],'start')}
+                    first,'start')}
                     style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(34,197,94,.4)',
                       borderRadius:6,background:'rgba(34,197,94,.12)',color:'var(--green)',
                       cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
@@ -2591,13 +2596,15 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
           const endConn=(()=>{
             if(!sorted.length||!day.endLat||!day.endLng||sorted[sorted.length-1].type==='travel')return null;
             const last2=sorted[sorted.length-1];
+            const lastHasCoords=!!(last2.lat&&last2.lng);
             const key=`${last2.id}->__end__`;
             const tt=travelTimes[key];
             const wt=travelTimes[`walk:${last2.id}->__end__`];
-            if(!tt||tt.loading||tt.min==null)return null;
+            const hasCar=tt&&!tt.loading&&tt.min!=null;
+            if(!hasCar&&!lastHasCoords)return null;
             const buf2=settings?.travelBuffer??1.2;
-            const buffered=Math.round(tt.min*buf2);
             const insertTravelEnd=()=>{
+              const buffered=Math.round(tt.min*buf2);
               const travelStart=addMins(last2.startTime,bDur(last2));
               const nb={id:uid(),type:'travel',
                 title:`🚗 נסיעה (~${fmtTravelMin(buffered)})`,
@@ -2610,16 +2617,20 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                 padding:'6px 8px 6px 40px',margin:'0 0 6px',flexWrap:'wrap',
                 background:'rgba(239,68,68,.07)',borderRadius:8,border:'1px solid rgba(239,68,68,.25)',marginRight:36}}>
                 <span style={{fontSize:11,color:'var(--red)',flex:1}}>
-                  🔴 אחרון → {day.endLocation||'יעד'}: {fmtTravelMin(tt.min)} נסיעה
-                  {buf2>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf2-1))} דק' = <b>{fmtTravelMin(buffered)}</b></span>}
+                  🔴 אחרון → {day.endLocation||'יעד'}
+                  {hasCar&&<>: {fmtTravelMin(tt.min)} נסיעה
+                    {buf2>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf2-1))} דק' = <b>{fmtTravelMin(Math.round(tt.min*buf2))}</b></span>}
+                  </>}
                 </span>
-                <button onClick={insertTravelEnd}
-                  style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(239,68,68,.4)',
-                    borderRadius:6,background:'rgba(239,68,68,.12)',color:'var(--red)',
-                    cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
-                  🚗 הוסף
-                </button>
-                {last2.lat&&last2.lng&&(
+                {hasCar&&(
+                  <button onClick={insertTravelEnd}
+                    style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(239,68,68,.4)',
+                      borderRadius:6,background:'rgba(239,68,68,.12)',color:'var(--red)',
+                      cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,whiteSpace:'nowrap'}}>
+                    🚗 הוסף
+                  </button>
+                )}
+                {lastHasCoords&&(
                   <button onClick={()=>searchWalking(last2,{lat:day.endLat,lng:day.endLng},'end')}
                     style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(234,179,8,.4)',
                       borderRadius:6,background:'rgba(234,179,8,.12)',color:'var(--amber)',
@@ -2627,7 +2638,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                     🚶{wt&&!wt.loading&&wt.min?` ${fmtTravelMin(wt.min)}`:''}
                   </button>
                 )}
-                {last2.lat&&last2.lng&&(
+                {lastHasCoords&&(
                   <button onClick={()=>searchTransit(last2,{lat:day.endLat,lng:day.endLng},'end')}
                     style={{fontSize:11,padding:'3px 10px',border:'1px solid rgba(239,68,68,.4)',
                       borderRadius:6,background:'rgba(239,68,68,.12)',color:'var(--red)',
