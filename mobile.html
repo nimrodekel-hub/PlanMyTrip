@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m67';
+const MOB_VER='m68';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -2560,13 +2560,25 @@ const haversineKm=(lat1,lng1,lat2,lng2)=>{
 };
 const fmtDist=km=>km===Infinity?'':km<1?`${Math.round(km*1000)}מ׳`:`${km<10?km.toFixed(1):Math.round(km)}ק"מ`;
 
-function BankScreen({trip,active,onShowOnMap}){
+function BankScreen({trip,active,onShowOnMap,onUpdate}){
   const[search,setSearch]=useState('');
   const[sortMode,setSortMode]=useState('default'); // 'default'|'name'|'distance'
   const[userPos,setUserPos]=useState(null); // {lat,lng}
   const[expanded,setExpanded]=useState(new Set()); // מדינות פתוחות — ברירת מחדל: סגורות
   const[filterSrc,setFilterSrc]=useState(null);
+  const[dayBankSel,setDayBankSel]=useState(null); // פריט הממתין להוספה לבנק יומי
   const bank=trip?.interestBank||[];
+
+  const addToDayBank=(dayId)=>{
+    if(!dayBankSel||!trip)return;
+    const day=trip.days.find(d=>d.id===dayId);
+    if(!day)return;
+    const already=(day.dayBank||[]).some(i=>i.placeId&&i.placeId===dayBankSel.placeId&&dayBankSel.placeId);
+    if(already){toast('כבר קיים בבנק היומי','w');setDayBankSel(null);return;}
+    onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,dayBank:[...(d.dayBank||[]),{...dayBankSel,id:uid()}]}:d)});
+    toast(`"${dayBankSel.name}" נוסף לבנק יומי 📌`,'s');
+    setDayBankSel(null);
+  };
 
   const toggleCountry=country=>setExpanded(prev=>{
     const s=new Set(prev);
@@ -2653,6 +2665,12 @@ function BankScreen({trip,active,onShowOnMap}){
           {item.note&&<div style={{fontSize:11,color:'var(--accent2)',marginTop:2}}>📝 {item.note}</div>}
         </div>
         {item.rating&&<div style={{fontSize:11,color:'var(--amber)',flexShrink:0,marginLeft:4}}>⭐ {item.rating}</div>}
+        {onUpdate&&(trip?.days||[]).length>0&&(
+          <button onClick={()=>setDayBankSel(item)}
+            style={{background:'rgba(139,92,246,.13)',color:'#8b5cf6',border:'1px solid rgba(139,92,246,.3)',
+              borderRadius:7,padding:'5px 8px',fontSize:14,cursor:'pointer',flexShrink:0}}
+            title="הוסף לבנק יומי">📌</button>
+        )}
         {hasLoc&&<button className="map-btn" onClick={()=>onShowOnMap&&onShowOnMap({lat:item.lat,lng:item.lng,placeId:item.placeId,name:item.name,address:item.address||''})}>🗺️</button>}
       </div>
     );
@@ -2767,6 +2785,13 @@ function BankScreen({trip,active,onShowOnMap}){
           <div style={{height:16}}/>
         </div>
       )}
+
+      {/* day selector — מוצג כשלוחצים על 📌 */}
+      {dayBankSel&&<DaySelector
+        days={trip?.days||[]}
+        title="📌 הוסף לבנק יומי של יום:"
+        onSelect={addToDayBank}
+        onClose={()=>setDayBankSel(null)}/>}
     </div>
   );
 }
@@ -3198,7 +3223,7 @@ function App(){
       <div className="sw">
         <MapScreen trip={trip} active={screen==='map'} mapsReady={mapsReady} onUpdate={updateTrip} mapFocusRef={mapFocusRef} mapPickCallbackRef={mapPickCallbackRef} mapPickLabel={mapPickLabel} onCancelMapPick={cancelMapPick}/>
         <ScheduleScreen trip={trip} active={screen==='schedule'} onShowOnMap={showOnMap} onUpdate={updateTrip} settings={settings} onPickFromMap={pickLocationFromMap}/>
-        <BankScreen trip={trip} active={screen==='bank'} onShowOnMap={showOnMap}/>
+        <BankScreen trip={trip} active={screen==='bank'} onShowOnMap={showOnMap} onUpdate={updateTrip}/>
         <ListsScreen trip={trip} active={screen==='lists'} onUpdate={updateTrip}/>
         <TripScreen trips={trips} activeId={activeId} onSelectTrip={setActiveId} syncStatus={syncStatus} onRefresh={loadFromFirebase} active={screen==='trip'} settings={settings} onSettingsChange={setSettings}/>
       </div>
