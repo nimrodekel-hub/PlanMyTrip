@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v122';
+const APP_VERSION = 'v123';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1963,9 +1963,11 @@ function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,
 /* ════════════════════════════════
    LOCATION PICKER MODAL (desktop)
 ════════════════════════════════ */
+const BANK_SRC_PICKER={liked:{emoji:'❤️',color:'#ec4899'},wantToGo:{emoji:'🏴',color:'#22c55e'},saved:{emoji:'⭐',color:'#f59e0b'},list:{emoji:'📋',color:'#6366f1'},itinerary:{emoji:'🧳',color:'#2563eb'}};
 function LocationPickerModal({bank,title,onPick,onPickFromMap,onClose,onCreateEmpty}){
   const[search,setSearch]=useState('');
-  const filtered=bank.filter(i=>!search||(i.name||'').includes(search)||(i.address||'').includes(search));
+  const q=search.trim().toLowerCase();
+  const filtered=bank.filter(i=>!q||(i.name||'').toLowerCase().includes(q)||(i.address||'').toLowerCase().includes(q));
   return(
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal" style={{maxWidth:460,width:'95vw',maxHeight:'80vh',display:'flex',flexDirection:'column'}}>
@@ -1993,7 +1995,9 @@ function LocationPickerModal({bank,title,onPick,onPickFromMap,onClose,onCreateEm
               ?<div style={{padding:'16px',textAlign:'center',color:'var(--text3)',fontSize:13}}>
                 {bank.length===0?'הבנק ריק — הוסף מקומות קודם':'אין תוצאות'}
               </div>
-              :filtered.map(item=>(
+              :filtered.map(item=>{
+                const src=BANK_SRC_PICKER[item._listSource]||null;
+                return(
                 <div key={item.id} onClick={()=>onPick(item)}
                   className="timeline-item"
                   style={{cursor:'pointer',padding:'9px 10px',borderRadius:8,marginBottom:4,
@@ -2003,8 +2007,9 @@ function LocationPickerModal({bank,title,onPick,onPickFromMap,onClose,onCreateEm
                     <div style={{fontWeight:600,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
                     {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.address}</div>}
                   </div>
+                  {src&&<span style={{fontSize:13,flexShrink:0,opacity:.8}} title={item._listSource}>{src.emoji}</span>}
                 </div>
-              ))
+              )})
             }
           </div>
         </div>

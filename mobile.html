@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m64';
+const MOB_VER='m65';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -1245,12 +1245,14 @@ function BlockEditSheet({block,onSave,onDelete,onClose,isNew,prevEndTime,onCasca
 /* ════════════════════════════════
    LOCATION PICKER SHEET
 ════════════════════════════════ */
+const BANK_SRC_PICKER={liked:{emoji:'❤️',color:'#ec4899'},wantToGo:{emoji:'🏴',color:'#22c55e'},saved:{emoji:'⭐',color:'#f59e0b'},list:{emoji:'📋',color:'#6366f1'},itinerary:{emoji:'🧳',color:'#2563eb'}};
 function LocationPickerSheet({bank,title,onPick,onPickFromMap,onClose,onCreateEmpty}){
   const[search,setSearch]=useState('');
   const inp={background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:7,
     padding:'8px 10px',color:'var(--text)',fontFamily:'Heebo,sans-serif',fontSize:13,
     outline:'none',width:'100%',direction:'rtl',boxSizing:'border-box'};
-  const filtered=bank.filter(i=>!search||(i.name||'').includes(search)||(i.address||'').includes(search));
+  const q=search.trim().toLowerCase();
+  const filtered=bank.filter(i=>!q||(i.name||'').toLowerCase().includes(q)||(i.address||'').toLowerCase().includes(q));
   return(
     <>
       <div className="sheet-ov" onClick={onClose}/>
@@ -1285,7 +1287,9 @@ function LocationPickerSheet({bank,title,onPick,onPickFromMap,onClose,onCreateEm
               ?<div style={{padding:'20px',textAlign:'center',color:'var(--text3)',fontSize:13}}>
                 {bank.length===0?'הבנק ריק — הוסף מקומות קודם':'אין תוצאות'}
               </div>
-              :filtered.map(item=>(
+              :filtered.map(item=>{
+                const src=BANK_SRC_PICKER[item._listSource]||null;
+                return(
                 <div key={item.id} onClick={()=>onPick(item)}
                   style={{padding:'10px 6px',borderRadius:8,cursor:'pointer',
                     borderBottom:'1px solid var(--border)',display:'flex',gap:10,alignItems:'center'}}>
@@ -1294,8 +1298,9 @@ function LocationPickerSheet({bank,title,onPick,onPickFromMap,onClose,onCreateEm
                     <div style={{fontWeight:600,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
                     {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.address}</div>}
                   </div>
+                  {src&&<span style={{fontSize:14,flexShrink:0,opacity:.8}}>{src.emoji}</span>}
                 </div>
-              ))
+              )})
             }
           </div>
         </div>
