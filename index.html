@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v120';
+const APP_VERSION = 'v121';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -467,7 +467,8 @@ const normTrip = t => {
   return {
     expenses:[],interestBank:[],packingList:[],shoppingList:[],documents:[],quickNotes:[],days:[],generalNotes:'',
     ...t,
-    days:(t.days||[]).map(d=>({blocks:[],...d,blocks:(d.blocks||[]),
+    days:(t.days||[]).map(d=>({blocks:[],...d,
+      blocks:(d.blocks||[]).map(b=>b.endTime?b:{...b,endTime:addMins(b.startTime||'09:00',b.durationMins??60)}),
       startLocation:d.startLocation||'',startTime:d.startTime||'08:00',
       endLocation:d.endLocation||'',endTime:d.endTime||'20:00',startPending:d.startPending||false})),
     interestBank:t.interestBank||[],
@@ -2130,7 +2131,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     const delta=toMinsD(day.startTime||'08:00')-toMinsD(sorted[0].startTime);
     if(delta===0){toast('הפעילויות כבר מסונכרנות ✓','success');return;}
     let t=day.startTime||'08:00';
-    const reordered=sorted.map(b=>{const nb={...b,startTime:t};t=addMins(t,bDur(b));return nb;});
+    const reordered=sorted.map(b=>{const d=bDur(b);const nb={...b,startTime:t,endTime:addMins(t,d)};t=addMins(t,d);return nb;});
     onUpdate({...day,blocks:reordered});
     toast(`שעות עודכנו ${delta>0?'+':''}${delta} דקות ✓`,'success');
   };
@@ -2139,7 +2140,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     if(fromIdx<=0||fromIdx>=sorted.length)return;
     const prevEnd=addMins(sorted[fromIdx-1].startTime,bDur(sorted[fromIdx-1]));
     let t=prevEnd;
-    const tail=sorted.slice(fromIdx).map(b=>{const nb={...b,startTime:t};t=addMins(t,bDur(b));return nb;});
+    const tail=sorted.slice(fromIdx).map(b=>{const d=bDur(b);const nb={...b,startTime:t,endTime:addMins(t,d)};t=addMins(t,d);return nb;});
     const ids=new Set(tail.map(b=>b.id));
     onUpdate({...day,blocks:[...day.blocks.filter(b=>!ids.has(b.id)),...tail]});
     toast('פעילויות קושרו ✓','success');
@@ -2152,7 +2153,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     const sortedUpd=[...blocksUpd].sort((a,b)=>a.startTime.localeCompare(b.startTime));
     const siNew=sortedUpd.findIndex(b=>b.id===updBlock.id);
     let t=addMins(updBlock.startTime,bDur(updBlock));
-    const tail=sortedUpd.slice(siNew+1).map(b=>{const nb={...b,startTime:t};t=addMins(t,bDur(b));return nb;});
+    const tail=sortedUpd.slice(siNew+1).map(b=>{const d=bDur(b);const nb={...b,startTime:t,endTime:addMins(t,d)};t=addMins(t,d);return nb;});
     const ids=new Set(tail.map(b=>b.id));
     onUpdate({...day,blocks:[...blocksUpd.filter(b=>!ids.has(b.id)),...tail]});
     toast('שעות עודכנו ✓','success');
@@ -2165,7 +2166,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     const sortedUpd=[...blocksUpd].sort((a,b)=>a.startTime.localeCompare(b.startTime));
     const siNew=sortedUpd.findIndex(b=>b.id===updBlock.id);
     let t=addMins(updBlock.startTime,bDur(updBlock));
-    const tail=sortedUpd.slice(siNew+1).map(b=>{const nb={...b,startTime:t};t=addMins(t,bDur(b));return nb;});
+    const tail=sortedUpd.slice(siNew+1).map(b=>{const d=bDur(b);const nb={...b,startTime:t,endTime:addMins(t,d)};t=addMins(t,d);return nb;});
     const ids=new Set(tail.map(b=>b.id));
     onUpdate({...day,blocks:[...blocksUpd.filter(b=>!ids.has(b.id)),...tail]});
     toast('קשר נותק ושעות עודכנו ✓','success');

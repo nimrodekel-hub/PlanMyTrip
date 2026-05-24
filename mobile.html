@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m62';
+const MOB_VER='m63';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -345,10 +345,18 @@ const loadState=()=>{try{return JSON.parse(localStorage.getItem(LS_KEY)||'null')
 const saveState=s=>{try{localStorage.setItem(LS_KEY,JSON.stringify(s));}catch{}};
 
 /* ─── normTrip ─── */
+const normBlock=b=>{
+  // desktop saves durationMins (no endTime); mobile needs endTime
+  if(b.startTime&&!b.endTime&&b.durationMins!=null)
+    return{...b,endTime:addMins(b.startTime,b.durationMins)};
+  // mobile saves endTime (no durationMins); desktop needs durationMins — keep as-is, desktop handles it
+  return b;
+};
 const normTrip=t=>{
   if(!t||typeof t!=='object')return null;
   return{expenses:[],interestBank:[],packingList:[],shoppingList:[],documents:[],quickNotes:[],days:[],generalNotes:'',...t,
-    days:(t.days||[]).map(d=>({blocks:[],dayBank:[],...d,startLocation:d.startLocation||'',startTime:d.startTime||'08:00',endLocation:d.endLocation||'',endTime:d.endTime||'20:00',dayBank:d.dayBank||[]})),
+    days:(t.days||[]).map(d=>({blocks:[],dayBank:[],...d,startLocation:d.startLocation||'',startTime:d.startTime||'08:00',endLocation:d.endLocation||'',endTime:d.endTime||'20:00',dayBank:d.dayBank||[],
+      blocks:(d.blocks||[]).map(normBlock)})),
     interestBank:t.interestBank||[],expenses:t.expenses||[],packingList:t.packingList||[],shoppingList:t.shoppingList||[],documents:t.documents||[],quickNotes:t.quickNotes||[]};
 };
 
