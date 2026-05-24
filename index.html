@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v125';
+const APP_VERSION = 'v126';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -3050,24 +3050,67 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
             <span style={{fontSize:11,color:'var(--text3)'}}>{showDayBank?'▲':'▼'}</span>
           </div>
           {showDayBank&&(
-            <div style={{padding:'6px 10px',display:'flex',flexDirection:'column',gap:5}}>
+            <div style={{padding:'6px 10px',display:'flex',flexDirection:'column',gap:6}}>
               {(day.dayBank||[]).length===0
                 ?<div style={{fontSize:11,color:'var(--text3)',textAlign:'center',padding:'10px 0'}}>אין פעילויות בבנק היומי — הוסף מהמפה או מבנק האטרקציות</div>
-                :(day.dayBank||[]).map(item=>(
-                  <div key={item.id} style={{display:'flex',alignItems:'center',gap:6,background:'var(--surface)',borderRadius:8,padding:'7px 10px',border:'1px solid var(--border)'}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:12,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
-                      {item.address&&<div style={{fontSize:10,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>📍 {item.address}</div>}
-                      {item.rating&&<span style={{fontSize:10,color:'var(--amber)'}}>⭐ {item.rating}</span>}
+                :(day.dayBank||[]).map(item=>{
+                  const tripBank=day._tripBank||[];
+                  const bankInfo=tripBank.find(i=>
+                    (item.placeId&&i.placeId===item.placeId)||(item.lat&&i.lat&&Math.abs(i.lat-item.lat)<0.0001&&Math.abs(i.lng-item.lng)<0.0001));
+                  const src=BANK_SRC_PICKER[item._listSource||bankInfo?._listSource]||null;
+                  const rating=item.rating??bankInfo?.rating??null;
+                  const openStatus=item.openStatus||bankInfo?.openStatus||'';
+                  const todayHours=item.todayHours||bankInfo?.todayHours||'';
+                  const phone=item.phone||bankInfo?.phone||'';
+                  const website=item.website||bankInfo?.website||'';
+                  const placeType=item.placeType||bankInfo?.placeType||'';
+                  const hasLoc=!!(item.lat&&item.lng);
+                  const btnS={background:'none',border:'none',cursor:'pointer',padding:'2px 5px',borderRadius:4,fontSize:14,lineHeight:1,flexShrink:0};
+                  return(
+                    <div key={item.id} style={{background:'var(--surface)',border:'1px solid var(--border)',
+                      borderRight:'4px solid #8b5cf6',borderRadius:8,overflow:'hidden'}}>
+                      <div style={{padding:'8px 10px'}}>
+                        <div style={{display:'flex',alignItems:'flex-start',gap:6}}>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:13,fontWeight:600,display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
+                              {src&&<span style={{fontSize:12,opacity:.8}} title={item._listSource||bankInfo?._listSource}>{src.emoji}</span>}
+                              <span>📌 {item.name}</span>
+                            </div>
+                            {placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1}}>{placeType}</div>}
+                            {item.address&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>📍 {item.address}</div>}
+                            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:2}}>
+                              {rating&&<span style={{fontSize:11,color:'var(--amber)'}}>⭐ {rating}</span>}
+                              {openStatus&&<span style={{fontSize:11,fontWeight:600,color:openStatus==='פתוח עכשיו'?'#22c55e':'#ef4444'}}>
+                                {openStatus==='פתוח עכשיו'?'✅':'🔴'} {openStatus}
+                              </span>}
+                            </div>
+                            {todayHours&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>🕐 {todayHours}</div>}
+                            {phone&&<div style={{fontSize:11,color:'var(--accent)',marginTop:2}}>📞 {phone}</div>}
+                            {website&&<a href={website} target="_blank" rel="noreferrer"
+                              style={{fontSize:11,color:'var(--accent)',display:'block',marginTop:2}}
+                              onClick={e=>e.stopPropagation()}>
+                              🌐 {website.replace(/^https?:\/\//,'').split('/')[0]}
+                            </a>}
+                            {item.note&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,fontStyle:'italic',lineHeight:1.4}}>📝 {item.note}</div>}
+                          </div>
+                          <div style={{display:'flex',flexDirection:'column',gap:3,flexShrink:0,alignItems:'flex-end'}}>
+                            {hasLoc&&<button style={{...btnS,color:'#6b7280'}} title="הצג במפה"
+                              onClick={()=>window.__gmFocus?.(item.lat,item.lng,17)}>📍</button>}
+                            {hasLoc&&<a href={item.placeId?`https://www.google.com/maps/place/?q=place_id:${item.placeId}`:`https://www.google.com/maps?q=${item.lat},${item.lng}`}
+                              target="_blank" rel="noreferrer"
+                              style={{...btnS,color:'#4285F4',textDecoration:'none',display:'inline-flex',alignItems:'center'}}
+                              title="פתח בגוגל מפות"
+                              onClick={e=>e.stopPropagation()}>🗺️</a>}
+                            <button className="btn btn-primary btn-sm" style={{fontSize:10,padding:'3px 8px'}}
+                              onClick={()=>addDayBankItemToSchedule(item)}>➕ ללוז</button>
+                            <button style={{...btnS,color:'#ef4444',fontWeight:700,fontSize:13}} title="הסר"
+                              onClick={()=>removeDayBankItem(item.id)}>✕</button>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    {item.lat&&<button className="btn btn-secondary btn-icon btn-sm" title="הצג במפה"
-                      onClick={()=>window.__gmFocus?.(item.lat,item.lng,17)}>📍</button>}
-                    <button className="btn btn-primary btn-sm" style={{fontSize:10,padding:'3px 8px',flexShrink:0}}
-                      title="הוסף ללוז היומי" onClick={()=>addDayBankItemToSchedule(item)}>➕ ללוז</button>
-                    <button className="btn btn-danger btn-icon btn-sm" title="הסר"
-                      onClick={()=>removeDayBankItem(item.id)}>✕</button>
-                  </div>
-                ))
+                  );
+                })
               }
             </div>
           )}
