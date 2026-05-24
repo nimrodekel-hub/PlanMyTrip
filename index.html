@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v118';
+const APP_VERSION = 'v119';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -2542,7 +2542,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
         </div>
       </div>
 
-      <Weather coordinates={day.coordinates} location={day.location}/>
+      <Weather coordinates={day.endLat&&day.endLng?{lat:day.endLat,lng:day.endLng}:null} location={day.endLocation||day.location}/>
 
       <div className="timeline">
         {sorted.length===0&&<div style={{padding:'12px 0',color:'var(--text3)',fontSize:13,textAlign:'center'}}>אין בלוקים עדיין — הוסף בלוק למטה</div>}
