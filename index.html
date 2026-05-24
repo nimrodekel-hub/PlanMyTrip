@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v119';
+const APP_VERSION = 'v120';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -2333,12 +2333,11 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
       setTransitSearch(p=>p?{...p,loading:false,results:routes,error:null}:null);
     });
   };
-  const fmtWalkingNotes=steps=>steps.filter(s=>s.instruction).map(s=>`🚶 ${s.instruction}${s.distanceM>=20?' ('+( s.distanceM>=1000?(s.distanceM/1000).toFixed(1)+'ק"מ':s.distanceM+'מ\'')+')':''}`.trim()).join(' | ');
   const insertWalkingRouteBlock=(afterBlock,route)=>{
     const si=sorted.findIndex(b=>b.id===afterBlock.id);
     const travelStart=addMins(afterBlock.startTime,bDur(afterBlock));
-    const nb={id:uid(),type:'travel',title:`🚶 הליכה (~${fmtTravelMin(route.durationMins)})`,
-      startTime:travelStart,durationMins:route.durationMins,notes:fmtWalkingNotes(route.steps),
+    const nb={id:uid(),type:'travel',title:`🚶 הליכה (~${fmtTravelMin(route.durationMins)}${route.distanceText?', '+route.distanceText:''})`,
+      startTime:travelStart,durationMins:route.durationMins,notes:'',
       isAutoTravel:true,isWalking:true};
     let t=addMins(travelStart,route.durationMins);
     const tail=sorted.slice(si+1).map(b2=>{const s={...b2,startTime:t};t=addMins(t,bDur(b2));return s;});
@@ -2348,8 +2347,8 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
   const insertWalkingRouteBlockStart=(route)=>{
     if(!sorted.length)return;
     const firstStart=sorted[0].startTime;
-    const nb={id:uid(),type:'travel',title:`🚶 הליכה (~${fmtTravelMin(route.durationMins)})`,
-      startTime:firstStart,durationMins:route.durationMins,notes:fmtWalkingNotes(route.steps),
+    const nb={id:uid(),type:'travel',title:`🚶 הליכה (~${fmtTravelMin(route.durationMins)}${route.distanceText?', '+route.distanceText:''})`,
+      startTime:firstStart,durationMins:route.durationMins,notes:'',
       isAutoTravel:true,isWalking:true};
     const shifted=day.blocks.map(b=>({...b,startTime:addMins(b.startTime,route.durationMins)}));
     onUpdate({...day,blocks:[nb,...shifted]});
@@ -2359,8 +2358,8 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     if(!sorted.length)return;
     const last2=sorted[sorted.length-1];
     const travelStart=addMins(last2.startTime,bDur(last2));
-    const nb={id:uid(),type:'travel',title:`🚶 הליכה (~${fmtTravelMin(route.durationMins)})`,
-      startTime:travelStart,durationMins:route.durationMins,notes:fmtWalkingNotes(route.steps),
+    const nb={id:uid(),type:'travel',title:`🚶 הליכה (~${fmtTravelMin(route.durationMins)}${route.distanceText?', '+route.distanceText:''})`,
+      startTime:travelStart,durationMins:route.durationMins,notes:'',
       isAutoTravel:true,isWalking:true};
     onUpdate({...day,blocks:[...day.blocks,nb]});
     setTransitSearch(null);toast(`🚶 הליכה נוספה לסיום הלוז`,'success');

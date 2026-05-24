@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m61';
+const MOB_VER='m62';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -1738,7 +1738,6 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
       setTransitSearch(p=>p?{...p,loading:false,results:routes,error:null}:null);
     });
   };
-  const fmtWalkingNotes=steps=>steps.map(s=>`🚶 ${s.instruction}${s.distanceM>=50?' · '+(s.distanceM>=1000?(s.distanceM/1000).toFixed(1)+'ק"מ':s.distanceM+'מ\''):''}`).join(' ▸ ');
   const insertWalkingBlock=(dayId,afterBlockId,route)=>{
     const dayBlks=[...(trip.days.find(d=>d.id===dayId)?.blocks||[])].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
     const afterBlk=dayBlks.find(b=>b.id===afterBlockId);
@@ -1746,7 +1745,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
     const tEnd=tStart?addMins(tStart,route.durationMins):'';
     const blk={id:uid(),type:'travel',
       title:`🚶 הליכה (~${fmtTravelMin(route.durationMins)}, ${route.distanceText})`,
-      startTime:tStart,endTime:tEnd,note:fmtWalkingNotes(route.steps),isAutoTravel:true,isWalking:true};
+      startTime:tStart,endTime:tEnd,note:'',isAutoTravel:true,isWalking:true};
     onUpdate({...trip,days:trip.days.map(d=>{
       if(d.id!==dayId)return d;
       const idx=dayBlks.findIndex(b=>b.id===afterBlockId);
@@ -1766,7 +1765,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
     const blk={id:uid(),type:'travel',
       title:`🚶 הליכה (~${fmtTravelMin(route.durationMins)}, ${route.distanceText})`,
       startTime:firstStart,endTime:addMins(firstStart,route.durationMins),
-      note:fmtWalkingNotes(route.steps),isAutoTravel:true,isWalking:true};
+      note:'',isAutoTravel:true,isWalking:true};
     const shifted=dayBlks.map(b=>({...b,
       startTime:addMins(b.startTime,route.durationMins),
       endTime:b.endTime?addMins(b.endTime,route.durationMins):b.endTime}));
@@ -1781,7 +1780,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
     const blk={id:uid(),type:'travel',
       title:`🚶 הליכה (~${fmtTravelMin(route.durationMins)}, ${route.distanceText})`,
       startTime:tStart,endTime:addMins(tStart,route.durationMins),
-      note:fmtWalkingNotes(route.steps),isAutoTravel:true,isWalking:true};
+      note:'',isAutoTravel:true,isWalking:true};
     onUpdate({...trip,days:trip.days.map(d=>d.id!==day.id?d:{...d,blocks:[...(d.blocks||[]),blk]})});
     setTransitSearch(null);
     toast(`🚶 הליכה נוספה לסיום הלוז ✓`,'s');
