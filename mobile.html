@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m60';
+const MOB_VER='m61';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -455,11 +455,14 @@ const fetchOsrmMinutes=async(fromLat,fromLng,toLat,toLng,profile='driving')=>{
     if(!r.ok){_osrmCache[key]=null;return null;}
     const d=await r.json();
     const sec=d?.routes?.[0]?.duration;
+    const distM=d?.routes?.[0]?.distance;
     const min=sec!=null?Math.round(sec/60):null;
-    _osrmCache[key]=min;
-    return min;
+    const km=distM!=null?Math.round(distM/100)/10:null;
+    _osrmCache[key]={min,km};
+    return{min,km};
   }catch{_osrmCache[key]=null;return null;}
 };
+const fmtKm=km=>km==null?'':km<1?`${Math.round(km*1000)}מ'`:`${km<10?km.toFixed(1):Math.round(km)} ק"מ`;
 const fmtTravelMin=m=>{
   if(m==null)return'?';
   if(m<60)return`${m} דק'`;
@@ -1360,12 +1363,12 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
         if(fc&&!cancelled){
           const key=`__start__->${sorted[0].id}`;
           setTravelTimes(prev=>({...prev,[key]:{loading:true,min:null}}));
-          const min=await fetchOsrmMinutes(day.startLat,day.startLng,fc.lat,fc.lng);
-          if(!cancelled)setTravelTimes(prev=>({...prev,[key]:{loading:false,min}}));
+          const res=await fetchOsrmMinutes(day.startLat,day.startLng,fc.lat,fc.lng)||{min:null,km:null};
+          if(!cancelled)setTravelTimes(prev=>({...prev,[key]:{loading:false,min:res.min,km:res.km}}));
           // walking preview for short segments
           if(!cancelled&&distKm({lat:day.startLat,lng:day.startLng},fc)<=10){
-            const wk=await fetchOsrmMinutes(day.startLat,day.startLng,fc.lat,fc.lng,'foot');
-            if(!cancelled)setTravelTimes(prev=>({...prev,[`walk:${key}`]:{loading:false,min:wk}}));
+            const wres=await fetchOsrmMinutes(day.startLat,day.startLng,fc.lat,fc.lng,'foot')||{min:null};
+            if(!cancelled)setTravelTimes(prev=>({...prev,[`walk:${key}`]:{loading:false,min:wres.min}}));
           }
         }
       }
@@ -1378,11 +1381,11 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
         if(!ac||!bc)continue;
         const key=`${a.id}->${nb.id}`;
         setTravelTimes(prev=>({...prev,[key]:{loading:true,min:null}}));
-        const min=await fetchOsrmMinutes(ac.lat,ac.lng,bc.lat,bc.lng);
-        if(!cancelled)setTravelTimes(prev=>({...prev,[key]:{loading:false,min}}));
+        const res=await fetchOsrmMinutes(ac.lat,ac.lng,bc.lat,bc.lng)||{min:null,km:null};
+        if(!cancelled)setTravelTimes(prev=>({...prev,[key]:{loading:false,min:res.min,km:res.km}}));
         if(!cancelled&&distKm(ac,bc)<=10){
-          const wk=await fetchOsrmMinutes(ac.lat,ac.lng,bc.lat,bc.lng,'foot');
-          if(!cancelled)setTravelTimes(prev=>({...prev,[`walk:${key}`]:{loading:false,min:wk}}));
+          const wres=await fetchOsrmMinutes(ac.lat,ac.lng,bc.lat,bc.lng,'foot')||{min:null};
+          if(!cancelled)setTravelTimes(prev=>({...prev,[`walk:${key}`]:{loading:false,min:wres.min}}));
         }
       }
       // last block → end location
@@ -1392,11 +1395,11 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
         if(lc&&!cancelled){
           const key=`${last.id}->__end__`;
           setTravelTimes(prev=>({...prev,[key]:{loading:true,min:null}}));
-          const min=await fetchOsrmMinutes(lc.lat,lc.lng,day.endLat,day.endLng);
-          if(!cancelled)setTravelTimes(prev=>({...prev,[key]:{loading:false,min}}));
+          const res=await fetchOsrmMinutes(lc.lat,lc.lng,day.endLat,day.endLng)||{min:null,km:null};
+          if(!cancelled)setTravelTimes(prev=>({...prev,[key]:{loading:false,min:res.min,km:res.km}}));
           if(!cancelled&&distKm(lc,{lat:day.endLat,lng:day.endLng})<=10){
-            const wk=await fetchOsrmMinutes(lc.lat,lc.lng,day.endLat,day.endLng,'foot');
-            if(!cancelled)setTravelTimes(prev=>({...prev,[`walk:${key}`]:{loading:false,min:wk}}));
+            const wres=await fetchOsrmMinutes(lc.lat,lc.lng,day.endLat,day.endLng,'foot')||{min:null};
+            if(!cancelled)setTravelTimes(prev=>({...prev,[`walk:${key}`]:{loading:false,min:wres.min}}));
           }
         }
       }
@@ -1581,14 +1584,14 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
     setBankPickForBlock(null);
     setEditing({...b,_isNew:true});
   };
-  const insertTravelBlock=(dayId,afterBlockId,rawMin)=>{
+  const insertTravelBlock=(dayId,afterBlockId,rawMin,rawKm=null)=>{
     const buf=settings?.travelBuffer??1.2;
     const buffered=Math.round(rawMin*buf);
     const dayBlks=[...(trip.days.find(d=>d.id===dayId)?.blocks||[])].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
     const afterBlk=dayBlks.find(b=>b.id===afterBlockId);
     const travelStart=afterBlk?.endTime||'';
     const travelEnd=travelStart?addMins(travelStart,buffered):'';
-    const blk={id:uid(),type:'travel',title:`🚗 נסיעה (~${fmtTravelMin(buffered)})`,
+    const blk={id:uid(),type:'travel',title:`🚗 נסיעה (~${fmtTravelMin(buffered)}${rawKm!=null?', '+fmtKm(Math.round(rawKm*10)/10):''})`,
       startTime:travelStart,endTime:travelEnd,note:'',isAutoTravel:true};
     onUpdate({...trip,days:trip.days.map(d=>{
       if(d.id!==dayId)return d;
@@ -1923,6 +1926,10 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
               title="בחר מהבנק או מהמפה"
               style={{flexShrink:0,padding:'6px 7px',fontSize:14,background:'var(--bg2)',
                 border:'1px solid var(--border)',borderRadius:7,cursor:'pointer',lineHeight:1}}>📍</button>
+            {day.startLat&&day.startLng&&<a href={`https://www.google.com/maps?q=${day.startLat},${day.startLng}`}
+              target="_blank" rel="noreferrer"
+              style={{padding:'0 4px',fontSize:16,textDecoration:'none',color:'#4285F4',display:'inline-flex',alignItems:'center',flexShrink:0}}
+              title="פתח בגוגל מפות">↗</a>}
           </div>
           {/* cascade hint */}
           {cascadeNeeded&&(
@@ -1947,6 +1954,10 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
               title="בחר מהבנק או מהמפה"
               style={{flexShrink:0,padding:'6px 7px',fontSize:14,background:'var(--bg2)',
                 border:'1px solid var(--border)',borderRadius:7,cursor:'pointer',lineHeight:1}}>📍</button>
+            {day.endLat&&day.endLng&&<a href={`https://www.google.com/maps?q=${day.endLat},${day.endLng}`}
+              target="_blank" rel="noreferrer"
+              style={{padding:'0 4px',fontSize:16,textDecoration:'none',color:'#4285F4',display:'inline-flex',alignItems:'center',flexShrink:0}}
+              title="פתח בגוגל מפות">↗</a>}
           </div>
         </div>
 
@@ -2081,6 +2092,13 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                         <div style={{display:'flex',gap:2,flexShrink:0,alignItems:'flex-start'}}>
                           {hasLoc&&<button onClick={()=>onShowOnMap&&onShowOnMap({lat:b.lat,lng:b.lng,placeId:b.placeId,name:b.title||BLOCK_HE[b.type],address:b.address||''})}
                             style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--accent2)'}}>🗺️</button>}
+                          {(b.lat&&b.lng||b.placeId)&&<a href={b.placeId?`https://www.google.com/maps/place/?q=place_id:${b.placeId}`:`https://www.google.com/maps?q=${b.lat},${b.lng}`}
+                            target="_blank" rel="noreferrer"
+                            style={{padding:'4px 5px',fontSize:15,color:'#4285F4',textDecoration:'none',display:'inline-flex',alignItems:'center'}}
+                            title="פתח בגוגל מפות"
+                            onClick={e=>e.stopPropagation()}>
+                            <span style={{fontSize:13}}>↗</span>
+                          </a>}
                           <button onClick={()=>{
                               if(inlineNote?.blockId===b.id){setInlineNote(null);}
                               else{setInlineNote({blockId:b.id,value:b.note||''});}
@@ -2204,10 +2222,10 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                         {gapLabel}{linkBtn}
                         {hasOSRM&&<span style={{fontSize:11,color:'var(--text3)',flex:isLinked?1:undefined,lineHeight:1.45}}>
                           {isLinked&&<span style={{opacity:.3}}>🔗 </span>}
-                          🚗 {fmtTravelMin(tt.min)} נסיעה
+                          🚗 {fmtTravelMin(tt.min)}{tt.km?`, ${fmtKm(tt.km)}`:''} נסיעה
                           {buf>1.01&&<span style={{opacity:.75}}> = <b style={{color:'var(--text2)'}}>{fmtTravelMin(Math.round(tt.min*buf))}</b></span>}
                         </span>}
-                        {hasOSRM&&<button title="הוסף נסיעה ברכב" onClick={()=>insertTravelBlock(day.id,b.id,tt.min)}
+                        {hasOSRM&&<button title="הוסף נסיעה ברכב" onClick={()=>insertTravelBlock(day.id,b.id,tt.min,tt.km)}
                           style={{...baseSt,border:'1px solid rgba(79,142,247,.4)',background:'rgba(79,142,247,.12)',color:'var(--accent2)'}}>
                           🚗
                         </button>}
@@ -2233,8 +2251,26 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
             })}
             {nowInsertIdx===sorted.length&&nowLine}
             {/* last block → end location connector */}
-            {sorted.length>0&&day?.endLat&&day?.endLng&&sorted[sorted.length-1].type!=='travel'&&(()=>{
+            {sorted.length>0&&day?.endLat&&day?.endLng&&(()=>{
               const last2=sorted[sorted.length-1];
+              // Case 1: last block is already auto-travel → show arrival info
+              if(last2.isAutoTravel){
+                const arrivalTime=last2.endTime||'';
+                const arrivalMins=arrivalTime?toMinsStr(arrivalTime):null;
+                const dayEndMins2=toMinsStr(day.endTime||'20:00');
+                const arrOverrun=arrivalMins!=null?arrivalMins-dayEndMins2:null;
+                return(
+                  <div style={{display:'flex',alignItems:'center',gap:7,padding:'5px 10px',marginTop:4,
+                      background:'rgba(239,68,68,.07)',borderRadius:8,border:'1px solid rgba(239,68,68,.2)'}}>
+                    <span style={{fontSize:11,color:'var(--red)',flex:1,lineHeight:1.45}}>
+                      🔴 {day.endLocation||'יעד'}{arrivalTime?` — מגיע בשעה ${arrivalTime}`:''}
+                      {arrOverrun!=null&&arrOverrun>0&&<span style={{color:'var(--amber)',fontWeight:600,display:'block',marginTop:2}}>⚠️ חריגה {fmtTravelMin(arrOverrun)} מזמן הסיום ({day.endTime})</span>}
+                    </span>
+                  </div>
+                );
+              }
+              // Case 2: last block is non-auto travel (skip) or regular block
+              if(last2.type==='travel')return null;
               const lastHasCoords=!!(last2.lat&&last2.lng);
               const key=`${last2.id}->__end__`;
               const tt=travelTimes[key];
@@ -2247,9 +2283,9 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                     background:'rgba(239,68,68,.07)',borderRadius:8,border:'1px solid rgba(239,68,68,.2)',flexWrap:'wrap'}}>
                   <span style={{fontSize:11,color:'var(--red)',flex:1,lineHeight:1.45}}>
                     🔴 אחרון → {day.endLocation||'יעד'}
-                    {hasCar&&<>: {fmtTravelMin(tt.min)} נסיעה{buf2>1.01&&<span style={{opacity:.75}}> = <b>{fmtTravelMin(Math.round(tt.min*buf2))}</b></span>}</>}
+                    {hasCar&&<>: {fmtTravelMin(tt.min)}{tt.km?`, ${fmtKm(tt.km)}`:''} נסיעה{buf2>1.01&&<span style={{opacity:.75}}> = <b>{fmtTravelMin(Math.round(tt.min*buf2))}</b></span>}</>}
                   </span>
-                  {hasCar&&<button title="הוסף נסיעה ברכב" onClick={()=>insertTravelBlock(day.id,last2.id,tt.min)}
+                  {hasCar&&<button title="הוסף נסיעה ברכב" onClick={()=>insertTravelBlock(day.id,last2.id,tt.min,tt.km)}
                     style={{fontSize:16,padding:'3px 7px',border:'1px solid rgba(239,68,68,.4)',borderRadius:6,
                       background:'rgba(239,68,68,.12)',color:'var(--red)',cursor:'pointer',flexShrink:0}}>
                     🚗
@@ -2386,17 +2422,17 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                         const ts=route.steps.filter(s=>s.type==='transit');
                         if(!ts.length)return null;
                         return(
-                          <div style={{fontSize:11,color:'var(--text2)',lineHeight:1.8,textAlign:'right'}}>
+                          <div style={{fontSize:11,color:'var(--text2)',lineHeight:1.8,direction:'ltr',textAlign:'left'}}>
                             {ts.map((s,i)=>(
                               <React.Fragment key={i}>
-                                {i===0&&<div>📍 <b>עולים:</b> {s.departure}</div>}
-                                <div style={{paddingRight:12,color:'var(--text3)'}}>
-                                  {s.icon} {s.lineShort||s.lineName}{s.numStops>0?` · ${s.numStops} תח'`:''}
+                                {i===0&&<div>📍 <b>Board:</b> {s.departure}</div>}
+                                <div style={{paddingLeft:12,color:'var(--text3)'}}>
+                                  {s.icon} {s.lineShort||s.lineName}{s.numStops>0?` · ${s.numStops} stop${s.numStops!==1?'s':''}`:''}
                                 </div>
                                 <div style={{color:i<ts.length-1?'var(--amber)':'inherit'}}>
                                   {i<ts.length-1
-                                    ?<span>↔️ <b>החלפה:</b> {s.arrival}</span>
-                                    :<span>📍 <b>יורדים:</b> {s.arrival}</span>
+                                    ?<span>↔️ <b>Transfer:</b> {s.arrival}</span>
+                                    :<span>📍 <b>Alight:</b> {s.arrival}</span>
                                   }
                                 </div>
                               </React.Fragment>
