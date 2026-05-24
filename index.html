@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v126';
+const APP_VERSION = 'v127';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -3126,9 +3126,11 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
 /* ══════════════════════════════════
    פריט בנק אטרקציות
 ══════════════════════════════════ */
-function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,onSelect,onEnrich,enriching,onNoteChange,onAddToDayBank}){
+function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,onSelect,onEnrich,enriching,onNoteChange,onAddToDayBank,onSetDayStart,onSetDayEnd}){
   const[selDay,setSelDay]=useState('');
   const[selDayBank,setSelDayBank]=useState('');
+  const[selDayStart,setSelDayStart]=useState('');
+  const[selDayEnd,setSelDayEnd]=useState('');
   const[noteVal,setNoteVal]=useState(item.note||'');
   const[showNote,setShowNote]=useState(!!(item.note));
   useEffect(()=>{setNoteVal(item.note||'');setShowNote(!!(item.note));},[item.id,item.note]);
@@ -3220,6 +3222,26 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
       <button className="btn btn-sm" disabled={!selDayBank}
         onClick={()=>{if(selDayBank){onAddToDayBank(selDayBank,item);setSelDayBank('');}}}
         style={{opacity:selDayBank?1:0.4,flexShrink:0,background:'#8b5cf6',color:'#fff',border:'none'}}>📌</button>
+    </div>}
+    {onSetDayStart&&<div style={{display:'flex',gap:5}}>
+      <select value={selDayStart} onChange={e=>setSelDayStart(e.target.value)}
+        style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border)',color:'var(--text)',borderRadius:7,padding:'5px 8px',fontSize:11,fontFamily:'Heebo,sans-serif',direction:'rtl'}}>
+        <option value="">🟢 קבע כנקודת מוצא...</option>
+        {days.map((d,i)=><option key={d.id} value={d.id}>יום {i+1}{d.location?' — '+d.location:''}</option>)}
+      </select>
+      <button className="btn btn-sm" disabled={!selDayStart}
+        onClick={()=>{if(selDayStart){onSetDayStart(selDayStart,item);setSelDayStart('');}}}
+        style={{opacity:selDayStart?1:0.4,flexShrink:0,background:'#22c55e',color:'#fff',border:'none'}}>🟢</button>
+    </div>}
+    {onSetDayEnd&&<div style={{display:'flex',gap:5}}>
+      <select value={selDayEnd} onChange={e=>setSelDayEnd(e.target.value)}
+        style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border)',color:'var(--text)',borderRadius:7,padding:'5px 8px',fontSize:11,fontFamily:'Heebo,sans-serif',direction:'rtl'}}>
+        <option value="">🔴 קבע כנקודת יעד...</option>
+        {days.map((d,i)=><option key={d.id} value={d.id}>יום {i+1}{d.location?' — '+d.location:''}</option>)}
+      </select>
+      <button className="btn btn-sm" disabled={!selDayEnd}
+        onClick={()=>{if(selDayEnd){onSetDayEnd(selDayEnd,item);setSelDayEnd('');}}}
+        style={{opacity:selDayEnd?1:0.4,flexShrink:0,background:'#ef4444',color:'#fff',border:'none'}}>🔴</button>
     </div>}
   </div>;
 }
@@ -3426,7 +3448,7 @@ const fetchViaGitHubAction=async(apiUrl,settings,onStatus)=>{
    פאנל בנק אטרקציות (עמודה עצמאית)
    תכונות: קיבוץ לפי מדינה, בחירה קבוצתית, העשרת פרטים מגוגל מפות
 ══════════════════════════════════ */
-function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
+function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDayLocation}){
   const[showTakeout,setShowTakeout]=useState(false);
   const[showLinkImport,setShowLinkImport]=useState(false);
   const[linkUrl,setLinkUrl]=useState('');
@@ -3653,6 +3675,15 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
     if(already){toast(`"${item.name}" כבר בבנק היומי`,'info');return;}
     onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,dayBank:[...(d.dayBank||[]),{...item,id:uid()}]}:d)});
     toast(`"${item.name}" נוסף לבנק היומי 📌`,'success');
+  };
+
+  const setItemAsStart=(dayId,item)=>{
+    onSetDayLocation?.(dayId,'start',item.name,item.lat,item.lng,item);
+    toast(`"${item.name}" הוגדר כנקודת מוצא 🟢`,'success');
+  };
+  const setItemAsEnd=(dayId,item)=>{
+    onSetDayLocation?.(dayId,'end',item.name,item.lat,item.lng,item);
+    toast(`"${item.name}" הוגדר כנקודת יעד 🔴`,'success');
   };
 
   /* הוספה ליום */
@@ -4172,6 +4203,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
                   selected={selected.has(item.id)} onSelect={toggleSelect}
                   onEnrich={enrichItem} enriching={enrichingId===item.id}
                   onAddToDayBank={addItemToDayBank}
+                  onSetDayStart={setItemAsStart} onSetDayEnd={setItemAsEnd}
                   onNoteChange={(id,note)=>{onUpdate({...tripRef.current,interestBank:tripRef.current.interestBank.map(i=>i.id===id?{...i,note}:i)});}}/>
               </div>
             ))}
@@ -6062,7 +6094,7 @@ function App(){
               onLocate={(lat,lng)=>window.__gmFocus?.(lat,lng)}
               onFocusItem={(lat,lng,name)=>{setHlItem({lat,lng,name});setHlDay(null);}}
               onClose={()=>setMobilePanel('map')}
-              settings={settings}
+              settings={settings} onSetDayLocation={setDayLocation}
             />:noTrip}
           </div>
         </div>
