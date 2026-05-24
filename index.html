@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v116';
+const APP_VERSION = 'v117';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -417,7 +417,7 @@ const defaultTrip = (name='טיול חדש') => ({
   vehicle:{name:'הקרוון שלי',height:'',width:'',weight:'',plate:'',waterFillDate:'',wasteEmptyDate:'',waterLog:[],wasteLog:[]},
   days:[],expenses:[],interestBank:[],packingList:[],shoppingList:[],documents:[],generalNotes:'',quickNotes:[],
 });
-const defaultDay  = (date='') => ({id:uid(),date,location:'',coordinates:null,blocks:[],notes:'',summary:'',currentTime:'08:00',
+const defaultDay  = (date='') => ({id:uid(),date,location:'',coordinates:null,blocks:[],dayBank:[],notes:'',summary:'',currentTime:'08:00',
   startLocation:'',startTime:'08:00',endLocation:'',endTime:'20:00',startPending:false});
 const defaultBlock= (type='activity',start='09:00') => ({id:uid(),type,title:'',startTime:start,durationMins:60,location:'',notes:'',rating:0,isCompleted:false,cost:0});
 
@@ -854,7 +854,7 @@ const makeSearchMarkerIcon=types=>{
 /* ══════════════════════════════════
    מפת גוגל
 ══════════════════════════════════ */
-function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateBankItem,highlightDay,highlightItem,routeHighlight,mapPickCallbackRef,mapPickLabel,onCancelMapPick}){
+function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateBankItem,highlightDay,highlightItem,routeHighlight,mapPickCallbackRef,mapPickLabel,onCancelMapPick,onAddToDayBank}){
   const mapRef=useRef(null), mapInst=useRef(null), markers=useRef([]);
   const hlDayMarkers=useRef([]), hlItemMarker=useRef(null);
   const hlDayRoutes=useRef([]), hlRouteRenderer=useRef(null);
@@ -871,12 +871,14 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
   const onAddToDayRef=useRef(onAddToDay);
   const onSetDayLocationRef=useRef(onSetDayLocation);
   const onUpdateBankRef=useRef(onUpdateBankItem);
+  const onAddToDayBankRef=useRef(onAddToDayBank);
   const mapsKeyRef=useRef(mapsKey);
   useEffect(()=>{tripRef.current=trip;},[trip]);
   useEffect(()=>{onAddToBankRef.current=onAddToBank;},[onAddToBank]);
   useEffect(()=>{onAddToDayRef.current=onAddToDay;},[onAddToDay]);
   useEffect(()=>{onSetDayLocationRef.current=onSetDayLocation;},[onSetDayLocation]);
   useEffect(()=>{onUpdateBankRef.current=onUpdateBankItem;},[onUpdateBankItem]);
+  useEffect(()=>{onAddToDayBankRef.current=onAddToDayBank;},[onAddToDayBank]);
   useEffect(()=>{mapsKeyRef.current=mapsKey;},[mapsKey]);
 
   useEffect(()=>{
@@ -1054,6 +1056,16 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
             🌟 שמור לבנק
           </button>
           <div style="display:flex;gap:5px;align-items:center">
+            <select id="gm-daybank-sel" style="flex:1;border:1px solid #ddd;border-radius:6px;padding:5px 6px;font-size:11px;font-family:Heebo,Arial,sans-serif;direction:rtl;min-width:0">
+              <option value="">📌 בנק יומי...</option>
+              ${daysHtml}
+            </select>
+            <button onclick="window.__gmDayBank()"
+              style="background:#8b5cf6;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:Heebo,Arial,sans-serif;font-weight:600;white-space:nowrap;flex-shrink:0">
+              הוסף
+            </button>
+          </div>
+          <div style="display:flex;gap:5px;align-items:center">
             <select id="gm-day-sel" style="flex:1;border:1px solid #ddd;border-radius:6px;padding:5px 6px;font-size:11px;font-family:Heebo,Arial,sans-serif;direction:rtl;min-width:0">
               <option value="">➕ הוסף ליום...</option>
               ${daysHtml}
@@ -1206,6 +1218,18 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       onSetDayLocationRef.current(sel.value,'end',name,p.lat,p.lng,p);
       iw.close();
       toast(`"${name}" הוגדר כנקודת יעד ונוסף לבנק ✓`,'success');
+    };
+
+    window.__gmDayBank=()=>{
+      const sel=document.getElementById('gm-daybank-sel');
+      if(!sel||!sel.value||!iwPlace.data)return;
+      const p=iwPlace.data;
+      const nameEl=document.getElementById('gm-name-edit');
+      const name=nameEl?.value?.trim()||p.name;
+      onAddToDayBankRef.current(sel.value,{id:uid(),name,address:p.address||'',lat:p.lat,lng:p.lng,placeId:p.placeId||'',
+        rating:p.rating,placeType:p.placeType||'',openStatus:p.openStatus||'',todayHours:p.todayHours||'',phone:p.phone||'',website:p.website||''});
+      iw.close();
+      toast(`"${name}" נוסף לבנק היומי 📌`,'success');
     };
 
     map.addListener('click',async e=>{
@@ -1983,6 +2007,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
   const[travelTimes,setTravelTimes]=useState({});
   const[locationPicking,setLocationPicking]=useState(null); // {field:'start'|'end'}
   const[bankPickForBlock,setBankPickForBlock]=useState(null); // {type}
+  const[showDayBank,setShowDayBank]=useState(false);
   const dragIdxRef=useRef(null);
   const[dragOver,setDragOver]=useState(null);
   const updBlock=upd=>onUpdate({...day,blocks:day.blocks.map(b=>b.id===upd.id?upd:b)});
@@ -2947,6 +2972,63 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
         onClose={()=>setBankPickForBlock(null)}
       />
     )}
+
+    {/* ── בנק יומי ── */}
+    {(()=>{
+      const addDayBankItemToSchedule=(item)=>{
+        const sorted=[...(day.blocks||[])].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+        const last=sorted[sorted.length-1];
+        const start=last?addMins(last.startTime,last.durationMins||60):(day.startTime||'09:00');
+        const nb=defaultBlock('activity',start);
+        nb.title=item.name;nb.location=item.address||'';
+        if(item.lat){nb.lat=item.lat;nb.lng=item.lng;}
+        if(item.placeId)nb.placeId=item.placeId;
+        if(item.rating)nb.placeRating=item.rating;
+        if(item.placeType)nb.placeType=item.placeType;
+        if(item.openStatus)nb.placeOpenStatus=item.openStatus;
+        if(item.todayHours)nb.placeTodayHours=item.todayHours;
+        if(item.phone)nb.placePhone=item.phone;
+        if(item.website)nb.placeWebsite=item.website;
+        const newDayBank=(day.dayBank||[]).filter(i=>i.id!==item.id);
+        onUpdate({...day,blocks:[...(day.blocks||[]),nb],dayBank:newDayBank});
+      };
+      const removeDayBankItem=(id)=>{
+        onUpdate({...day,dayBank:(day.dayBank||[]).filter(i=>i.id!==id)});
+      };
+      return(
+        <div style={{margin:'8px 0',borderRadius:10,border:'1px solid var(--border)',overflow:'hidden'}}>
+          <div onClick={()=>setShowDayBank(o=>!o)}
+            style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',cursor:'pointer',background:'var(--bg2)',userSelect:'none'}}>
+            <span style={{fontSize:13,fontWeight:700}}>📌 בנק יומי</span>
+            <span className="chip chip-blue" style={{fontSize:10}}>{(day.dayBank||[]).length}</span>
+            <div style={{flex:1}}/>
+            <span style={{fontSize:11,color:'var(--text3)'}}>{showDayBank?'▲':'▼'}</span>
+          </div>
+          {showDayBank&&(
+            <div style={{padding:'6px 10px',display:'flex',flexDirection:'column',gap:5}}>
+              {(day.dayBank||[]).length===0
+                ?<div style={{fontSize:11,color:'var(--text3)',textAlign:'center',padding:'10px 0'}}>אין פעילויות בבנק היומי — הוסף מהמפה או מבנק האטרקציות</div>
+                :(day.dayBank||[]).map(item=>(
+                  <div key={item.id} style={{display:'flex',alignItems:'center',gap:6,background:'var(--surface)',borderRadius:8,padding:'7px 10px',border:'1px solid var(--border)'}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
+                      {item.address&&<div style={{fontSize:10,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>📍 {item.address}</div>}
+                      {item.rating&&<span style={{fontSize:10,color:'var(--amber)'}}>⭐ {item.rating}</span>}
+                    </div>
+                    {item.lat&&<button className="btn btn-secondary btn-icon btn-sm" title="הצג במפה"
+                      onClick={()=>window.__gmFocus?.(item.lat,item.lng,17)}>📍</button>}
+                    <button className="btn btn-primary btn-sm" style={{fontSize:10,padding:'3px 8px',flexShrink:0}}
+                      title="הוסף ללוז היומי" onClick={()=>addDayBankItemToSchedule(item)}>➕ ללוז</button>
+                    <button className="btn btn-danger btn-icon btn-sm" title="הסר"
+                      onClick={()=>removeDayBankItem(item.id)}>✕</button>
+                  </div>
+                ))
+              }
+            </div>
+          )}
+        </div>
+      );
+    })()}
   </div>;
 }
 
@@ -2956,8 +3038,9 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
 /* ══════════════════════════════════
    פריט בנק אטרקציות
 ══════════════════════════════════ */
-function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,onSelect,onEnrich,enriching,onNoteChange}){
+function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,onSelect,onEnrich,enriching,onNoteChange,onAddToDayBank}){
   const[selDay,setSelDay]=useState('');
+  const[selDayBank,setSelDayBank]=useState('');
   const[noteVal,setNoteVal]=useState(item.note||'');
   const[showNote,setShowNote]=useState(!!(item.note));
   useEffect(()=>{setNoteVal(item.note||'');setShowNote(!!(item.note));},[item.id,item.note]);
@@ -3038,6 +3121,16 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
         onClick={()=>{if(selDay){onAddToDay(selDay,item);setSelDay('');}}}
         style={{opacity:selDay?1:0.4,flexShrink:0}}>הוסף</button>
     </div>
+    {onAddToDayBank&&<div style={{display:'flex',gap:5}}>
+      <select value={selDayBank} onChange={e=>setSelDayBank(e.target.value)}
+        style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border)',color:'var(--text)',borderRadius:7,padding:'5px 8px',fontSize:11,fontFamily:'Heebo,sans-serif',direction:'rtl'}}>
+        <option value="">📌 הוסף לבנק יומי...</option>
+        {days.map((d,i)=><option key={d.id} value={d.id}>יום {i+1}{d.location?' — '+d.location:''}</option>)}
+      </select>
+      <button className="btn btn-sm" disabled={!selDayBank}
+        onClick={()=>{if(selDayBank){onAddToDayBank(selDayBank,item);setSelDayBank('');}}}
+        style={{opacity:selDayBank?1:0.4,flexShrink:0,background:'#8b5cf6',color:'#fff',border:'none'}}>📌</button>
+    </div>}
   </div>;
 }
 
@@ -3454,6 +3547,15 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
     setSelected(prev=>{const s=new Set(prev);s.delete(id);return s;});
   };
   const toggleCollapse=country=>setExpanded(prev=>{const s=new Set(prev);s.has(country)?s.delete(country):s.add(country);return s;});
+
+  /* הוספה לבנק יומי */
+  const addItemToDayBank=(dayId,item)=>{
+    const day=trip.days.find(d=>d.id===dayId);if(!day)return;
+    const already=(day.dayBank||[]).some(i=>i.placeId&&i.placeId===item.placeId);
+    if(already){toast(`"${item.name}" כבר בבנק היומי`,'info');return;}
+    onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,dayBank:[...(d.dayBank||[]),{...item,id:uid()}]}:d)});
+    toast(`"${item.name}" נוסף לבנק היומי 📌`,'success');
+  };
 
   /* הוספה ליום */
   const addItemToDay=(dayId,item)=>{
@@ -3971,6 +4073,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
                   onDelete={()=>delBank(item.id)} onLocate={onLocate} onFocusItem={onFocusItem}
                   selected={selected.has(item.id)} onSelect={toggleSelect}
                   onEnrich={enrichItem} enriching={enrichingId===item.id}
+                  onAddToDayBank={addItemToDayBank}
                   onNoteChange={(id,note)=>{onUpdate({...tripRef.current,interestBank:tripRef.current.interestBank.map(i=>i.id===id?{...i,note}:i)});}}/>
               </div>
             ))}
@@ -4010,6 +4113,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings}){
                 onDelete={()=>delBank(item.id)} onLocate={onLocate} onFocusItem={onFocusItem}
                 selected={selected.has(item.id)} onSelect={toggleSelect}
                 onEnrich={enrichItem} enriching={enrichingId===item.id}
+                onAddToDayBank={addItemToDayBank}
                 onNoteChange={(id,note)=>{onUpdate({...tripRef.current,interestBank:tripRef.current.interestBank.map(i=>i.id===id?{...i,note}:i)});}}/>
             ))}
           </div>;
@@ -5740,6 +5844,14 @@ function App(){
     updTrip({...trip,days:trip.days.map(d=>d.id===dayId?updatedDay:d),interestBank:newBank});
   },[trip,updTrip]);
 
+  const addToDayBank=useCallback((dayId,item)=>{
+    if(!trip)return;
+    const day=trip.days.find(d=>d.id===dayId);if(!day)return;
+    const already=(day.dayBank||[]).some(i=>i.placeId&&i.placeId===item.placeId&&item.placeId);
+    if(already){toast(`"${item.name}" כבר בבנק היומי`,'info');return;}
+    updTrip({...trip,days:trip.days.map(d=>d.id===dayId?{...d,dayBank:[...(d.dayBank||[]),{...item,id:uid()}]}:d)});
+  },[trip,updTrip]);
+
   const push=async(s=settings)=>{
     setGhBusy(true); setSyncStatus('syncing');
     try{
@@ -5811,7 +5923,8 @@ function App(){
             <MapView mapsKey={settings.googleMapsKey} trip={trip} onAddToBank={addToBank} onAddToDay={addToDay}
               onSetDayLocation={setDayLocation} onUpdateBankItem={updateBankItem}
               highlightDay={hlDay} highlightItem={hlItem} routeHighlight={hlRoute}
-              mapPickCallbackRef={mapPickCallbackRef} mapPickLabel={mapPickLabel} onCancelMapPick={cancelMapPick}/>
+              mapPickCallbackRef={mapPickCallbackRef} mapPickLabel={mapPickLabel} onCancelMapPick={cancelMapPick}
+              onAddToDayBank={addToDayBank}/>
           </div>
           {/* backdrop בסלולר */}
           <div className={`mob-panel-backdrop${mobilePanel!=='map'?' show':''}`}

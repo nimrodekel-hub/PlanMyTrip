@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m59';
+const MOB_VER='m60';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -348,7 +348,7 @@ const saveState=s=>{try{localStorage.setItem(LS_KEY,JSON.stringify(s));}catch{}}
 const normTrip=t=>{
   if(!t||typeof t!=='object')return null;
   return{expenses:[],interestBank:[],packingList:[],shoppingList:[],documents:[],quickNotes:[],days:[],generalNotes:'',...t,
-    days:(t.days||[]).map(d=>({blocks:[],...d,startLocation:d.startLocation||'',startTime:d.startTime||'08:00',endLocation:d.endLocation||'',endTime:d.endTime||'20:00'})),
+    days:(t.days||[]).map(d=>({blocks:[],dayBank:[],...d,startLocation:d.startLocation||'',startTime:d.startTime||'08:00',endLocation:d.endLocation||'',endTime:d.endTime||'20:00',dayBank:d.dayBank||[]})),
     interestBank:t.interestBank||[],expenses:t.expenses||[],packingList:t.packingList||[],shoppingList:t.shoppingList||[],documents:t.documents||[],quickNotes:t.quickNotes||[]};
 };
 
@@ -926,6 +926,18 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
     toast(`"${sheet.name}" נוסף ללוז היומי ולבנק האטרקציות ✓`,'s');
     setDaySelPlace(null);setDaySelMode(null);
   };
+  const addToDayBank=(dayId)=>{
+    if(!sheet||!onUpdate||!trip)return;
+    const item={id:uid(),name:sheet.name||'',address:sheet.address||'',placeId:sheet.placeId||'',
+      lat:sheet.lat,lng:sheet.lng,rating:sheet.rating||null,
+      placeType:sheet.types?.length?getTypeLabel(sheet.types):sheet.placeType||'',
+      openStatus:sheet.openStatus||'',todayHours:sheet.todayHours||'',phone:sheet.phone||'',website:sheet.website||''};
+    const already=(trip.days.find(d=>d.id===dayId)?.dayBank||[]).some(i=>i.placeId&&i.placeId===item.placeId&&item.placeId);
+    if(already){toast(`"${item.name}" כבר בבנק היומי`,'i');setDaySelPlace(null);setDaySelMode(null);return;}
+    onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,dayBank:[...(d.dayBank||[]),item]}:d)});
+    toast(`"${sheet.name}" נוסף לבנק היומי 📌`,'s');
+    setDaySelPlace(null);setDaySelMode(null);
+  };
   const setDayStart=(dayId)=>{
     if(!sheet||!onUpdate||!trip)return;
     const _bankAlreadyStart=sheet.placeId&&(trip.interestBank||[]).some(i=>i.placeId===sheet.placeId);
@@ -1040,6 +1052,9 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
             {sheet.inBank&&<div style={{padding:'11px 10px',fontSize:12,color:'var(--amber)',fontWeight:600}}>⭐ כבר בבנק</div>}
             {(trip?.days||[]).length>0&&<button className="bsheet-btn sched" onClick={()=>{setDaySelPlace(sheet);setDaySelMode('sched');}}>📅 הוסף ללוז</button>}
             {(trip?.days||[]).length>0&&<button className="bsheet-btn"
+              style={{background:'rgba(139,92,246,.12)',color:'#8b5cf6',border:'1px solid rgba(139,92,246,.3)',minWidth:120}}
+              onClick={()=>{setDaySelPlace(sheet);setDaySelMode('dayBank');}}>📌 בנק יומי</button>}
+            {(trip?.days||[]).length>0&&<button className="bsheet-btn"
               style={{background:'rgba(34,197,94,.12)',color:'var(--green)',border:'1px solid rgba(34,197,94,.3)',minWidth:120}}
               onClick={()=>{setDaySelPlace(sheet);setDaySelMode('start');}}>🟢 מוצא ליום</button>}
             {(trip?.days||[]).length>0&&<button className="bsheet-btn"
@@ -1052,8 +1067,8 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
       {/* day selector */}
       {daySelPlace&&<DaySelector
         days={trip?.days||[]}
-        title={daySelMode==='start'?'🟢 קבע כנקודת מוצא ליום:':daySelMode==='end'?'🔴 קבע כנקודת יעד ליום:':'📅 הוסף לאיזה יום?'}
-        onSelect={daySelMode==='start'?setDayStart:daySelMode==='end'?setDayEnd:addToSchedule}
+        title={daySelMode==='start'?'🟢 קבע כנקודת מוצא ליום:':daySelMode==='end'?'🔴 קבע כנקודת יעד ליום:':daySelMode==='dayBank'?'📌 הוסף לבנק יומי של יום:':'📅 הוסף לאיזה יום?'}
+        onSelect={daySelMode==='start'?setDayStart:daySelMode==='end'?setDayEnd:daySelMode==='dayBank'?addToDayBank:addToSchedule}
         onClose={()=>{setDaySelPlace(null);setDaySelMode(null);}}/>}
     </div>
   );
@@ -1292,6 +1307,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
   const[inlineNote,setInlineNote]=useState(null); // {blockId, value}
   const[dayWx,setDayWx]=useState(null); // מזג אוויר לכרטיס הנוכחי
   const[transitSearch,setTransitSearch]=useState(null); // {loading,fromBlockId,toBlockId,results,error}
+  const[showDayBank,setShowDayBank]=useState(false);
   // drag-and-drop state
   const dragIdxRef=useRef(null);
   const[dragSrc,setDragSrc]=useState(null);
@@ -2039,7 +2055,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                             </span>
                           </div>
                           <div style={{fontSize:14,fontWeight:700,lineHeight:1.3}}>
-                            {BLOCK_EMOJI[b.type]} {b.title||BLOCK_HE[b.type]}
+                            {!b.isAutoTravel&&`${BLOCK_EMOJI[b.type]} `}{b.title||BLOCK_HE[b.type]}
                           </div>
                           {b.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1}}>{b.placeType}</div>}
                           {b.address&&<div style={{fontSize:11,color:'var(--text3)',marginTop:3}}>📍 {b.address}</div>}
@@ -2258,6 +2274,54 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
           </div>
           <div style={{height:20}}/>
         </div>
+
+        {/* ── בנק יומי ── */}
+        {day&&<div style={{margin:'8px 14px 0',borderRadius:12,border:'1px solid var(--border)',overflow:'hidden',background:'var(--surface)'}}>
+          <div onClick={()=>setShowDayBank(o=>!o)}
+            style={{display:'flex',alignItems:'center',gap:8,padding:'10px 14px',cursor:'pointer',userSelect:'none',background:'var(--bg2)'}}>
+            <span style={{fontSize:13,fontWeight:700}}>📌 בנק יומי</span>
+            <span style={{fontSize:10,background:'#8b5cf6',color:'#fff',borderRadius:8,padding:'1px 7px',fontWeight:700}}>{(day.dayBank||[]).length}</span>
+            <div style={{flex:1}}/>
+            <span style={{fontSize:11,color:'var(--text3)'}}>{showDayBank?'▲':'▼'}</span>
+          </div>
+          {showDayBank&&(
+            <div style={{padding:'8px 12px',display:'flex',flexDirection:'column',gap:6}}>
+              {(day.dayBank||[]).length===0
+                ?<div style={{fontSize:11,color:'var(--text3)',textAlign:'center',padding:'10px 0'}}>
+                    אין פעילויות — הוסף מהמפה ("📌 בנק יומי")
+                  </div>
+                :(day.dayBank||[]).map(item=>(
+                  <div key={item.id} style={{display:'flex',alignItems:'center',gap:6,background:'var(--bg3)',borderRadius:8,padding:'8px 10px',border:'1px solid var(--border)'}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
+                      {item.address&&<div style={{fontSize:10,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>📍 {item.address}</div>}
+                      {item.rating&&<span style={{fontSize:10,color:'var(--amber)'}}>⭐ {item.rating}</span>}
+                    </div>
+                    <button onClick={()=>{
+                        const blk={id:uid(),type:'activity',title:item.name,
+                          startTime:sorted[sorted.length-1]?.endTime||day.startTime||'10:00',
+                          endTime:addMins(sorted[sorted.length-1]?.endTime||day.startTime||'10:00',90),
+                          note:'',address:item.address||'',lat:item.lat||null,lng:item.lng||null,
+                          placeId:item.placeId||'',placeRating:item.rating||null,placeType:item.placeType||'',
+                          placeOpenStatus:item.openStatus||'',placeTodayHours:item.todayHours||'',
+                          placePhone:item.phone||'',placeWebsite:item.website||''};
+                        const newDayBank=(day.dayBank||[]).filter(i=>i.id!==item.id);
+                        onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,blocks:[...(d.blocks||[]),blk],dayBank:newDayBank}:d)});
+                        toast(`"${item.name}" נוסף ללוז 📅`,'s');
+                      }}
+                      style={{background:'var(--accent2)',color:'#fff',border:'none',borderRadius:7,padding:'5px 10px',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'Heebo,sans-serif',flexShrink:0}}>
+                      ➕ ללוז
+                    </button>
+                    <button onClick={()=>onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,dayBank:(d.dayBank||[]).filter(i=>i.id!==item.id)}:d)})}
+                      style={{background:'rgba(239,68,68,.1)',color:'var(--red)',border:'1px solid rgba(239,68,68,.2)',borderRadius:7,padding:'5px 8px',fontSize:12,cursor:'pointer',flexShrink:0}}>
+                      ✕
+                    </button>
+                  </div>
+                ))
+              }
+            </div>
+          )}
+        </div>}
       </>}
 
       {/* ── modal תחבורה ציבורית / הליכה ── */}
