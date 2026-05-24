@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m65';
+const MOB_VER='m66';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -2076,8 +2076,9 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                               {dur&&<span style={{fontWeight:400,color:'var(--text3)'}}> · {dur}</span>}
                             </span>
                           </div>
-                          <div style={{fontSize:14,fontWeight:700,lineHeight:1.3}}>
-                            {!b.isAutoTravel&&`${BLOCK_EMOJI[b.type]} `}{b.title||BLOCK_HE[b.type]}
+                          <div style={{fontSize:14,fontWeight:700,lineHeight:1.3,display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
+                            <span>{!b.isAutoTravel&&`${BLOCK_EMOJI[b.type]} `}{b.title||BLOCK_HE[b.type]}</span>
+                            {BANK_SRC_PICKER[bankInfo?._listSource]&&<span style={{fontSize:12,opacity:.75}}>{BANK_SRC_PICKER[bankInfo._listSource].emoji}</span>}
                           </div>
                           {b.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1}}>{b.placeType}</div>}
                           {b.address&&<div style={{fontSize:11,color:'var(--text3)',marginTop:3}}>📍 {b.address}</div>}

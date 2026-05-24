@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v123';
+const APP_VERSION = 'v124';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1897,7 +1897,8 @@ function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,
           </div>
         </div>
         {/* תוכן */}
-        <div style={{fontSize:13,fontWeight:600,color:'var(--text)',cursor:'pointer'}} onClick={()=>onEdit(block)}>
+        <div style={{fontSize:13,fontWeight:600,color:'var(--text)',cursor:'pointer',display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}} onClick={()=>onEdit(block)}>
+          {BANK_SRC_PICKER[bankInfo?._listSource]&&<span style={{fontSize:12,opacity:.8}} title={bankInfo._listSource}>{BANK_SRC_PICKER[bankInfo._listSource].emoji}</span>}
           {block.title||`(${BLOCK_HE[block.type]} ללא שם)`}
         </div>
         {block.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1,lineHeight:1.4}}>{block.placeType}</div>}
@@ -3080,6 +3081,7 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
   const saveNote=(val)=>{if(onNoteChange&&val!==item.note)onNoteChange(item.id,val);};
   /* קישור גוגל מפות — מה-url שנשמר בייבוא, או בנה מ-placeId */
   const mapsUrl=item.url||(item.placeId?`https://www.google.com/maps/place/?q=place_id:${item.placeId}`:'');
+  const srcInfo=BANK_SRC_PICKER[item._listSource]||null;
 
   return <div className="interest-item" style={{marginBottom:6,flexDirection:'column',alignItems:'stretch',gap:8,
     outline:selected?'2px solid var(--accent)':'2px solid transparent',borderRadius:8,transition:'outline 0.15s'}}>
@@ -3087,7 +3089,8 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
       {onSelect&&<input type="checkbox" checked={!!selected} onChange={e=>onSelect(item.id,e.target.checked)}
         style={{marginTop:3,flexShrink:0,cursor:'pointer',width:14,height:14}} onClick={e=>e.stopPropagation()}/>}
       <div style={{flex:1,minWidth:0,cursor:item.lat?'pointer':'default'}} onClick={focusMap}>
-        <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
+        <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+          {srcInfo&&<span style={{marginLeft:4,fontSize:13}} title={item._listSource}>{srcInfo.emoji}</span>}{item.name}</div>
         {item.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1,lineHeight:1.4}}>{item.placeType}</div>}
         {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginTop:1}}>{item.address}</div>}
         {item._notFound&&<div style={{fontSize:10,color:'#9ca3af',display:'inline-flex',alignItems:'center',gap:3,marginTop:2,background:'var(--bg2)',borderRadius:4,padding:'1px 6px',border:'1px solid var(--border)'}}>
