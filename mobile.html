@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m68';
+const MOB_VER='m69';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -2332,55 +2332,54 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
             })()}
           </div>
           <div style={{height:20}}/>
-        </div>
-
-        {/* ── בנק יומי ── */}
-        {day&&<div style={{margin:'8px 14px 0',borderRadius:12,border:'1px solid var(--border)',overflow:'hidden',background:'var(--surface)'}}>
-          <div onClick={()=>setShowDayBank(o=>!o)}
-            style={{display:'flex',alignItems:'center',gap:8,padding:'10px 14px',cursor:'pointer',userSelect:'none',background:'var(--bg2)'}}>
-            <span style={{fontSize:13,fontWeight:700}}>📌 בנק יומי</span>
-            <span style={{fontSize:10,background:'#8b5cf6',color:'#fff',borderRadius:8,padding:'1px 7px',fontWeight:700}}>{(day.dayBank||[]).length}</span>
-            <div style={{flex:1}}/>
-            <span style={{fontSize:11,color:'var(--text3)'}}>{showDayBank?'▲':'▼'}</span>
-          </div>
-          {showDayBank&&(
-            <div style={{padding:'8px 12px',display:'flex',flexDirection:'column',gap:6}}>
-              {(day.dayBank||[]).length===0
-                ?<div style={{fontSize:11,color:'var(--text3)',textAlign:'center',padding:'10px 0'}}>
-                    אין פעילויות — הוסף מהמפה ("📌 בנק יומי")
-                  </div>
-                :(day.dayBank||[]).map(item=>(
-                  <div key={item.id} style={{display:'flex',alignItems:'center',gap:6,background:'var(--bg3)',borderRadius:8,padding:'8px 10px',border:'1px solid var(--border)'}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
-                      {item.address&&<div style={{fontSize:10,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>📍 {item.address}</div>}
-                      {item.rating&&<span style={{fontSize:10,color:'var(--amber)'}}>⭐ {item.rating}</span>}
-                    </div>
-                    <button onClick={()=>{
-                        const blk={id:uid(),type:'activity',title:item.name,
-                          startTime:sorted[sorted.length-1]?.endTime||day.startTime||'10:00',
-                          endTime:addMins(sorted[sorted.length-1]?.endTime||day.startTime||'10:00',90),
-                          note:'',address:item.address||'',lat:item.lat||null,lng:item.lng||null,
-                          placeId:item.placeId||'',placeRating:item.rating||null,placeType:item.placeType||'',
-                          placeOpenStatus:item.openStatus||'',placeTodayHours:item.todayHours||'',
-                          placePhone:item.phone||'',placeWebsite:item.website||''};
-                        const newDayBank=(day.dayBank||[]).filter(i=>i.id!==item.id);
-                        onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,blocks:[...(d.blocks||[]),blk],dayBank:newDayBank}:d)});
-                        toast(`"${item.name}" נוסף ללוז 📅`,'s');
-                      }}
-                      style={{background:'var(--accent2)',color:'#fff',border:'none',borderRadius:7,padding:'5px 10px',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'Heebo,sans-serif',flexShrink:0}}>
-                      ➕ ללוז
-                    </button>
-                    <button onClick={()=>onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,dayBank:(d.dayBank||[]).filter(i=>i.id!==item.id)}:d)})}
-                      style={{background:'rgba(239,68,68,.1)',color:'var(--red)',border:'1px solid rgba(239,68,68,.2)',borderRadius:7,padding:'5px 8px',fontSize:12,cursor:'pointer',flexShrink:0}}>
-                      ✕
-                    </button>
-                  </div>
-                ))
-              }
+          {/* ── בנק יומי ── */}
+          <div style={{margin:'0 0 8px',borderRadius:12,border:'1px solid var(--border)',overflow:'hidden',background:'var(--surface)'}}>
+            <div onClick={()=>setShowDayBank(o=>!o)}
+              style={{display:'flex',alignItems:'center',gap:8,padding:'10px 14px',cursor:'pointer',userSelect:'none',background:'var(--bg2)'}}>
+              <span style={{fontSize:13,fontWeight:700}}>📌 בנק יומי</span>
+              <span style={{fontSize:10,background:'#8b5cf6',color:'#fff',borderRadius:8,padding:'1px 7px',fontWeight:700}}>{(day.dayBank||[]).length}</span>
+              <div style={{flex:1}}/>
+              <span style={{fontSize:11,color:'var(--text3)'}}>{showDayBank?'▲':'▼'}</span>
             </div>
-          )}
-        </div>}
+            {showDayBank&&(
+              <div style={{padding:'8px 12px',display:'flex',flexDirection:'column',gap:6}}>
+                {(day.dayBank||[]).length===0
+                  ?<div style={{fontSize:11,color:'var(--text3)',textAlign:'center',padding:'10px 0'}}>
+                      אין פעילויות — הוסף מבנק האטרקציות (📌) או מהמפה
+                    </div>
+                  :(day.dayBank||[]).map(item=>(
+                    <div key={item.id} style={{display:'flex',alignItems:'center',gap:6,background:'var(--bg3)',borderRadius:8,padding:'8px 10px',border:'1px solid var(--border)'}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
+                        {item.address&&<div style={{fontSize:10,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>📍 {item.address}</div>}
+                        {item.rating&&<span style={{fontSize:10,color:'var(--amber)'}}>⭐ {item.rating}</span>}
+                      </div>
+                      <button onClick={()=>{
+                          const blk={id:uid(),type:'activity',title:item.name,
+                            startTime:sorted[sorted.length-1]?.endTime||day.startTime||'10:00',
+                            endTime:addMins(sorted[sorted.length-1]?.endTime||day.startTime||'10:00',90),
+                            note:'',address:item.address||'',lat:item.lat||null,lng:item.lng||null,
+                            placeId:item.placeId||'',placeRating:item.rating||null,placeType:item.placeType||'',
+                            placeOpenStatus:item.openStatus||'',placeTodayHours:item.todayHours||'',
+                            placePhone:item.phone||'',placeWebsite:item.website||''};
+                          const newDayBank=(day.dayBank||[]).filter(i=>i.id!==item.id);
+                          onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,blocks:[...(d.blocks||[]),blk],dayBank:newDayBank}:d)});
+                          toast(`"${item.name}" נוסף ללוז 📅`,'s');
+                        }}
+                        style={{background:'var(--accent2)',color:'#fff',border:'none',borderRadius:7,padding:'5px 10px',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'Heebo,sans-serif',flexShrink:0}}>
+                        ➕ ללוז
+                      </button>
+                      <button onClick={()=>onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,dayBank:(d.dayBank||[]).filter(i=>i.id!==item.id)}:d)})}
+                        style={{background:'rgba(239,68,68,.1)',color:'var(--red)',border:'1px solid rgba(239,68,68,.2)',borderRadius:7,padding:'5px 8px',fontSize:12,cursor:'pointer',flexShrink:0}}>
+                        ✕
+                      </button>
+                    </div>
+                  ))
+                }
+              </div>
+            )}
+          </div>
+        </div>
       </>}
 
       {/* ── modal תחבורה ציבורית / הליכה ── */}
