@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v124';
+const APP_VERSION = 'v125';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -858,7 +858,7 @@ const makeSearchMarkerIcon=types=>{
 /* ══════════════════════════════════
    מפת גוגל
 ══════════════════════════════════ */
-function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateBankItem,highlightDay,highlightItem,routeHighlight,mapPickCallbackRef,mapPickLabel,onCancelMapPick,onAddToDayBank}){
+function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateBankItem,highlightDay,highlightItem,routeHighlight,mapPickCallbackRef,mapPickLabel,onCancelMapPick,onAddToDayBank,shownDayIds}){
   const mapRef=useRef(null), mapInst=useRef(null), markers=useRef([]);
   const hlDayMarkers=useRef([]), hlItemMarker=useRef(null);
   const hlDayRoutes=useRef([]), hlRouteRenderer=useRef(null);
@@ -1273,6 +1273,10 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
     if (!trip) return;
 
     trip.days.forEach((day,i)=>{
+      // סנן לפי ימים נבחרים
+      if(shownDayIds && !shownDayIds.has(day.id)) return;
+      // אם היום מודגש — hlDayMarkers מציג אותו, לא צריך סמנים כפולים
+      if(highlightDay?.dayId===day.id) return;
       const color=DAY_COLORS[i%DAY_COLORS.length];
       // סמן מיקום יום — עיגול גדול עם מספר
       if (day.coordinates){
@@ -1361,7 +1365,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       });
       markers.current.push(m);
     });
-  },[trip,ready]);
+  },[trip,ready,shownDayIds,highlightDay]);
 
   // הדגשת יום שלם — סמנים ממוספרים גדולים + נקודות התחלה/סיום
   useEffect(()=>{
@@ -2019,7 +2023,7 @@ function LocationPickerModal({bank,title,onPick,onPickFromMap,onClose,onCreateEm
   );
 }
 
-function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute,onMoveToBank,settings,onPickFromMap,onBankNoteUpdate}){
+function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute,onMoveToBank,settings,onPickFromMap,onBankNoteUpdate,dayVisible=true,onToggleVisibility}){
   const[open,setOpen]=useState(true),[editing,setEd]=useState(null);
   const[travelTimes,setTravelTimes]=useState({});
   const[locationPicking,setLocationPicking]=useState(null); // {field:'start'|'end'}
@@ -2442,6 +2446,14 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         {day.blocks.length>0&&<span className="chip chip-blue" style={{fontSize:10}}>{done}/{day.blocks.length}</span>}
         {total>0&&<span style={{fontSize:11,color:'var(--amber)'}}>₪{total.toFixed(0)}</span>}
+        {onToggleVisibility&&(
+          <button className="btn btn-secondary btn-icon btn-sm"
+            title={dayVisible?'הסתר יום מהמפה':'הצג יום על המפה'}
+            style={{fontSize:13,padding:'3px 7px',opacity:dayVisible?1:0.4,border:'1px solid var(--border)'}}
+            onClick={e=>{e.stopPropagation();onToggleVisibility(day.id);}}>
+            👁️
+          </button>
+        )}
         {onFocusDay&&hasMapBlocks&&(
           <button className="btn btn-secondary btn-icon btn-sm"
             title="הצג את כל עצירות היום על המפה"
@@ -3171,7 +3183,7 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
 
 const DAYS_PER_PAGE=4;
 
-function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,onFocusRoute,compact=false,settings,onPickFromMap}){
+function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,onFocusRoute,compact=false,settings,onPickFromMap,shownDayIds,onToggleDayVisibility}){
   const[showBank,setShowBank]=useState(!compact);
   const[dayOffset,setDayOffset]=useState(0);
 
@@ -3215,9 +3227,15 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,onFocusRoute
   // במצב compact — תצוגה רגילה אנכית (עמודה צרה בתצוגת 3 עמודות)
   if(compact){
     return <div style={{display:'flex',height:'100%',overflow:'hidden',flexDirection:'column'}}>
-      <div style={{padding:'10px 14px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+      <div style={{padding:'10px 14px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:10,flexShrink:0,flexWrap:'wrap'}}>
         <span style={{fontWeight:700,fontSize:14}}>🗓 לוח זמנים</span>
         <button className="btn btn-primary btn-sm" onClick={addDay}>+ יום</button>
+        {shownDayIds!==null&&(
+          <button className="btn btn-secondary btn-sm" style={{fontSize:11}}
+            onClick={()=>onToggleDayVisibility('__all__')} title="הצג את כל הימים על המפה">
+            👁️ הצג הכל
+          </button>
+        )}
       </div>
       <div className="scroll-y flex-1" style={{padding:'10px'}}>
         {trip.days.length===0
@@ -3227,7 +3245,9 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,onFocusRoute
             <DayPanel key={day.id} day={{...day,_tripBank:trip.interestBank||[]}} idx={i} onUpdate={updDay} onDelete={()=>delDay(day.id)}
               onFocusDay={onFocusDay} onFocusItem={onFocusItem} onFocusRoute={onFocusRoute}
               onMoveToBank={(block)=>moveBlockToBank(block,day.id)} settings={settings} onPickFromMap={onPickFromMap}
-              onBankNoteUpdate={updateBankNote}/>
+              onBankNoteUpdate={updateBankNote}
+              dayVisible={shownDayIds===null||shownDayIds.has(day.id)}
+              onToggleVisibility={onToggleDayVisibility}/>
           ))
         }
       </div>
@@ -5703,6 +5723,7 @@ function App(){
   const[hlDay,setHlDay]=useState(null);
   const[hlItem,setHlItem]=useState(null);
   const[hlRoute,setHlRoute]=useState(null);
+  const[shownDayIds,setShownDayIds]=useState(null); // null=הכל, Set=ימים נבחרים
   const ghSha=useRef(null);
   const autoSyncTimer=useRef(null);
   const skipNextPush=useRef(false);
@@ -5710,6 +5731,23 @@ function App(){
   const mapPickCallbackRef=useRef(null);
   const[mapPickLabel,setMapPickLabel]=useState(null);
   const prevTabRef=useRef('timeline'); // tab to return to after map pick
+
+  const toggleDayVisibility=useCallback((dayId)=>{
+    if(dayId==='__all__'){setShownDayIds(null);return;}
+    setShownDayIds(prev=>{
+      if(prev===null){
+        // מעבר למצב סלקטיבי — הסתר רק את היום הזה
+        const next=new Set((trip?.days||[]).map(d=>d.id));
+        next.delete(dayId);
+        return next.size===(trip?.days||[]).length?null:next;
+      }
+      const next=new Set(prev);
+      if(next.has(dayId))next.delete(dayId);else next.add(dayId);
+      // אם כל הימים מסומנים — חזור למצב "הכל"
+      if(next.size===(trip?.days||[]).length)return null;
+      return next;
+    });
+  },[trip]);
 
   const pickLocationFromMap=useCallback((label,callback)=>{
     prevTabRef.current=tab; // capture current tab before switching
@@ -5959,7 +5997,7 @@ function App(){
               onSetDayLocation={setDayLocation} onUpdateBankItem={updateBankItem}
               highlightDay={hlDay} highlightItem={hlItem} routeHighlight={hlRoute}
               mapPickCallbackRef={mapPickCallbackRef} mapPickLabel={mapPickLabel} onCancelMapPick={cancelMapPick}
-              onAddToDayBank={addToDayBank}/>
+              onAddToDayBank={addToDayBank} shownDayIds={shownDayIds}/>
           </div>
           {/* backdrop בסלולר */}
           <div className={`mob-panel-backdrop${mobilePanel!=='map'?' show':''}`}
@@ -5968,10 +6006,11 @@ function App(){
           <div className={`map-col map-col-timeline${mobilePanel==='timeline'?' mob-open':''}`}>
             {trip?<TimelineTab trip={trip} onUpdate={updTrip} compact={true}
               onLocate={(lat,lng)=>window.__gmFocus?.(lat,lng)}
-              onFocusDay={(dayId,dayIndex,blocks)=>{setHlDay({dayId,dayIndex,blocks});setHlRoute(null);}}
+              onFocusDay={(dayId,dayIndex,blocks)=>{setHlDay({dayId,dayIndex,blocks});setHlRoute(null);setShownDayIds(new Set([dayId]));}}
               onFocusItem={(lat,lng,name)=>{setHlItem({lat,lng,name});setHlDay(null);setHlRoute(null);}}
               onFocusRoute={r=>setHlRoute(r)}
               settings={settings} onPickFromMap={pickLocationFromMap}
+              shownDayIds={shownDayIds} onToggleDayVisibility={toggleDayVisibility}
             />:noTrip}
           </div>
           {/* עמודה 3: בנק אטרקציות */}

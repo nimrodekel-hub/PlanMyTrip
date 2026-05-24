@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m66';
+const MOB_VER='m67';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -521,6 +521,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
   const mapRef=useRef(null);
   const bankMkRef=useRef([]);
   const dayMkRef=useRef([]);
+  const dayMkHiddenRef=useRef(false); // true כשסמני-ימים מוסתרים בגלל הדגשת יום
   const hlDayMkRef=useRef([]); // סמנים ממוספרים ל"הצג יום על מפה"
   const hlDayRtRef=useRef([]); // מסלולים בין עצירות
   const srchMkRef=useRef([]);
@@ -592,6 +593,11 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
       const req=mapFocusRef?.current;
       if(!req||!mapRef.current)return;
       mapFocusRef.current=null;
+      // אם עוברים ממצב הדגשת-יום לנקודה בודדת — שחזר סמני ימים
+      if(!req.fitBounds&&dayMkHiddenRef.current){
+        dayMkRef.current.forEach(m=>m.setMap(mapRef.current));
+        dayMkHiddenRef.current=false;
+      }
       // ניקוי סמנים ומסלולים קודמים של יום
       hlDayMkRef.current.forEach(m=>m.setMap(null)); hlDayMkRef.current=[];
       hlDayRtRef.current.forEach(r=>{try{r.setMap(null);}catch(e){}});  hlDayRtRef.current=[];
@@ -673,6 +679,9 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
             });
           }
         }
+        // הסתר סמני-ימים רגילים — רואים רק את הממוספרים של היום הנוכחי
+        dayMkRef.current.forEach(m=>m.setMap(null));
+        dayMkHiddenRef.current=true;
         return;
       }
       if(req.lat&&req.lng){mapRef.current.panTo({lat:req.lat,lng:req.lng});mapRef.current.setZoom(16);}
@@ -729,6 +738,8 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
         dayMkRef.current.push(mk);
       });
     });
+    // אם יום מודגש — שמור סמנים מוסתרים גם אחרי בנייה מחדש
+    if(dayMkHiddenRef.current) dayMkRef.current.forEach(m=>m.setMap(null));
   },[trip?.days,trip?.interestBank,mapsReady]);
 
   const loadPlace=(placeId,lat,lng,bankItem=null)=>{
