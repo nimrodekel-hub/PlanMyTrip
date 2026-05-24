@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v121';
+const APP_VERSION = 'v122';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -468,7 +468,7 @@ const normTrip = t => {
     expenses:[],interestBank:[],packingList:[],shoppingList:[],documents:[],quickNotes:[],days:[],generalNotes:'',
     ...t,
     days:(t.days||[]).map(d=>({blocks:[],...d,
-      blocks:(d.blocks||[]).map(b=>b.endTime?b:{...b,endTime:addMins(b.startTime||'09:00',b.durationMins??60)}),
+      blocks:(d.blocks||[]).map(b=>b.durationMins!=null?{...b,endTime:addMins(b.startTime||'09:00',b.durationMins)}:b),
       startLocation:d.startLocation||'',startTime:d.startTime||'08:00',
       endLocation:d.endLocation||'',endTime:d.endTime||'20:00',startPending:d.startPending||false})),
     interestBank:t.interestBank||[],

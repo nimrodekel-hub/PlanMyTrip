@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m63';
+const MOB_VER='m64';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -346,10 +346,9 @@ const saveState=s=>{try{localStorage.setItem(LS_KEY,JSON.stringify(s));}catch{}}
 
 /* ─── normTrip ─── */
 const normBlock=b=>{
-  // desktop saves durationMins (no endTime); mobile needs endTime
-  if(b.startTime&&!b.endTime&&b.durationMins!=null)
-    return{...b,endTime:addMins(b.startTime,b.durationMins)};
-  // mobile saves endTime (no durationMins); desktop needs durationMins — keep as-is, desktop handles it
+  // durationMins is authoritative (desktop format) — always recalc endTime from it
+  if(b.durationMins!=null)
+    return{...b,endTime:addMins(b.startTime||'09:00',b.durationMins)};
   return b;
 };
 const normTrip=t=>{
