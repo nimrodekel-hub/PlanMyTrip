@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m70';
+const MOB_VER='m71';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -2347,34 +2347,81 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                   ?<div style={{fontSize:11,color:'var(--text3)',textAlign:'center',padding:'10px 0'}}>
                       אין פעילויות — הוסף מבנק האטרקציות (📌) או מהמפה
                     </div>
-                  :(day.dayBank||[]).map(item=>(
-                    <div key={item.id} style={{display:'flex',alignItems:'center',gap:6,background:'var(--bg3)',borderRadius:8,padding:'8px 10px',border:'1px solid var(--border)'}}>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
-                        {item.address&&<div style={{fontSize:10,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>📍 {item.address}</div>}
-                        {item.rating&&<span style={{fontSize:10,color:'var(--amber)'}}>⭐ {item.rating}</span>}
+                  :(day.dayBank||[]).map(item=>{
+                    const bankInfo=(trip?.interestBank||[]).find(i=>
+                      (item.placeId&&i.placeId===item.placeId)||(item.lat&&i.lat&&Math.abs(i.lat-item.lat)<0.0001&&Math.abs(i.lng-item.lng)<0.0001));
+                    const src=BANK_SRC_PICKER[item._listSource||bankInfo?._listSource]||null;
+                    const rating=item.rating??bankInfo?.rating??null;
+                    const openStatus=item.openStatus||bankInfo?.openStatus||'';
+                    const todayHours=item.todayHours||bankInfo?.todayHours||'';
+                    const phone=item.phone||bankInfo?.phone||'';
+                    const website=item.website||bankInfo?.website||'';
+                    const placeType=item.placeType||bankInfo?.placeType||'';
+                    const types=item.types||bankInfo?.types||[];
+                    const hasLoc=!!(item.lat&&item.lng);
+                    const addToSchedule=()=>{
+                      const blk={id:uid(),type:'activity',title:item.name,
+                        startTime:sorted[sorted.length-1]?.endTime||day.startTime||'10:00',
+                        endTime:addMins(sorted[sorted.length-1]?.endTime||day.startTime||'10:00',90),
+                        note:'',address:item.address||'',lat:item.lat||null,lng:item.lng||null,
+                        placeId:item.placeId||'',placeRating:rating,placeType:placeType,
+                        placeOpenStatus:openStatus,placeTodayHours:todayHours,
+                        placePhone:phone,placeWebsite:website,photoUrl:item.photoUrl||''};
+                      const newDayBank=(day.dayBank||[]).filter(i=>i.id!==item.id);
+                      onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,blocks:[...(d.blocks||[]),blk],dayBank:newDayBank}:d)});
+                      toast(`"${item.name}" נוסף ללוז 📅`,'s');
+                    };
+                    return(
+                      <div key={item.id} style={{background:'var(--surface)',border:'1px solid var(--border)',
+                        borderRight:'4px solid #8b5cf6',borderRadius:10,overflow:'hidden'}}>
+                        <div style={{padding:'10px 12px'}}>
+                          <div style={{display:'flex',alignItems:'flex-start',gap:6}}>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:14,fontWeight:700,lineHeight:1.3,display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
+                                <span>📌 {item.name}</span>
+                                {src&&<span style={{fontSize:12,opacity:.75}}>{src.emoji}</span>}
+                              </div>
+                              {placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1}}>{placeType}</div>}
+                              {item.address&&<div style={{fontSize:11,color:'var(--text3)',marginTop:3}}>📍 {item.address}</div>}
+                              <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:2}}>
+                                {rating&&<span style={{fontSize:11,color:'var(--amber)'}}>⭐ {rating}</span>}
+                                {openStatus&&<span style={{fontSize:11,fontWeight:600,
+                                  color:openStatus==='פתוח עכשיו'?'var(--green)':'var(--red)'}}>
+                                  {openStatus==='פתוח עכשיו'?'✅':'🔴'} {openStatus}
+                                </span>}
+                              </div>
+                              {todayHours&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>🕐 {todayHours}</div>}
+                              {phone&&<div style={{fontSize:11,color:'var(--accent2)',marginTop:2}}>📞 {phone}</div>}
+                              {website&&<a href={website} target="_blank" rel="noreferrer"
+                                onClick={e=>e.stopPropagation()}
+                                style={{fontSize:11,color:'var(--accent2)',display:'block',marginTop:2,textDecoration:'none'}}>
+                                🌐 {website.replace(/^https?:\/\//,'').split('/')[0]}
+                              </a>}
+                              {item.note&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,lineHeight:1.4,
+                                background:'rgba(79,142,247,.06)',borderRadius:6,padding:'4px 7px',
+                                borderRight:'2px solid var(--accent2)'}}>📝 {item.note}</div>}
+                            </div>
+                            {/* כפתורי פעולה */}
+                            <div style={{display:'flex',flexDirection:'column',gap:4,flexShrink:0,alignItems:'flex-end'}}>
+                              {hasLoc&&<button onClick={()=>onShowOnMap&&onShowOnMap({lat:item.lat,lng:item.lng,placeId:item.placeId,name:item.name,address:item.address||''})}
+                                style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--accent2)'}}>🗺️</button>}
+                              {hasLoc&&<a href={item.placeId?`https://www.google.com/maps/place/?q=place_id:${item.placeId}`:`https://www.google.com/maps?q=${item.lat},${item.lng}`}
+                                target="_blank" rel="noreferrer"
+                                style={{padding:'4px 5px',fontSize:13,color:'#4285F4',textDecoration:'none',display:'inline-flex',alignItems:'center'}}
+                                onClick={e=>e.stopPropagation()}>↗</a>}
+                              <button onClick={addToSchedule}
+                                style={{background:'rgba(79,142,247,.12)',color:'var(--accent2)',border:'1px solid rgba(79,142,247,.3)',
+                                  borderRadius:7,padding:'4px 8px',fontSize:11,fontWeight:700,cursor:'pointer',
+                                  fontFamily:'Heebo,sans-serif',whiteSpace:'nowrap'}}>➕ ללוז</button>
+                              <button onClick={()=>onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,dayBank:(d.dayBank||[]).filter(i=>i.id!==item.id)}:d)})}
+                                style={{background:'rgba(239,68,68,.1)',color:'var(--red)',border:'1px solid rgba(239,68,68,.2)',
+                                  borderRadius:7,padding:'4px 8px',fontSize:12,cursor:'pointer',flexShrink:0}}>✕</button>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <button onClick={()=>{
-                          const blk={id:uid(),type:'activity',title:item.name,
-                            startTime:sorted[sorted.length-1]?.endTime||day.startTime||'10:00',
-                            endTime:addMins(sorted[sorted.length-1]?.endTime||day.startTime||'10:00',90),
-                            note:'',address:item.address||'',lat:item.lat||null,lng:item.lng||null,
-                            placeId:item.placeId||'',placeRating:item.rating||null,placeType:item.placeType||'',
-                            placeOpenStatus:item.openStatus||'',placeTodayHours:item.todayHours||'',
-                            placePhone:item.phone||'',placeWebsite:item.website||''};
-                          const newDayBank=(day.dayBank||[]).filter(i=>i.id!==item.id);
-                          onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,blocks:[...(d.blocks||[]),blk],dayBank:newDayBank}:d)});
-                          toast(`"${item.name}" נוסף ללוז 📅`,'s');
-                        }}
-                        style={{background:'var(--accent2)',color:'#fff',border:'none',borderRadius:7,padding:'5px 10px',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'Heebo,sans-serif',flexShrink:0}}>
-                        ➕ ללוז
-                      </button>
-                      <button onClick={()=>onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,dayBank:(d.dayBank||[]).filter(i=>i.id!==item.id)}:d)})}
-                        style={{background:'rgba(239,68,68,.1)',color:'var(--red)',border:'1px solid rgba(239,68,68,.2)',borderRadius:7,padding:'5px 8px',fontSize:12,cursor:'pointer',flexShrink:0}}>
-                        ✕
-                      </button>
-                    </div>
-                  ))
+                    );
+                  })
                 }
               </div>
             )}
