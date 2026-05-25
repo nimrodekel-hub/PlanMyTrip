@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m72';
+const MOB_VER='m74';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -353,10 +353,10 @@ const normBlock=b=>{
 };
 const normTrip=t=>{
   if(!t||typeof t!=='object')return null;
-  return{expenses:[],interestBank:[],packingList:[],shoppingList:[],documents:[],quickNotes:[],days:[],generalNotes:'',...t,
+  return{expenses:[],interestBank:[],packingList:[],shoppingList:[],documents:[],quickNotes:[],links:[],days:[],generalNotes:'',...t,
     days:(t.days||[]).map(d=>({blocks:[],dayBank:[],...d,startLocation:d.startLocation||'',startTime:d.startTime||'08:00',endLocation:d.endLocation||'',endTime:d.endTime||'20:00',dayBank:d.dayBank||[],
       blocks:(d.blocks||[]).map(normBlock)})),
-    interestBank:t.interestBank||[],expenses:t.expenses||[],packingList:t.packingList||[],shoppingList:t.shoppingList||[],documents:t.documents||[],quickNotes:t.quickNotes||[]};
+    interestBank:t.interestBank||[],expenses:t.expenses||[],packingList:t.packingList||[],shoppingList:t.shoppingList||[],documents:t.documents||[],quickNotes:t.quickNotes||[],links:t.links||[]};
 };
 
 /* ── bank item list-source styles ── */
@@ -1473,7 +1473,14 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
   const saveInlineNote=(blockId,note)=>{
     const blk=(day.blocks||[]).find(b=>b.id===blockId);
     if(!blk)return;
-    updBlock({...blk,note:note.trim()});
+    const trimmed=note.trim();
+    // עדכן הערה על הבלוק וגם על פריט הבנק המקושר (אם קיים)
+    const newBank=blk.placeId
+      ?(trip.interestBank||[]).map(i=>i.placeId===blk.placeId?{...i,note:trimmed}:i)
+      :(trip.interestBank||[]);
+    onUpdate({...trip,
+      days:trip.days.map(d=>d.id===day.id?{...d,blocks:d.blocks.map(b=>b.id===blockId?{...b,note:trimmed}:b)}:d),
+      interestBank:newBank});
     setInlineNote(null);
   };
 
@@ -2107,9 +2114,9 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                             style={{fontSize:11,color:'var(--accent2)',display:'block',marginTop:2,textDecoration:'none'}}>
                             🌐 {dispWebsite.replace(/^https?:\/\//,'').split('/')[0]}
                           </a>}
-                          {b.note&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,lineHeight:1.4,
+                          {(bankInfo?.note||b.note)&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,lineHeight:1.4,
                             background:'rgba(79,142,247,.06)',borderRadius:6,padding:'4px 7px',
-                            borderRight:'2px solid var(--accent2)'}}>📝 {b.note}</div>}
+                            borderRight:'2px solid var(--accent2)'}}>📝 {bankInfo?.note||b.note}</div>}
                         </div>
                         {/* action buttons */}
                         <div style={{display:'flex',gap:2,flexShrink:0,alignItems:'center'}}>
@@ -2124,12 +2131,12 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                           </a>}
                           <button onClick={()=>{
                               if(inlineNote?.blockId===b.id){setInlineNote(null);}
-                              else{setInlineNote({blockId:b.id,value:b.note||''});}
+                              else{setInlineNote({blockId:b.id,value:bankInfo?.note||b.note||''});}
                             }}
                             title="הוסף הערה מהירה"
                             style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,
-                              color:b.note?'var(--accent2)':'var(--text3)'}}>📝</button>
-                          <button onClick={()=>setEditing({...b})}
+                              color:(bankInfo?.note||b.note)?'var(--accent2)':'var(--text3)'}}>📝</button>
+                          <button onClick={()=>setEditing({...b,note:bankInfo?.note||b.note})}
                             style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--text3)'}}>✏️</button>
                           <button onClick={()=>deleteBlock(b.id)}
                             style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--red)',fontWeight:700}}>✕</button>
@@ -2615,6 +2622,15 @@ function BankScreen({trip,active,onShowOnMap,onUpdate}){
   const[filterSrc,setFilterSrc]=useState(null);
   const[dayBankSel,setDayBankSel]=useState(null); // פריט הממתין להוספה לבנק יומי
   const[dayActionSel,setDayActionSel]=useState(null); // {item, mode:'sched'|'start'|'end'}
+  const[noteEditItem,setNoteEditItem]=useState(null); // פריט שעורכים הערה שלו
+  const[noteEditVal,setNoteEditVal]=useState('');
+  const openNoteEdit=(item)=>{setNoteEditItem(item);setNoteEditVal(item.note||'');};
+  const saveNoteEdit=()=>{
+    if(!noteEditItem||!trip)return;
+    const note=noteEditVal.trim();
+    onUpdate({...trip,interestBank:(trip.interestBank||[]).map(i=>i.id===noteEditItem.id?{...i,note}:i)});
+    setNoteEditItem(null);
+  };
   const bank=trip?.interestBank||[];
   const days=trip?.days||[];
 
@@ -2738,7 +2754,15 @@ function BankScreen({trip,active,onShowOnMap,onUpdate}){
             {item.address&&<span>{item.address}</span>}
           </div>}
           {item._dist!==undefined&&<div style={{fontSize:11,color:'var(--accent2)',marginTop:2}}>📍 {fmtDist(item._dist)}</div>}
-          {item.note&&<div style={{fontSize:11,color:'var(--accent2)',marginTop:2}}>📝 {item.note}</div>}
+          {(item.note||onUpdate)&&(
+            <div style={{display:'flex',alignItems:'center',gap:4,marginTop:2}}>
+              {item.note&&<div style={{flex:1,fontSize:11,color:'var(--accent2)',lineHeight:1.4}}>📝 {item.note}</div>}
+              {onUpdate&&<button onClick={e=>{e.stopPropagation();openNoteEdit(item);}}
+                style={{background:'none',border:'none',cursor:'pointer',padding:'1px 3px',fontSize:12,
+                  color:item.note?'var(--accent2)':'var(--text3)',flexShrink:0}}
+                title={item.note?'ערוך הערה':'הוסף הערה'}>✏️</button>}
+            </div>
+          )}
         </div>
         {item.rating&&<div style={{fontSize:11,color:'var(--amber)',flexShrink:0,marginLeft:4}}>⭐ {item.rating}</div>}
         {onUpdate&&days.length>0&&(
@@ -2887,6 +2911,28 @@ function BankScreen({trip,active,onShowOnMap,onUpdate}){
         title={dayActionSel.mode==='sched'?'📅 הוסף ללוז של יום:':dayActionSel.mode==='start'?'🟢 קבע כמוצא של יום:':'🔴 קבע כיעד של יום:'}
         onSelect={execDayAction}
         onClose={()=>setDayActionSel(null)}/>}
+      {noteEditItem&&(
+        <div style={{position:'fixed',inset:0,zIndex:200,display:'flex',alignItems:'flex-end'}}>
+          <div onClick={()=>setNoteEditItem(null)} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.5)'}}/>
+          <div style={{position:'relative',width:'100%',background:'var(--bg2)',borderRadius:'16px 16px 0 0',
+            padding:16,paddingBottom:'calc(16px + var(--safe-b))'}}>
+            <div style={{fontSize:14,fontWeight:700,marginBottom:10}}>📝 הערה על "{noteEditItem.name}"</div>
+            <textarea value={noteEditVal} onChange={e=>setNoteEditVal(e.target.value)} rows={3}
+              autoFocus placeholder="הוסף הערה..."
+              style={{width:'100%',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:8,
+                color:'var(--text)',fontSize:14,padding:'8px 10px',fontFamily:'Heebo,sans-serif',
+                outline:'none',direction:'rtl',resize:'none',lineHeight:1.55}}/>
+            <div style={{display:'flex',gap:8,marginTop:10}}>
+              <button onClick={saveNoteEdit}
+                style={{flex:1,background:'var(--green)',border:'none',borderRadius:9,color:'#fff',
+                  fontSize:14,fontWeight:700,padding:10,cursor:'pointer',fontFamily:'Heebo,sans-serif'}}>שמור</button>
+              <button onClick={()=>setNoteEditItem(null)}
+                style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:9,
+                  color:'var(--text)',fontSize:14,padding:'10px 16px',cursor:'pointer',fontFamily:'Heebo,sans-serif'}}>ביטול</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2964,8 +3010,18 @@ function ChecklistTab({emoji,items,emptyText,addPlaceholder,onUpdate}){
 /* ── Notes tab ── */
 function NotesTab({trip,onUpdate}){
   const[newNote,setNewNote]=useState('');
+  const[newLinkUrl,setNewLinkUrl]=useState('');
+  const[newLinkName,setNewLinkName]=useState('');
   const addNote=()=>{const t=newNote.trim();if(!t)return;onUpdate({...trip,quickNotes:[...(trip.quickNotes||[]),{id:uid(),text:t,createdAt:new Date().toISOString()}]});setNewNote('');};
   const delNote=id=>onUpdate({...trip,quickNotes:(trip.quickNotes||[]).filter(n=>n.id!==id)});
+  const links=trip.links||[];
+  const addLink=()=>{
+    const url=newLinkUrl.trim();if(!url)return;
+    const name=newLinkName.trim();
+    onUpdate({...trip,links:[...links,{id:uid(),url,name}]});
+    setNewLinkUrl('');setNewLinkName('');
+  };
+  const delLink=id=>onUpdate({...trip,links:links.filter(l=>l.id!==id)});
   const qnotes=trip.quickNotes||[];
   return(
     <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column'}}>
@@ -2983,8 +3039,8 @@ function NotesTab({trip,onUpdate}){
         <button className="add-btn" onClick={addNote}>+</button>
       </div>
       <div className="slabel">📌 פתקיות מהירות ({qnotes.length})</div>
-      {qnotes.length===0&&<div style={{padding:'20px',textAlign:'center',color:'var(--text3)',fontSize:13}}>אין פתקיות עדיין</div>}
-      <div className="card" style={{margin:'0 14px'}}>
+      {qnotes.length===0&&<div style={{padding:'0 0 8px',textAlign:'center',color:'var(--text3)',fontSize:13}}>אין פתקיות עדיין</div>}
+      {qnotes.length>0&&<div className="card" style={{margin:'0 14px'}}>
         {[...qnotes].reverse().map(n=>(
           <div key={n.id} className="qnote">
             <div style={{flex:1}}>
@@ -2994,7 +3050,39 @@ function NotesTab({trip,onUpdate}){
             <button className="ci-del" onClick={()=>delNote(n.id)}>✕</button>
           </div>
         ))}
+      </div>}
+      {/* links */}
+      <div className="slabel">🔗 קישורים לאתרים ({links.length})</div>
+      <div style={{padding:'0 14px 10px',display:'flex',flexDirection:'column',gap:7}}>
+        <input className="add-inp" value={newLinkUrl} onChange={e=>setNewLinkUrl(e.target.value)}
+          placeholder="הדבק קישור (URL)..."
+          onKeyDown={e=>e.key==='Enter'&&newLinkUrl.trim()&&addLink()}
+          style={{width:'100%',direction:'ltr',textAlign:'right'}}/>
+        <div style={{display:'flex',gap:7}}>
+          <input className="add-inp" value={newLinkName} onChange={e=>setNewLinkName(e.target.value)}
+            placeholder="שם לקישור (אופציונלי)..."
+            onKeyDown={e=>e.key==='Enter'&&newLinkUrl.trim()&&addLink()}
+            style={{flex:1}}/>
+          <button className="add-btn" onClick={addLink} disabled={!newLinkUrl.trim()}
+            style={{opacity:newLinkUrl.trim()?1:0.4,flexShrink:0}}>+</button>
+        </div>
       </div>
+      {links.length===0&&<div style={{padding:'0 0 12px',textAlign:'center',color:'var(--text3)',fontSize:13}}>אין קישורים עדיין</div>}
+      {links.length>0&&<div className="card" style={{margin:'0 14px'}}>
+        {links.map(l=>(
+          <div key={l.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',borderBottom:'1px solid var(--border)'}}>
+            <span style={{fontSize:18,flexShrink:0}}>🔗</span>
+            <div style={{flex:1,minWidth:0}}>
+              <a href={l.url} target="_blank" rel="noreferrer"
+                style={{fontSize:13,color:'var(--accent2)',wordBreak:'break-all',display:'block',lineHeight:1.4,textDecoration:'none',fontWeight:600}}>
+                {l.name||l.url}
+              </a>
+              {l.name&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2,wordBreak:'break-all',direction:'ltr',textAlign:'right'}}>{l.url}</div>}
+            </div>
+            <button className="ci-del" style={{flexShrink:0}} onClick={()=>delLink(l.id)}>✕</button>
+          </div>
+        ))}
+      </div>}
       <div style={{height:16}}/>
     </div>
   );

@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v127';
+const APP_VERSION = 'v128';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1853,8 +1853,8 @@ function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,
   const locked=!!block.isAutoTravel; // נסיעות אוטומטיות לא ניתנות לגרירה
   const btnStyle={background:'none',border:'none',cursor:'pointer',padding:'2px 5px',borderRadius:4,fontSize:15,lineHeight:1,flexShrink:0};
   const[noteOpen,setNoteOpen]=React.useState(false);
-  const[noteVal,setNoteVal]=React.useState(block.notes||'');
-  const toggleNote=()=>{if(!noteOpen)setNoteVal(block.notes||'');setNoteOpen(o=>!o);};
+  const[noteVal,setNoteVal]=React.useState(bankInfo?.note||block.notes||'');
+  const toggleNote=()=>{if(!noteOpen)setNoteVal(bankInfo?.note||block.notes||'');setNoteOpen(o=>!o);};
   return <div className="timeline-block" draggable={!locked}
     onDragStart={locked?null:onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={locked?null:onDragEnd}
     style={{opacity:dragging?0.35:1,transition:'opacity .15s',borderTop:dragOver?'2px solid var(--accent)':'2px solid transparent'}}>
@@ -1889,7 +1889,7 @@ function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,
               <button style={{...btnStyle,color:'#f59e0b'}} title="העבר לבנק האטרקציות"
                 onClick={e=>{e.stopPropagation();onMoveToBank(block);}}>⭐</button>
             )}
-            {onNoteChange&&<button style={{...btnStyle,color:block.notes?'var(--accent)':'#6b7280'}}
+            {onNoteChange&&<button style={{...btnStyle,color:(bankInfo?.note||block.notes)?'var(--accent)':'#6b7280'}}
               title="הוסף הערה מהירה"
               onClick={e=>{e.stopPropagation();toggleNote();}}>📝</button>}
             <button style={{...btnStyle,color:'#6b7280'}} title="ערוך פרטים"
@@ -1907,7 +1907,7 @@ function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,
         </div>
         {block.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1,lineHeight:1.4}}>{block.placeType}</div>}
         {block.location&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>📍 {block.location}</div>}
-        {block.notes&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,fontStyle:'italic',lineHeight:1.5}}>{block.notes}</div>}
+        {(bankInfo?.note||block.notes)&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,fontStyle:'italic',lineHeight:1.5}}>{bankInfo?.note||block.notes}</div>}
         {/* פרטי מקום שנשמרו — עם fallback לבנק האטרקציות */}
         {dispRating&&<div style={{fontSize:11,color:'var(--amber)',marginTop:3}}>⭐ {dispRating}{block.placeUserRatings?` (${Number(block.placeUserRatings).toLocaleString()})`:''}</div>}
         {dispOpenStatus&&<div style={{fontSize:11,fontWeight:600,marginTop:2,color:dispOpenStatus==='פתוח עכשיו'?'#22c55e':'#ef4444'}}>{dispOpenStatus==='פתוח עכשיו'?'✅':'🔴'} {dispOpenStatus}</div>}
@@ -2719,7 +2719,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
           return [startConn,...sorted.map((bl,si)=>[
             nowInsert===si&&nowLine,
             <BlockItem key={bl.id} block={bl} interestBank={day._tripBank||[]} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onFocusItem={onFocusItem} onFocusRoute={focusRoute}
-              onNoteChange={(id,note)=>{const b=day.blocks.find(x=>x.id===id);if(b)updBlock({...b,notes:note});}}
+              onNoteChange={(id,note)=>{const b=day.blocks.find(x=>x.id===id);if(b){updBlock({...b,notes:note});if(b.placeId)onBankNoteUpdate?.(b.placeId,note);}}}
               dragging={dragOver!==null&&dragIdxRef.current===si} dragOver={dragOver===si}
               nowProgress={activeIdx===si?nowBlockProgress:null}
               mapNum={bl.lat&&bl.lng?si+1:null}
@@ -2965,7 +2965,10 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     {editing&&(()=>{
       const esi=sorted.findIndex(b=>b.id===editing.id);
       const editPrevEnd=esi>0?addMins(sorted[esi-1].startTime,bDur(sorted[esi-1])):null;
-      return <BlockModal block={editing} onSave={updBlock} onClose={()=>setEd(null)} onDelete={()=>{delBlock(editing.id);setEd(null);}} prevEndTime={editPrevEnd} onCascadeSave={cascadeSave} onCascadeSaveUnlink={cascadeSaveUnlink} onPickFromMap={onPickFromMap}/>;
+      const saveBlock=b=>{updBlock(b);if(b.placeId&&b.notes!==undefined)onBankNoteUpdate?.(b.placeId,b.notes||'');};
+      const saveCascade=b=>{cascadeSave(b);if(b.placeId&&b.notes!==undefined)onBankNoteUpdate?.(b.placeId,b.notes||'');};
+      const saveCascadeUnlink=b=>{cascadeSaveUnlink(b);if(b.placeId&&b.notes!==undefined)onBankNoteUpdate?.(b.placeId,b.notes||'');};
+      return <BlockModal block={editing} onSave={saveBlock} onClose={()=>setEd(null)} onDelete={()=>{delBlock(editing.id);setEd(null);}} prevEndTime={editPrevEnd} onCascadeSave={saveCascade} onCascadeSaveUnlink={saveCascadeUnlink} onPickFromMap={onPickFromMap}/>;
     })()}
 
     {locationPicking&&(
@@ -3252,8 +3255,8 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,onFocusRoute
   const[showBank,setShowBank]=useState(!compact);
   const[dayOffset,setDayOffset]=useState(0);
 
-  const updDay=upd=>onUpdate({...trip,days:trip.days.map(d=>d.id===upd.id?upd:d)});
-  const updateBankNote=(placeId,note)=>onUpdate({...trip,interestBank:(trip.interestBank||[]).map(i=>i.placeId===placeId?{...i,note}:i)});
+  const updDay=upd=>onUpdate(prev=>({...prev,days:prev.days.map(d=>d.id===upd.id?upd:d)}));
+  const updateBankNote=(placeId,note)=>onUpdate(prev=>({...prev,interestBank:(prev.interestBank||[]).map(i=>i.placeId===placeId?{...i,note}:i)}));
   const addDay=()=>{
     const last=trip.days[trip.days.length-1];
     let nd='';
