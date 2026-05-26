@@ -315,11 +315,11 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v135';
+const APP_VERSION = 'v136';
 
-/* בנה URL לגוגל מפות — דסקטופ: place_id URL פותח דף מקום ישיר בדפדפן */
-const mkMapsUrl=(placeId,lat,lng)=>
-  placeId?`https://www.google.com/maps/place/?q=place_id:${placeId}`:
+/* בנה URL לגוגל מפות — Maps URLs API עם שם המקום (לא נ"צ) כquery → פותח כרטיס מקום */
+const mkMapsUrl=(placeId,lat,lng,name)=>
+  placeId?`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name||(lat?`${lat},${lng}`:'place'))}&query_place_id=${placeId}`:
   lat&&lng?`https://www.google.com/maps?q=${lat},${lng}`:'';
 
 
@@ -1036,7 +1036,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       const price=p.priceLevel?'₪'.repeat(p.priceLevel):'';
       const openColor=p.openStatus==='פתוח עכשיו'?'#22c55e':'#ef4444';
       const shortSite=p.website?p.website.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]:'';
-      const mapsUrl=mkMapsUrl(p.placeId,p.lat,p.lng);
+      const mapsUrl=mkMapsUrl(p.placeId,p.lat,p.lng,p.name);
       return `<div style="font-family:Heebo,Arial,sans-serif;direction:rtl;text-align:right;width:210px;padding:2px 0 0">
         <!-- שם + סוג + דירוג בשורה אחת -->
         <div style="padding:8px 10px 0">
@@ -1886,7 +1886,7 @@ function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,
                 onClick={e=>{e.stopPropagation();onFocusItem(block.lat,block.lng,block.title);}}>📍</button>
             )}
             {(block.lat||block.placeId)&&(
-              <a href={mkMapsUrl(block.placeId,block.lat,block.lng)}
+              <a href={mkMapsUrl(block.placeId,block.lat,block.lng,block.title)}
                 target="_blank" rel="noreferrer"
                 style={{...btnStyle,color:'#4285F4',textDecoration:'none',display:'inline-flex',alignItems:'center'}}
                 title="פתח בגוגל מפות"
@@ -3177,7 +3177,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                           <div style={{display:'flex',flexDirection:'column',gap:3,flexShrink:0,alignItems:'flex-end'}}>
                             {hasLoc&&<button style={{...btnS,color:'#6b7280'}} title="הצג במפה"
                               onClick={()=>window.__gmFocus?.(item.lat,item.lng,17)}>📍</button>}
-                            {hasLoc&&<a href={mkMapsUrl(item.placeId,item.lat,item.lng)}
+                            {hasLoc&&<a href={mkMapsUrl(item.placeId,item.lat,item.lng,item.name)}
                               target="_blank" rel="noreferrer"
                               style={{...btnS,color:'#4285F4',textDecoration:'none',display:'inline-flex',alignItems:'center'}}
                               title="פתח בגוגל מפות"
@@ -3224,7 +3224,7 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
   const focusMap=()=>{if(item.lat){onLocate?.(item.lat,item.lng);onFocusItem?.(item.lat,item.lng,item.name);}};
   const saveNote=(val)=>{if(onNoteChange&&val!==item.note)onNoteChange(item.id,val);};
   /* קישור גוגל מפות — מה-url שנשמר בייבוא, או בנה מ-placeId */
-  const mapsUrl=item.url||mkMapsUrl(item.placeId,item.lat,item.lng);
+  const mapsUrl=item.url||mkMapsUrl(item.placeId,item.lat,item.lng,item.name);
   const srcInfo=BANK_SRC_PICKER[item._listSource]||null;
 
   return <div className="interest-item" style={{marginBottom:6,flexDirection:'column',alignItems:'stretch',gap:8,
