@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v131';
+const APP_VERSION = 'v132';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -2712,8 +2712,29 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
             );
           })();
           const endConn=(()=>{
-            if(!sorted.length||!day.endLat||!day.endLng||sorted[sorted.length-1].type==='travel')return null;
+            if(!sorted.length||!day.endLat||!day.endLng)return null;
             const last2=sorted[sorted.length-1];
+            /* Case 1: last block is auto-travel to end location → show arrival card */
+            if(last2.isAutoTravel){
+              const arrivalTime=addMins(last2.startTime,bDur(last2));
+              const arrM=toMins(arrivalTime);
+              const dayEndM=toMins(day.endTime||'20:00');
+              const overrun=arrM-dayEndM;
+              return(
+                <div key="__end_conn__" style={{display:'flex',alignItems:'center',gap:8,
+                  padding:'6px 8px 6px 40px',margin:'0 0 6px',flexWrap:'wrap',
+                  background:'rgba(239,68,68,.07)',borderRadius:8,border:'1px solid rgba(239,68,68,.25)',marginRight:36}}>
+                  <span style={{fontSize:11,color:'var(--red)',flex:1}}>
+                    🔴 {day.endLocation||'יעד'}{arrivalTime?` — מגיע בשעה ${arrivalTime}`:''}
+                    {overrun>0&&<span style={{color:'var(--amber)',fontWeight:600,display:'block',marginTop:2}}>
+                      ⚠️ חריגה {fmtTravelMin(overrun)} מזמן הסיום ({day.endTime})
+                    </span>}
+                  </span>
+                </div>
+              );
+            }
+            /* Case 2: non-auto travel block (manual) → skip */
+            if(last2.type==='travel')return null;
             const lastHasCoords=!!(last2.lat&&last2.lng);
             const key=`${last2.id}->__end__`;
             const tt=travelTimes[key];
