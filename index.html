@@ -315,12 +315,18 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v136';
+const APP_VERSION = 'v137';
 
-/* בנה URL לגוגל מפות — Maps URLs API עם שם המקום (לא נ"צ) כquery → פותח כרטיס מקום */
+/* בנה URL לגוגל מפות:
+   • placeId → search/?api=1 + name + query_place_id  (פותח כרטיס מקום)
+   • name + coords → search/NAME/@LAT,LNG             (חיפוש שם ממורכז בנ"צ)
+   • coords בלבד  → maps?q=LAT,LNG                   (סיכה בנ"צ כ-fallback) */
 const mkMapsUrl=(placeId,lat,lng,name)=>
-  placeId?`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name||(lat?`${lat},${lng}`:'place'))}&query_place_id=${placeId}`:
-  lat&&lng?`https://www.google.com/maps?q=${lat},${lng}`:'';
+  placeId
+    ?`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name||(lat?`${lat},${lng}`:'place'))}&query_place_id=${placeId}`
+    :name&&lat&&lng
+      ?`https://www.google.com/maps/search/${encodeURIComponent(name)}/@${lat},${lng},17z`
+      :lat&&lng?`https://www.google.com/maps?q=${lat},${lng}`:'';
 
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */

@@ -229,13 +229,15 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m80';
+const MOB_VER='m81';
 
 /* בנה URL לגוגל מפות — מובייל: Maps URLs API פותח כרטיס מקום באפליקציה */
-const mkMapsUrl=(placeId,lat,lng)=>
-  placeId&&lat&&lng?`https://www.google.com/maps/search/?api=1&query=${lat},${lng}&query_place_id=${placeId}`:
-  placeId?`https://www.google.com/maps/search/?api=1&query=place&query_place_id=${placeId}`:
-  lat&&lng?`https://www.google.com/maps?q=${lat},${lng}`:'';
+const mkMapsUrl=(placeId,lat,lng,name)=>
+  placeId
+    ?`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name||(lat?`${lat},${lng}`:'place'))}&query_place_id=${placeId}`
+    :name&&lat&&lng
+      ?`https://www.google.com/maps/search/${encodeURIComponent(name)}/@${lat},${lng},17z`
+      :lat&&lng?`https://www.google.com/maps?q=${lat},${lng}`:'';
 
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
@@ -1077,7 +1079,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
           {sheet.address&&<div className="bsheet-addr">📍 {sheet.address}</div>}
           {(sheet.placeId||sheet.lat)&&<div style={{padding:'4px 16px 8px'}}>
             <button
-              onClick={()=>{const u=mkMapsUrl(sheet.placeId,sheet.lat,sheet.lng);if(u)window.open(u,'_blank','noopener,noreferrer');}}
+              onClick={()=>{const u=mkMapsUrl(sheet.placeId,sheet.lat,sheet.lng,sheet.name);if(u)window.open(u,'_blank','noopener,noreferrer');}}
               style={{background:'rgba(66,133,244,.1)',border:'1px solid rgba(66,133,244,.25)',borderRadius:8,padding:'7px 14px',
                 fontSize:13,color:'#4285F4',cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:600,
                 display:'inline-flex',alignItems:'center',gap:6}}>
@@ -2187,7 +2189,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                           {hasLoc&&<button onClick={()=>onShowOnMap&&onShowOnMap({lat:b.lat,lng:b.lng,placeId:b.placeId,name:b.title||BLOCK_HE[b.type],address:b.address||''})}
                             style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--accent2)'}}>🗺️</button>}
                           {hasLoc&&<button
-                            onClick={e=>{e.stopPropagation();const u=mkMapsUrl(b.placeId,b.lat,b.lng);if(u)window.open(u,'_blank','noopener,noreferrer');}}
+                            onClick={e=>{e.stopPropagation();const u=mkMapsUrl(b.placeId,b.lat,b.lng,b.title);if(u)window.open(u,'_blank','noopener,noreferrer');}}
                             style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'#4285F4',display:'inline-flex',alignItems:'center',lineHeight:1}}
                             title="פתח בגוגל מפות">
                             <span style={{fontSize:13}}>↗</span>
@@ -2485,7 +2487,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                             <div style={{display:'flex',flexDirection:'column',gap:4,flexShrink:0,alignItems:'flex-end'}}>
                               {hasLoc&&<button onClick={()=>onShowOnMap&&onShowOnMap({lat:item.lat,lng:item.lng,placeId:item.placeId,name:item.name,address:item.address||''})}
                                 style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--accent2)'}}>🗺️</button>}
-                              {hasLoc&&<a href={mkMapsUrl(item.placeId,item.lat,item.lng)}
+                              {hasLoc&&<a href={mkMapsUrl(item.placeId,item.lat,item.lng,item.name)}
                                 target="_blank" rel="noreferrer"
                                 style={{padding:'4px 5px',fontSize:13,color:'#4285F4',textDecoration:'none',display:'inline-flex',alignItems:'center'}}
                                 onClick={e=>e.stopPropagation()}>↗</a>}
