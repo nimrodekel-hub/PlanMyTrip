@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m77';
+const MOB_VER='m78';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -1068,6 +1068,15 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
             </a>
           </div>}
           {sheet.address&&<div className="bsheet-addr">📍 {sheet.address}</div>}
+          {(sheet.placeId||sheet.lat)&&<div style={{padding:'4px 16px 8px'}}>
+            <button
+              onClick={()=>{const u=sheet.placeId?`https://www.google.com/maps/place/?q=place_id:${sheet.placeId}`:`https://www.google.com/maps?q=${sheet.lat},${sheet.lng}`;window.open(u,'_blank','noopener,noreferrer');}}
+              style={{background:'rgba(66,133,244,.1)',border:'1px solid rgba(66,133,244,.25)',borderRadius:8,padding:'7px 14px',
+                fontSize:13,color:'#4285F4',cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:600,
+                display:'inline-flex',alignItems:'center',gap:6}}>
+              🗺️ פתח בגוגל מפות
+            </button>
+          </div>}
           <div className="bsheet-actions">
             {!sheet.inBank&&<button className="bsheet-btn bank" onClick={addToBank}>⭐ שמור לבנק</button>}
             {sheet.inBank&&<div style={{padding:'11px 10px',fontSize:12,color:'var(--amber)',fontWeight:600}}>⭐ כבר בבנק</div>}
@@ -2170,13 +2179,12 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                         <div style={{display:'flex',gap:2,flexShrink:0,alignItems:'center'}}>
                           {hasLoc&&<button onClick={()=>onShowOnMap&&onShowOnMap({lat:b.lat,lng:b.lng,placeId:b.placeId,name:b.title||BLOCK_HE[b.type],address:b.address||''})}
                             style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--accent2)'}}>🗺️</button>}
-                          {(b.lat&&b.lng||b.placeId)&&<a href={b.placeId?`https://www.google.com/maps/place/?q=place_id:${b.placeId}`:`https://www.google.com/maps?q=${b.lat},${b.lng}`}
-                            target="_blank" rel="noreferrer"
-                            style={{padding:'4px 5px',fontSize:15,color:'#4285F4',textDecoration:'none',display:'inline-flex',alignItems:'center'}}
-                            title="פתח בגוגל מפות"
-                            onClick={e=>e.stopPropagation()}>
+                          {hasLoc&&<button
+                            onClick={e=>{e.stopPropagation();const u=b.placeId?`https://www.google.com/maps/place/?q=place_id:${b.placeId}`:`https://www.google.com/maps?q=${b.lat},${b.lng}`;window.open(u,'_blank','noopener,noreferrer');}}
+                            style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'#4285F4',display:'inline-flex',alignItems:'center',lineHeight:1}}
+                            title="פתח בגוגל מפות">
                             <span style={{fontSize:13}}>↗</span>
-                          </a>}
+                          </button>}
                           <button onClick={()=>{
                               if(inlineNote?.blockId===b.id){setInlineNote(null);}
                               else{setInlineNote({blockId:b.id,value:bankInfo?.note||b.note||''});}

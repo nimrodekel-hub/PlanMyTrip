@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v132';
+const APP_VERSION = 'v133';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1030,6 +1030,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       const price=p.priceLevel?'₪'.repeat(p.priceLevel):'';
       const openColor=p.openStatus==='פתוח עכשיו'?'#22c55e':'#ef4444';
       const shortSite=p.website?p.website.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]:'';
+      const mapsUrl=p.placeId?`https://www.google.com/maps/place/?q=place_id:${p.placeId}`:(p.lat&&p.lng?`https://www.google.com/maps?q=${p.lat},${p.lng}`:'');
       return `<div style="font-family:Heebo,Arial,sans-serif;direction:rtl;text-align:right;width:210px;padding:2px 0 0">
         <!-- שם + סוג + דירוג בשורה אחת -->
         <div style="padding:8px 10px 0">
@@ -1049,7 +1050,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
           <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
             ${shortSite?`<a href="${p.website}" target="_blank" rel="noreferrer" style="font-size:11px;color:#1a73e8;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px">🌐 ${shortSite}</a>`:''}
             ${p.phone?`<span style="font-size:11px;color:#555">📞 ${p.phone}</span>`:''}
-            ${p.placeId?`<a href="https://www.google.com/maps/place/?q=place_id:${p.placeId}" target="_blank" rel="noreferrer" style="font-size:10px;color:#1a73e8;text-decoration:none;margin-right:auto">↗ גוגל מפות</a>`:''}
+            ${mapsUrl?`<a href="${mapsUrl}" target="_blank" rel="noreferrer" style="font-size:10px;color:#1a73e8;text-decoration:none;margin-right:auto">↗ גוגל מפות</a>`:''}
             ${p.placeId&&!p.rating?`<button onclick="window.__gmShowPlace('${p.placeId}',${p.lat},${p.lng})" style="font-size:10px;color:#1a73e8;background:none;border:none;cursor:pointer;padding:0;font-family:Heebo,Arial,sans-serif" title="טען נתונים עדכניים מגוגל">🔄 טען פרטים</button>`:''}
           </div>
         </div>
