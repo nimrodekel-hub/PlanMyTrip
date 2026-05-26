@@ -315,7 +315,14 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v133';
+const APP_VERSION = 'v134';
+
+/* בנה URL לגוגל מפות — פורמט Maps URLs API שעובד ב-iOS/Android/web */
+const mkMapsUrl=(placeId,lat,lng)=>
+  placeId&&lat&&lng?`https://www.google.com/maps/search/?api=1&query=${lat},${lng}&query_place_id=${placeId}`:
+  placeId?`https://www.google.com/maps/search/?api=1&query=place&query_place_id=${placeId}`:
+  lat&&lng?`https://www.google.com/maps?q=${lat},${lng}`:'';
+
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1030,7 +1037,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       const price=p.priceLevel?'₪'.repeat(p.priceLevel):'';
       const openColor=p.openStatus==='פתוח עכשיו'?'#22c55e':'#ef4444';
       const shortSite=p.website?p.website.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]:'';
-      const mapsUrl=p.placeId?`https://www.google.com/maps/place/?q=place_id:${p.placeId}`:(p.lat&&p.lng?`https://www.google.com/maps?q=${p.lat},${p.lng}`:'');
+      const mapsUrl=mkMapsUrl(p.placeId,p.lat,p.lng);
       return `<div style="font-family:Heebo,Arial,sans-serif;direction:rtl;text-align:right;width:210px;padding:2px 0 0">
         <!-- שם + סוג + דירוג בשורה אחת -->
         <div style="padding:8px 10px 0">
@@ -1880,7 +1887,7 @@ function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,
                 onClick={e=>{e.stopPropagation();onFocusItem(block.lat,block.lng,block.title);}}>📍</button>
             )}
             {(block.lat||block.placeId)&&(
-              <a href={block.placeId?`https://www.google.com/maps/place/?q=place_id:${block.placeId}`:`https://www.google.com/maps?q=${block.lat},${block.lng}`}
+              <a href={mkMapsUrl(block.placeId,block.lat,block.lng)}
                 target="_blank" rel="noreferrer"
                 style={{...btnStyle,color:'#4285F4',textDecoration:'none',display:'inline-flex',alignItems:'center'}}
                 title="פתח בגוגל מפות"
@@ -3171,7 +3178,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                           <div style={{display:'flex',flexDirection:'column',gap:3,flexShrink:0,alignItems:'flex-end'}}>
                             {hasLoc&&<button style={{...btnS,color:'#6b7280'}} title="הצג במפה"
                               onClick={()=>window.__gmFocus?.(item.lat,item.lng,17)}>📍</button>}
-                            {hasLoc&&<a href={item.placeId?`https://www.google.com/maps/place/?q=place_id:${item.placeId}`:`https://www.google.com/maps?q=${item.lat},${item.lng}`}
+                            {hasLoc&&<a href={mkMapsUrl(item.placeId,item.lat,item.lng)}
                               target="_blank" rel="noreferrer"
                               style={{...btnS,color:'#4285F4',textDecoration:'none',display:'inline-flex',alignItems:'center'}}
                               title="פתח בגוגל מפות"
@@ -3218,7 +3225,7 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
   const focusMap=()=>{if(item.lat){onLocate?.(item.lat,item.lng);onFocusItem?.(item.lat,item.lng,item.name);}};
   const saveNote=(val)=>{if(onNoteChange&&val!==item.note)onNoteChange(item.id,val);};
   /* קישור גוגל מפות — מה-url שנשמר בייבוא, או בנה מ-placeId */
-  const mapsUrl=item.url||(item.placeId?`https://www.google.com/maps/place/?q=place_id:${item.placeId}`:'');
+  const mapsUrl=item.url||mkMapsUrl(item.placeId,item.lat,item.lng);
   const srcInfo=BANK_SRC_PICKER[item._listSource]||null;
 
   return <div className="interest-item" style={{marginBottom:6,flexDirection:'column',alignItems:'stretch',gap:8,
