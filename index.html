@@ -3161,7 +3161,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                               style={{fontSize:10,padding:'3px 8px',
                                 background:swapSrc?.id===item.id?'rgba(245,158,11,.35)':'rgba(245,158,11,.13)',
                                 color:'#d97706',border:`1px solid rgba(245,158,11,${swapSrc?.id===item.id?.55:.3})`}}
-                              title="החלף עם פעילות בלו"ז">🔄 החלף</button>
+                              title={'החלף עם פעילות בלו"ז'}>🔄 החלף</button>
                             <button style={{...btnS,color:'#ef4444',fontWeight:700,fontSize:13}} title="הסר"
                               onClick={()=>removeDayBankItem(item.id)}>✕</button>
                           </div>
