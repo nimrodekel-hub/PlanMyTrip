@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v130';
+const APP_VERSION = 'v131';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -2719,7 +2719,6 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
             const tt=travelTimes[key];
             const wt=travelTimes[`walk:${last2.id}->__end__`];
             const hasCar=tt&&!tt.loading&&tt.min!=null;
-            if(!hasCar&&!lastHasCoords)return null;
             const buf2=settings?.travelBuffer??1.2;
             const insertTravelEnd=()=>{
               const buffered=Math.round(tt.min*buf2);
@@ -2737,6 +2736,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                 background:'rgba(239,68,68,.07)',borderRadius:8,border:'1px solid rgba(239,68,68,.25)',marginRight:36}}>
                 <span style={{fontSize:11,color:'var(--red)',flex:1}}>
                   🔴 אחרון → {day.endLocation||'יעד'}
+                  {tt?.loading&&<span style={{opacity:.55}}> חישוב...</span>}
                   {hasCar&&<>: {fmtTravelMin(tt.min)}{tt.km?`, ${fmtKm(tt.km)}`:''} נסיעה
                     {buf2>1.01&&<span style={{opacity:.75}}> + {Math.round(tt.min*(buf2-1))} דק' = <b>{fmtTravelMin(Math.round(tt.min*buf2))}</b></span>}
                   </>}

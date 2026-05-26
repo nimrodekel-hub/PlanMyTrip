@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m75';
+const MOB_VER='m76';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -2364,13 +2364,13 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
               const tt=travelTimes[key];
               const wt=travelTimes[`walk:${key}`];
               const hasCar=tt&&!tt.loading&&tt.min!=null;
-              if(!hasCar&&!lastHasCoords)return null;
               const buf2=settings?.travelBuffer??1.2;
               return(
                 <div style={{display:'flex',alignItems:'center',gap:7,padding:'5px 10px',marginTop:4,
                     background:'rgba(239,68,68,.07)',borderRadius:8,border:'1px solid rgba(239,68,68,.2)',flexWrap:'wrap'}}>
                   <span style={{fontSize:11,color:'var(--red)',flex:1,lineHeight:1.45}}>
                     🔴 אחרון → {day.endLocation||'יעד'}
+                    {tt?.loading&&<span style={{opacity:.55}}> חישוב...</span>}
                     {hasCar&&<>: {fmtTravelMin(tt.min)}{tt.km?`, ${fmtKm(tt.km)}`:''} נסיעה{buf2>1.01&&<span style={{opacity:.75}}> = <b>{fmtTravelMin(Math.round(tt.min*buf2))}</b></span>}</>}
                   </span>
                   {hasCar&&<button title="הוסף נסיעה ברכב" onClick={()=>insertTravelBlock(day.id,last2.id,tt.min,tt.km)}
