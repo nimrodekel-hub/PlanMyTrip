@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m76';
+const MOB_VER='m77';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -2495,6 +2495,33 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                 }
               </div>
             )}
+          </div>
+          {/* ── הערות יומיות + סיכום ── */}
+          <div style={{margin:'8px 0',borderRadius:12,border:'1px solid var(--border)',overflow:'hidden',background:'var(--surface)'}}>
+            <div style={{padding:'10px 14px 8px',display:'flex',flexDirection:'column',gap:8}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:'var(--text2)',marginBottom:4}}>📝 הערות יומיות</div>
+                <textarea
+                  rows={2}
+                  value={day.notes||''}
+                  onChange={e=>updDay({notes:e.target.value})}
+                  placeholder="הערות להיום — מידע שימושי, תזכורות, קישורים..."
+                  style={{width:'100%',boxSizing:'border-box',background:'var(--bg2)',border:'1px solid var(--border)',
+                    borderRadius:8,padding:'7px 10px',fontSize:13,color:'var(--text)',
+                    fontFamily:'Heebo,sans-serif',resize:'vertical',direction:'rtl',lineHeight:1.5,outline:'none'}}/>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:'var(--text2)',marginBottom:4}}>📖 סיכום / יומן</div>
+                <textarea
+                  rows={3}
+                  value={day.summary||''}
+                  onChange={e=>updDay({summary:e.target.value})}
+                  placeholder="איך היה היום? כתוב את רשומת היומן שלך..."
+                  style={{width:'100%',boxSizing:'border-box',background:'var(--bg2)',border:'1px solid var(--border)',
+                    borderRadius:8,padding:'7px 10px',fontSize:13,color:'var(--text)',
+                    fontFamily:'Heebo,sans-serif',resize:'vertical',direction:'rtl',lineHeight:1.5,outline:'none'}}/>
+              </div>
+            </div>
           </div>
           <div style={{height:'calc(var(--nav-h) + var(--safe-b) + 16px)'}}/>
         </div>
