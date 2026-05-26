@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m74';
+const MOB_VER='m75';
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const LS_KEY='caravanCtrl_he';
 const GMAPS_KEY='AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
@@ -1334,6 +1334,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
   const[dayWx,setDayWx]=useState(null); // מזג אוויר לכרטיס הנוכחי
   const[transitSearch,setTransitSearch]=useState(null); // {loading,fromBlockId,toBlockId,results,error}
   const[showDayBank,setShowDayBank]=useState(false);
+  const[swapSrc,setSwapSrc]=useState(null); // פריט בנק יומי הממתין להחלפה עם בלוק
   // drag-and-drop state
   const dragIdxRef=useRef(null);
   const[dragSrc,setDragSrc]=useState(null);
@@ -1482,6 +1483,38 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
       days:trip.days.map(d=>d.id===day.id?{...d,blocks:d.blocks.map(b=>b.id===blockId?{...b,note:trimmed}:b)}:d),
       interestBank:newBank});
     setInlineNote(null);
+  };
+
+  // החלפת פריט בנק יומי עם בלוק קיים בלוז — הבלוק הישן חוזר לבנק היומי
+  const executeSwap=(bankItem,targetBlock)=>{
+    const nb={
+      id:uid(),type:'activity',
+      title:bankItem.name,
+      startTime:targetBlock.startTime,
+      endTime:targetBlock.endTime,
+      note:bankItem.note||'',
+      address:bankItem.address||'',
+      lat:bankItem.lat||null,lng:bankItem.lng||null,
+      placeId:bankItem.placeId||'',
+      placeRating:bankItem.rating||null,placeType:bankItem.placeType||'',
+      placeOpenStatus:bankItem.openStatus||'',placeTodayHours:bankItem.todayHours||'',
+      placePhone:bankItem.phone||'',placeWebsite:bankItem.website||'',
+    };
+    const oldItem={
+      id:uid(),name:targetBlock.title||'פעילות',
+      address:targetBlock.address||'',
+      lat:targetBlock.lat||null,lng:targetBlock.lng||null,
+      placeId:targetBlock.placeId||'',
+      note:targetBlock.note||'',
+      rating:targetBlock.placeRating||null,placeType:targetBlock.placeType||'',
+      openStatus:targetBlock.placeOpenStatus||'',todayHours:targetBlock.placeTodayHours||'',
+      phone:targetBlock.placePhone||'',website:targetBlock.placeWebsite||'',
+    };
+    const newBlocks=(day.blocks||[]).map(b=>b.id===targetBlock.id?nb:b);
+    const newDayBank=[...(day.dayBank||[]).filter(i=>i.id!==bankItem.id),oldItem];
+    onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,blocks:newBlocks,dayBank:newDayBank}:d)});
+    setSwapSrc(null);
+    toast(`"${bankItem.name}" הוחלף עם "${targetBlock.title||'פעילות'}" 🔄`,'s');
   };
 
   const deleteBlock=id=>{
@@ -2004,6 +2037,21 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
           ))}
         </div>
 
+        {/* swap mode banner */}
+        {swapSrc&&(
+          <div style={{background:'rgba(245,158,11,.15)',border:'1px solid rgba(245,158,11,.45)',
+            margin:'8px 14px 0',borderRadius:10,padding:'9px 12px',
+            display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+            <span style={{fontSize:15}}>🔄</span>
+            <div style={{flex:1,fontSize:12,fontWeight:600,color:'#d97706',lineHeight:1.4}}>
+              בחר פעילות בלו"ז להחלפה עם "{swapSrc.name}"
+            </div>
+            <button onClick={()=>setSwapSrc(null)}
+              style={{background:'none',border:'none',cursor:'pointer',fontSize:18,
+                color:'var(--text3)',padding:'0 2px',lineHeight:1,flexShrink:0}}>✕</button>
+          </div>
+        )}
+
         {/* blocks list */}
         {sorted.length===0&&(
           <div style={{padding:'28px 16px',textAlign:'center',color:'var(--text3)',fontSize:13}}>
@@ -2195,6 +2243,16 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                         </div>
                       </div>
                     </div>
+                    {/* swap button — shown only in swap mode for non-travel blocks */}
+                    {swapSrc&&!b.isAutoTravel&&(
+                      <button onClick={()=>executeSwap(swapSrc,b)}
+                        style={{width:'100%',background:'rgba(245,158,11,.13)',color:'#d97706',
+                          border:'none',borderTop:'1px solid rgba(245,158,11,.35)',padding:'8px 12px',
+                          fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'Heebo,sans-serif',
+                          display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+                        🔄 החלף עם "{swapSrc.name}"
+                      </button>
+                    )}
                     {/* inline note editor */}
                     {inlineNote?.blockId===b.id&&(
                       <div style={{borderTop:'1px solid var(--border)',padding:'8px 12px',display:'flex',gap:7,alignItems:'center'}}>
@@ -2420,6 +2478,11 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                                 style={{background:'rgba(79,142,247,.12)',color:'var(--accent2)',border:'1px solid rgba(79,142,247,.3)',
                                   borderRadius:7,padding:'4px 8px',fontSize:11,fontWeight:700,cursor:'pointer',
                                   fontFamily:'Heebo,sans-serif',whiteSpace:'nowrap'}}>➕ ללוז</button>
+                              <button onClick={()=>setSwapSrc(swapSrc?.id===item.id?null:item)}
+                                style={{background:swapSrc?.id===item.id?'rgba(245,158,11,.35)':'rgba(245,158,11,.1)',
+                                  color:'#d97706',border:`1px solid rgba(245,158,11,${swapSrc?.id===item.id?.55:.25})`,
+                                  borderRadius:7,padding:'4px 8px',fontSize:11,fontWeight:700,cursor:'pointer',
+                                  fontFamily:'Heebo,sans-serif',whiteSpace:'nowrap'}}>🔄 החלף</button>
                               <button onClick={()=>onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,dayBank:(d.dayBank||[]).filter(i=>i.id!==item.id)}:d)})}
                                 style={{background:'rgba(239,68,68,.1)',color:'var(--red)',border:'1px solid rgba(239,68,68,.2)',
                                   borderRadius:7,padding:'4px 8px',fontSize:12,cursor:'pointer',flexShrink:0}}>✕</button>

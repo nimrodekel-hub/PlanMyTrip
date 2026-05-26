@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v128';
+const APP_VERSION = 'v129';
 
 /* ─── OSRM travel time (100% free, no Google, no billing) ─── */
 const _osrmCache={};
@@ -1836,7 +1836,7 @@ function BlockModal({block,onSave,onClose,onDelete,prevEndTime,onCascadeSave,onC
 /* ══════════════════════════════════
    בלוק בציר הזמן
 ══════════════════════════════════ */
-function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,onFocusRoute,onNoteChange,dragging,dragOver,onDragStart,onDragOver,onDrop,onDragEnd,nowProgress,mapNum}){
+function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,onFocusRoute,onNoteChange,onSwap,dragging,dragOver,onDragStart,onDragOver,onDrop,onDragEnd,nowProgress,mapNum}){
   // תומך בשני פורמטים: durationMins (דסקטופ) ו-endTime (מובייל)
   const end=block.durationMins!=null?addMins(block.startTime,block.durationMins):(block.endTime||'');
   const col=BLOCK_COLOR[block.type]||'var(--text3)';
@@ -1888,6 +1888,11 @@ function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,
             {onMoveToBank&&(
               <button style={{...btnStyle,color:'#f59e0b'}} title="העבר לבנק האטרקציות"
                 onClick={e=>{e.stopPropagation();onMoveToBank(block);}}>⭐</button>
+            )}
+            {onSwap&&!block.isAutoTravel&&(
+              <button style={{...btnStyle,color:'#d97706',fontWeight:700,background:'rgba(245,158,11,.15)',borderRadius:5}}
+                title="החלף עם פעילות מהבנק היומי"
+                onClick={e=>{e.stopPropagation();onSwap(block);}}>🔄</button>
             )}
             {onNoteChange&&<button style={{...btnStyle,color:(bankInfo?.note||block.notes)?'var(--accent)':'#6b7280'}}
               title="הוסף הערה מהירה"
@@ -2029,6 +2034,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
   const[locationPicking,setLocationPicking]=useState(null); // {field:'start'|'end'}
   const[bankPickForBlock,setBankPickForBlock]=useState(null); // {type}
   const[showDayBank,setShowDayBank]=useState(false);
+  const[swapSrc,setSwapSrc]=useState(null); // פריט בנק יומי הממתין להחלפה עם בלוק
   const dragIdxRef=useRef(null);
   const[dragOver,setDragOver]=useState(null);
   const updBlock=upd=>onUpdate({...day,blocks:day.blocks.map(b=>b.id===upd.id?upd:b)});
@@ -2136,6 +2142,37 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     if(b.startTime&&b.endTime)return Math.max(0,toMinsD(b.endTime)-toMinsD(b.startTime));
     return 60;
   };
+  // החלפת פריט בנק יומי עם בלוק קיים בלוז — הבלוק הישן חוזר לבנק היומי
+  const executeSwap=(targetBlock)=>{
+    if(!swapSrc)return;
+    const nb={
+      id:uid(),type:'activity',
+      title:swapSrc.name,location:swapSrc.address||'',
+      startTime:targetBlock.startTime,durationMins:bDur(targetBlock),
+      lat:swapSrc.lat||null,lng:swapSrc.lng||null,
+      placeId:swapSrc.placeId||'',
+      placeRating:swapSrc.rating||null,placeType:swapSrc.placeType||'',
+      placeOpenStatus:swapSrc.openStatus||'',placeTodayHours:swapSrc.todayHours||'',
+      placePhone:swapSrc.phone||'',placeWebsite:swapSrc.website||'',
+      notes:swapSrc.note||'',isCompleted:false,rating:0,cost:0,
+    };
+    const oldItem={
+      id:uid(),name:targetBlock.title||'פעילות',
+      address:targetBlock.location||'',
+      lat:targetBlock.lat||null,lng:targetBlock.lng||null,
+      placeId:targetBlock.placeId||'',
+      note:targetBlock.notes||'',
+      rating:targetBlock.placeRating||null,placeType:targetBlock.placeType||'',
+      openStatus:targetBlock.placeOpenStatus||'',todayHours:targetBlock.placeTodayHours||'',
+      phone:targetBlock.placePhone||'',website:targetBlock.placeWebsite||'',
+    };
+    const newBlocks=(day.blocks||[]).map(b=>b.id===targetBlock.id?nb:b);
+    const newDayBank=[...(day.dayBank||[]).filter(i=>i.id!==swapSrc.id),oldItem];
+    onUpdate({...day,blocks:newBlocks,dayBank:newDayBank});
+    setSwapSrc(null);
+    toast(`"${swapSrc.name}" הוחלף עם "${targetBlock.title||'פעילות'}" 🔄`,'success');
+  };
+
   const cascadeBlocks=()=>{
     if(!sorted.length)return;
     const delta=toMinsD(day.startTime||'08:00')-toMinsD(sorted[0].startTime);
@@ -2563,6 +2600,18 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
       <Weather coordinates={day.endLat&&day.endLng?{lat:day.endLat,lng:day.endLng}:null} location={day.endLocation||day.location}/>
 
       <div className="timeline">
+        {swapSrc&&(
+          <div style={{background:'rgba(245,158,11,.12)',border:'1px solid rgba(245,158,11,.45)',
+            borderRadius:8,padding:'7px 10px',marginBottom:6,display:'flex',alignItems:'center',gap:8}}>
+            <span>🔄</span>
+            <span style={{flex:1,fontSize:11,fontWeight:700,color:'#d97706'}}>
+              לחץ על פעילות בלו"ז להחלפה עם "{swapSrc.name}"
+            </span>
+            <button onClick={()=>setSwapSrc(null)}
+              style={{background:'none',border:'none',cursor:'pointer',fontSize:13,
+                color:'var(--text3)',padding:'0 3px',lineHeight:1}}>✕</button>
+          </div>
+        )}
         {sorted.length===0&&<div style={{padding:'12px 0',color:'var(--text3)',fontSize:13,textAlign:'center'}}>אין בלוקים עדיין — הוסף בלוק למטה</div>}
         {(()=>{
           /* קו "עכשיו" — מחושב לפי השעה הנוכחית ביחס לבלוקים */
@@ -2719,6 +2768,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
           return [startConn,...sorted.map((bl,si)=>[
             nowInsert===si&&nowLine,
             <BlockItem key={bl.id} block={bl} interestBank={day._tripBank||[]} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onFocusItem={onFocusItem} onFocusRoute={focusRoute}
+              onSwap={swapSrc?executeSwap:null}
               onNoteChange={(id,note)=>{const b=day.blocks.find(x=>x.id===id);if(b){updBlock({...b,notes:note});if(b.placeId)onBankNoteUpdate?.(b.placeId,note);}}}
               dragging={dragOver!==null&&dragIdxRef.current===si} dragOver={dragOver===si}
               nowProgress={activeIdx===si?nowBlockProgress:null}
@@ -3106,6 +3156,12 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                               onClick={e=>e.stopPropagation()}>🗺️</a>}
                             <button className="btn btn-primary btn-sm" style={{fontSize:10,padding:'3px 8px'}}
                               onClick={()=>addDayBankItemToSchedule(item)}>➕ ללוז</button>
+                            <button className="btn btn-sm"
+                              onClick={()=>setSwapSrc(swapSrc?.id===item.id?null:item)}
+                              style={{fontSize:10,padding:'3px 8px',
+                                background:swapSrc?.id===item.id?'rgba(245,158,11,.35)':'rgba(245,158,11,.13)',
+                                color:'#d97706',border:`1px solid rgba(245,158,11,${swapSrc?.id===item.id?.55:.3})`}}
+                              title="החלף עם פעילות בלו"ז">🔄 החלף</button>
                             <button style={{...btnS,color:'#ef4444',fontWeight:700,fontSize:13}} title="הסר"
                               onClick={()=>removeDayBankItem(item.id)}>✕</button>
                           </div>
