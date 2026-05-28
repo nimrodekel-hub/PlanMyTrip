@@ -315,7 +315,9 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v139';
+const APP_VERSION = 'v140';
+const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
+const IS_ADMIN = typeof location !== 'undefined' && new URLSearchParams(location.search).get('admin') === '1';
 
 /* בנה URL לגוגל מפות:
    • placeId → search/?api=1 + name + query_place_id  (פותח כרטיס מקום)
@@ -742,7 +744,7 @@ function TrackerBtn({label,date,color,warnDays,log,onSave}){
 function VehicleHeader({trip,theme,syncStatus,hasGh,hasFb,syncKey,onThemeToggle,onUpdate,onGoSettings}){
   const v=trip?.vehicle||{};
   const hasSync=hasGh||hasFb;
-  const syncLabel=hasFb?'Firebase':hasGh?'גיטהאב':'';
+  const syncLabel=hasFb?'ענן':hasGh?'גיטהאב':'';
   const syncIcon=hasSync
     ?syncStatus==='syncing'?{i:'🔄',c:'var(--amber)',t:`מסנכרן עם ${syncLabel}...`}
     :syncStatus==='synced' ?{i:'☁️',c:'var(--green)',t:`מסונכרן עם ${syncLabel} ✓`}
@@ -4720,7 +4722,7 @@ function DocsTab({trip,onUpdate,settings}){
             העלה דרכונים, ביטוח, כרטיסים, מפות קמפינג ועוד.<br/>
             {hasFb
               ?<><strong style={{color:'var(--green)'}}>☁️ Firebase מחובר</strong> — הקבצים יסונכרנו אוטומטית לכל המכשירים.</>
-              :<><strong style={{color:'var(--amber)'}}>💾 אחסון מקומי</strong> — הגדר Firebase בלשונית 🔗 חיבוריות כדי לסנכרן.</>}
+              :<><strong style={{color:'var(--amber)'}}>💾 אחסון מקומי</strong> — עבור ל-🔗 חיבוריות כדי לסנכרן.</>}
             <br/><span style={{fontSize:11,color:'var(--text3)'}}>מגבלה: עד {fmtSize(MAX_BYTES)} לקובץ</span>
           </p>
           <button className="btn btn-primary" onClick={()=>fileRef.current?.click()}>+ העלה קובץ</button>
@@ -4760,7 +4762,7 @@ function DocsTab({trip,onUpdate,settings}){
         ?<>☁️ <strong>Firebase</strong> — הקבצים שמורים בתוך ה-JSON ומסונכרנים אוטומטית לכל המכשירים.
           &nbsp;מגבלה: עד {fmtSize(MAX_BYTES)} לקובץ. הנתונים <strong>לא נמחקים לעולם</strong> — רק הגישה יכולה להיחסם אם Rules מוגדרים שגוי.</>
         :<>💾 <strong>מקומי</strong> — הקבצים שמורים בדפדפן זה בלבד ולא מסונכרנים.
-          &nbsp;<span style={{color:'var(--amber)'}}>הגדר Firebase בלשונית 🔗 חיבוריות לסנכרון.</span></>}
+          &nbsp;<span style={{color:'var(--amber)'}}>עבור ל-🔗 חיבוריות לסנכרון.</span></>}
     </div>
   </div>;
 }
@@ -5160,14 +5162,14 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
         <div style={{flex:1}}>
           <div style={{fontSize:17,fontWeight:800,marginBottom:2}}>חיבוריות</div>
           <div style={{fontSize:12,color:'var(--text2)',lineHeight:1.7}}>
-            <strong>הסנכרון בין מכשירים פועל אוטומטית</strong> — ללא הרשמה. GitHub ו-Maps הם שירותים אופציונליים.
+            <strong>הסנכרון בין מכשירים פועל אוטומטית</strong> — ללא הרשמה, ללא הגדרות.{IS_ADMIN&&<> GitHub ו-Maps הם שירותים אופציונליים (מצב אדמין).</>}
           </div>
         </div>
       </div>
 
       {/* ── דיאגרמה ── */}
       <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:0,userSelect:'none'}}>
-        <div style={{display:'flex',alignItems:'flex-end',gap:8,justifyContent:'center',width:'100%',maxWidth:560}}>
+        <div style={{display:'flex',alignItems:'flex-end',gap:8,justifyContent:'center',width:'100%',maxWidth:400}}>
 
           {/* סנכרון */}
           <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
@@ -5186,29 +5188,19 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
             <div style={{fontSize:10,opacity:.8,marginTop:1}}>PlanMyTrip</div>
           </div>
 
-          {/* GitHub */}
-          <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
+          {/* GitHub — מצב אדמין בלבד */}
+          {IS_ADMIN&&<div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
             <div style={{background:'rgba(88,96,176,0.1)',border:'1.5px solid rgba(88,96,176,0.35)',borderRadius:10,padding:'7px 10px',textAlign:'center',width:'100%'}}>
               <div style={{fontSize:18}}>🐙</div>
               <div style={{fontWeight:700,fontSize:11}}>GitHub</div>
               <div style={{fontSize:10,color:'var(--text3)',lineHeight:1.4}}>ייבוא רשימות<br/>מגוגל מפות</div>
             </div>
             <div style={{fontSize:13,color:s.githubToken?'var(--green)':'var(--text3)',fontWeight:700}}>↓</div>
-          </div>
+          </div>}
 
-          {/* Google Maps */}
-          <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
-            <div style={{background:'rgba(34,197,94,0.08)',border:'1.5px solid rgba(34,197,94,0.35)',borderRadius:10,padding:'7px 10px',textAlign:'center',width:'100%'}}>
-              <div style={{fontSize:18}}>🗺️</div>
-              <div style={{fontWeight:700,fontSize:11}}>Maps API</div>
-              <div style={{fontSize:10,color:'var(--text3)',lineHeight:1.4}}>מפה אינטר-<br/>אקטיבית</div>
-            </div>
-            <div style={{fontSize:13,color:s.googleMapsKey?'var(--green)':'var(--text3)',fontWeight:700}}>↓</div>
-          </div>
         </div>
-
         {/* קו אופקי מחבר */}
-        <div style={{width:'calc(100% - 90px - 16px)',maxWidth:460,height:1,background:'var(--border)',marginBottom:0}}/>
+        <div style={{width:'calc(100% - 90px - 16px)',maxWidth:380,height:1,background:'var(--border)',marginBottom:0}}/>
       </div>
     </div>
 
@@ -5366,9 +5358,9 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
       </div>
 
       {/* ═══════════════════════
-          עמודה 2 — 🐙 GitHub
+          עמודה 2 — 🐙 GitHub (אדמין בלבד)
           ══════════════════════ */}
-      <div className="conn-col">
+      {IS_ADMIN&&<div className="conn-col">
         <div className="conn-col-title">
           🐙 GitHub Token
           <div style={{marginRight:'auto'}}>
@@ -5430,63 +5422,7 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
             </div>)}
           </div>
         </div>
-      </div>
-
-      {/* ═══════════════════════
-          עמודה 3 — 🗺️ Google Maps
-          ══════════════════════ */}
-      <div className="conn-col">
-        <div className="conn-col-title">
-          🗺️ Google Maps API
-          <div style={{marginRight:'auto'}}>
-            {s.googleMapsKey
-              ?<span className="chip chip-green" style={{fontSize:10}}>✓ מוגדר</span>
-              :<span className="chip" style={{background:'rgba(100,100,100,0.15)',color:'var(--text2)',fontSize:10}}>אופציונלי</span>}
-          </div>
-        </div>
-
-        <div className="conn-desc" style={{borderRight:'3px solid rgba(34,197,94,0.5)'}}>
-          <strong>מה זה?</strong> מפתח API של גוגל מפות — מאפשר להציג מפה אינטראקטיבית בתוך האפליקציה: בחיפוש מקומות, בכרטיסי אטרקציות ובתצוגת מסלול.<br/><br/>
-          <span style={{color:'var(--text3)',fontSize:11}}>✅ ללא מפתח — האפליקציה עובדת מלאה. המפה האינטראקטיבית פשוט לא מוצגת.</span>
-        </div>
-
-        <details className="conn-setup">
-          <summary>📖 איך יוצרים מפתח API? (פעם אחת בלבד)</summary>
-          1. פתח <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" style={{color:'var(--accent)',fontWeight:600}}>Google Cloud Console ← Credentials ←</a><br/>
-          2. "Create credentials" ← "API key"<br/>
-          3. לחץ "Edit API key" ← "API restrictions" ← בחר <strong>Maps JavaScript API</strong> ← Save<br/>
-          4. העתק את המפתח (<code>AIzaSy...</code>) ← הדבק למטה ← שמור
-        </details>
-
-        <div>
-          <label className="label">מפתח Google Maps API</label>
-          <input className="input" type="password" value={s.googleMapsKey||''} onChange={e=>upd('googleMapsKey',e.target.value)} autoComplete="off" placeholder="AIzaSy..."/>
-          {s.googleMapsKey
-            ?<div style={{fontSize:11,color:'var(--green)',marginTop:3}}>✓ מוגדר — מפה אינטראקטיבית פעילה</div>
-            :<div style={{fontSize:11,color:'var(--text3)',marginTop:3}}>אופציונלי — ללא מפתח האפליקציה עדיין עובדת מלאה</div>}
-        </div>
-
-        <button className="btn btn-primary btn-sm" onClick={save} style={{alignSelf:'flex-start'}}>💾 שמור</button>
-
-        {/* הסבר מה מפה מוסיפה */}
-        <div className="card" style={{background:'var(--surface2)',border:'none'}}>
-          <div className="card-body" style={{padding:'10px 12px'}}>
-            <div style={{fontWeight:700,fontSize:12,marginBottom:8}}>🗺️ מה מפה אינטראקטיבית מוסיפה?</div>
-            {[
-              {e:'📍',t:'הצגת כל האטרקציות על מפה'},
-              {e:'🔍',t:'חיפוש מקומות עם תצוגה מיידית'},
-              {e:'📏',t:'הצגת מסלול יומי על המפה'},
-              {e:'📸',t:'תמונות ופרטים של מקומות'},
-              {e:'🧭',t:'ניווט מהיר לכל מקום'},
-            ].map(({e,t})=><div key={e} style={{display:'flex',gap:8,alignItems:'flex-start',marginBottom:5,fontSize:11,color:'var(--text2)'}}>
-              <span style={{flexShrink:0}}>{e}</span><span>{t}</span>
-            </div>)}
-            <div style={{marginTop:10,padding:'7px 10px',background:'rgba(79,142,247,0.07)',borderRadius:7,fontSize:11,color:'var(--text2)',lineHeight:1.7}}>
-              💡 <strong>מפתח הדגמה מוגדר</strong> — עובד בסיסית אבל מוגבל. ליצירת מפתח אישי ← לחץ "📖 איך יוצרים" למעלה.
-            </div>
-          </div>
-        </div>
-      </div>
+      </div>}
 
     </div>
   </div>;
@@ -5882,7 +5818,7 @@ function App(){
   const saved=useMemo(()=>loadState(),[]);
   const[settings,setSettings]=useState(()=>{
     const def={githubToken:'',githubUsername:'nimrodekel-hub',githubRepo:'PlanMyTrip',
-      googleMapsKey:'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw',theme:'dark',
+      theme:'dark',
       firebaseUrl:FB_URL, syncKey:'', proxyUrl:'', travelBuffer:1.2};
     const merged={...def,...(saved?.settings||{})};
     // אם אין Firebase URL — הכנס את ברירת המחדל
@@ -6174,7 +6110,7 @@ function App(){
     {id:'shopping',label:'🛒 קניות'},
     {id:'notes',label:'📝 הערות'},
     {id:'report',label:'📋 דו"ח'},
-    {id:'connectivity',label:'🔗 חיבוריות'},
+    {id:'connectivity',label:IS_ADMIN?'🔐 אדמין':'🔗 חיבוריות'},
     {id:'settings',label:'⚙️ הגדרות'},
   ];
 
@@ -6192,7 +6128,7 @@ function App(){
         <div className="map-view-3col">
           {/* עמודה 1: מפה */}
           <div className="map-col map-col-map">
-            <MapView mapsKey={settings.googleMapsKey} trip={trip} onAddToBank={addToBank} onAddToDay={addToDay}
+            <MapView mapsKey={GMAPS_KEY} trip={trip} onAddToBank={addToBank} onAddToDay={addToDay}
               onSetDayLocation={setDayLocation} onUpdateBankItem={updateBankItem}
               highlightDay={hlDay} highlightItem={hlItem} routeHighlight={hlRoute}
               mapPickCallbackRef={mapPickCallbackRef} mapPickLabel={mapPickLabel} onCancelMapPick={cancelMapPick}
