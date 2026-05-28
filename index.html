@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v142';
+const APP_VERSION = 'v143';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נוצר אוטומטית בדפדפן, לא נשמר בקוד ולא מסונכרן ── */
@@ -5264,6 +5264,65 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
       </div>
     </div>
 
+    {/* ══ כתובת ניהול — פס קבוע מעל העמודות ══ */}
+    <div style={{padding:'0 16px 12px',borderBottom:'1px solid var(--border)'}}>
+      <details style={{borderRadius:8,border:`1px solid ${IS_ADMIN?'rgba(139,92,246,.5)':'var(--border)'}`,overflow:'hidden'}}>
+        <summary style={{padding:'8px 14px',cursor:'pointer',fontWeight:700,fontSize:12,
+          background:IS_ADMIN?'rgba(139,92,246,.08)':'var(--surface2)',
+          userSelect:'none',listStyle:'none',display:'flex',alignItems:'center',gap:8}}>
+          🔐 כתובת ניהול (אדמין)
+          {IS_ADMIN
+            ?<span style={{fontSize:10,background:'rgba(139,92,246,.2)',color:'#a78bfa',padding:'1px 8px',borderRadius:10,fontWeight:700}}>✓ פעיל כרגע</span>
+            :<span style={{fontSize:10,color:'var(--text3)',fontWeight:400}}>לחץ לצפות בכתובת</span>}
+          {gistUrl&&!IS_ADMIN&&<span style={{marginRight:'auto',fontSize:10,background:'rgba(34,197,94,.15)',color:'var(--green)',padding:'1px 7px',borderRadius:10}}>✅ מגובה</span>}
+        </summary>
+        <div style={{padding:'12px 14px',display:'flex',flexDirection:'column',gap:10}}>
+          <div style={{fontSize:11,color:'var(--text2)',lineHeight:1.7}}>
+            פתח כתובת זו כדי להיכנס למצב אדמין — שם תוכל להגדיר GitHub Token ועוד.<br/>
+            <strong>הקוד ייחודי למחשב הזה ולא מופיע בשום מקום אחר.</strong>
+          </div>
+          <div style={{background:'var(--bg3)',borderRadius:8,padding:'8px 10px',fontFamily:'monospace',fontSize:11,direction:'ltr',wordBreak:'break-all',color:'var(--accent)',border:'1px solid rgba(79,142,247,0.3)'}}>
+            {ADMIN_URL}
+          </div>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+            <button className="btn btn-secondary btn-sm"
+              onClick={()=>{navigator.clipboard?.writeText(ADMIN_URL).then(()=>toast('כתובת ניהול הועתקה ✓','success'));}}>
+              📋 העתק כתובת
+            </button>
+            {IS_ADMIN&&<button className="btn btn-primary btn-sm"
+              onClick={backupToGist} disabled={gistSaving}>
+              {gistSaving?'⏳ שומר...':'☁️ גבה לגיטהאב'}
+            </button>}
+            {IS_ADMIN&&<button className="btn btn-secondary btn-sm" style={{opacity:.7,fontSize:10}}
+              onClick={()=>{
+                if(!confirm('האם ליצור קוד אדמין חדש? הקוד הישן יפסיק לעבוד!'))return;
+                const chars='abcdefghjkmnpqrstuvwxyz23456789';
+                const seg=()=>Array.from({length:4},()=>chars[Math.random()*chars.length|0]).join('');
+                const nc=`${seg()}-${seg()}-${seg()}`;
+                localStorage.setItem('planmytrip-admin-code',nc);
+                localStorage.removeItem('planmytrip-admin-gist-id');
+                localStorage.removeItem('planmytrip-admin-gist-url');
+                toast('קוד חדש נוצר — רענן את הדף ← גבה שוב לגיטהאב','info');
+              }}>
+              🔄 חדש קוד
+            </button>}
+          </div>
+          {gistUrl&&<div style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',
+            background:'rgba(34,197,94,.07)',borderRadius:8,border:'1px solid rgba(34,197,94,.25)'}}>
+            <span style={{fontSize:12}}>✅</span>
+            <div style={{flex:1,fontSize:11,color:'var(--text2)'}}>הקוד מגובה בגיטהאב</div>
+            <a href={gistUrl} target="_blank" rel="noreferrer"
+              style={{fontSize:11,color:'var(--accent)',fontWeight:600,textDecoration:'none',flexShrink:0}}>
+              🔗 פתח Gist
+            </a>
+          </div>}
+          <div style={{fontSize:10,color:'var(--text3)',lineHeight:1.7}}>
+            💡 מומלץ: שמור כתובת זו בסימניות, ולחץ "☁️ גבה לגיטהאב" לגיבוי נוסף.
+          </div>
+        </div>
+      </details>
+    </div>
+
     {/* ══ שלוש עמודות ══ */}
     <div className="conn-cols">
 
@@ -5413,61 +5472,6 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
             <a href={FB_RULES_URL} target="_blank" rel="noreferrer" className="btn btn-danger btn-sm" style={{textDecoration:'none',textAlign:'center'}}>
               🔗 פתח Firebase Rules
             </a>
-          </div>
-        </details>
-
-        {/* ── כתובת ניהול ── */}
-        <details style={{borderRadius:8,border:'1px solid var(--border)',overflow:'hidden'}}>
-          <summary style={{padding:'8px 12px',cursor:'pointer',fontWeight:700,fontSize:12,
-            background:'var(--surface2)',userSelect:'none',listStyle:'none',
-            display:'flex',alignItems:'center',gap:6}}>
-            🔐 כתובת ניהול (אדמין)
-            {IS_ADMIN&&<span style={{marginRight:'auto',fontSize:10,background:'rgba(34,197,94,.2)',color:'var(--green)',padding:'1px 7px',borderRadius:10,fontWeight:700}}>✓ פעיל כרגע</span>}
-          </summary>
-          <div style={{padding:'12px',display:'flex',flexDirection:'column',gap:10}}>
-            <div style={{fontSize:11,color:'var(--text2)',lineHeight:1.7}}>
-              פתח כתובת זו כדי להיכנס למצב אדמין — שם תוכל להגדיר GitHub Token ועוד.<br/>
-              <strong>הקוד ייחודי למחשב הזה ולא מופיע בשום מקום אחר.</strong>
-            </div>
-            <div style={{background:'var(--bg3)',borderRadius:8,padding:'8px 10px',fontFamily:'monospace',fontSize:11,direction:'ltr',wordBreak:'break-all',color:'var(--accent)',border:'1px solid rgba(79,142,247,0.3)'}}>
-              {ADMIN_URL}
-            </div>
-            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-              <button className="btn btn-secondary btn-sm"
-                onClick={()=>{navigator.clipboard?.writeText(ADMIN_URL).then(()=>toast('כתובת ניהול הועתקה ✓','success'));}}>
-                📋 העתק כתובת
-              </button>
-              {IS_ADMIN&&<button className="btn btn-primary btn-sm"
-                onClick={backupToGist} disabled={gistSaving}>
-                {gistSaving?'⏳ שומר...':'☁️ גבה לגיטהאב'}
-              </button>}
-              {IS_ADMIN&&<button className="btn btn-secondary btn-sm" style={{opacity:.7,fontSize:10}}
-                onClick={()=>{
-                  if(!confirm('האם ליצור קוד אדמין חדש? הקוד הישן יפסיק לעבוד!'))return;
-                  const chars='abcdefghjkmnpqrstuvwxyz23456789';
-                  const seg=()=>Array.from({length:4},()=>chars[Math.random()*chars.length|0]).join('');
-                  const nc=`${seg()}-${seg()}-${seg()}`;
-                  localStorage.setItem('planmytrip-admin-code',nc);
-                  localStorage.removeItem('planmytrip-admin-gist-id');
-                  localStorage.removeItem('planmytrip-admin-gist-url');
-                  toast('קוד חדש נוצר — רענן את הדף ← גבה שוב לגיטהאב','info');
-                }}>
-                🔄 חדש קוד
-              </button>}
-            </div>
-            {/* קישור לגיסט שמור */}
-            {gistUrl&&<div style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',
-              background:'rgba(34,197,94,.07)',borderRadius:8,border:'1px solid rgba(34,197,94,.25)'}}>
-              <span style={{fontSize:12}}>✅</span>
-              <div style={{flex:1,fontSize:11,color:'var(--text2)'}}>הקוד מגובה בגיטהאב</div>
-              <a href={gistUrl} target="_blank" rel="noreferrer"
-                style={{fontSize:11,color:'var(--accent)',fontWeight:600,textDecoration:'none',flexShrink:0}}>
-                🔗 פתח Gist
-              </a>
-            </div>}
-            <div style={{fontSize:10,color:'var(--text3)',lineHeight:1.7}}>
-              💡 מומלץ: שמור כתובת זו בסימניות, ולחץ "☁️ גבה לגיטהאב" לגיבוי נוסף.
-            </div>
           </div>
         </details>
 
