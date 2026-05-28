@@ -315,9 +315,25 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v140';
+const APP_VERSION = 'v141';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
-const IS_ADMIN = typeof location !== 'undefined' && new URLSearchParams(location.search).get('admin') === '1';
+
+/* ── קוד אדמין — נוצר אוטומטית בדפדפן, לא נשמר בקוד ולא מסונכרן ── */
+const _adminCode=(()=>{
+  try{
+    const KEY='planmytrip-admin-code';
+    let c=localStorage.getItem(KEY);
+    if(!c){
+      const chars='abcdefghjkmnpqrstuvwxyz23456789';
+      const seg=()=>Array.from({length:4},()=>chars[Math.random()*chars.length|0]).join('');
+      c=`${seg()}-${seg()}-${seg()}`;
+      localStorage.setItem(KEY,c);
+    }
+    return c;
+  }catch{return '';}
+})();
+const IS_ADMIN=!!_adminCode&&new URLSearchParams(location.search).get('admin')===_adminCode;
+const ADMIN_URL=`${location.origin}${location.pathname}?admin=${_adminCode}`;
 
 /* בנה URL לגוגל מפות:
    • placeId → search/?api=1 + name + query_place_id  (פותח כרטיס מקום)
@@ -5162,7 +5178,7 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
         <div style={{flex:1}}>
           <div style={{fontSize:17,fontWeight:800,marginBottom:2}}>חיבוריות</div>
           <div style={{fontSize:12,color:'var(--text2)',lineHeight:1.7}}>
-            <strong>הסנכרון בין מכשירים פועל אוטומטית</strong> — ללא הרשמה, ללא הגדרות.{IS_ADMIN&&<> GitHub ו-Maps הם שירותים אופציונליים (מצב אדמין).</>}
+            <strong>הסנכרון בין מכשירים פועל אוטומטית</strong> — ללא הרשמה, ללא הגדרות.{IS_ADMIN&&<span style={{marginRight:6,fontSize:11,background:'rgba(139,92,246,.15)',color:'#a78bfa',padding:'1px 8px',borderRadius:10,fontWeight:700}}>🔐 מצב אדמין</span>}
           </div>
         </div>
       </div>
@@ -5355,6 +5371,46 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
             </a>
           </div>
         </details>
+
+        {/* ── כתובת ניהול ── */}
+        <details style={{borderRadius:8,border:'1px solid var(--border)',overflow:'hidden'}}>
+          <summary style={{padding:'8px 12px',cursor:'pointer',fontWeight:700,fontSize:12,
+            background:'var(--surface2)',userSelect:'none',listStyle:'none',
+            display:'flex',alignItems:'center',gap:6}}>
+            🔐 כתובת ניהול (אדמין)
+            {IS_ADMIN&&<span style={{marginRight:'auto',fontSize:10,background:'rgba(34,197,94,.2)',color:'var(--green)',padding:'1px 7px',borderRadius:10,fontWeight:700}}>✓ פעיל כרגע</span>}
+          </summary>
+          <div style={{padding:'12px',display:'flex',flexDirection:'column',gap:10}}>
+            <div style={{fontSize:11,color:'var(--text2)',lineHeight:1.7}}>
+              פתח כתובת זו כדי להיכנס למצב אדמין — שם תוכל להגדיר GitHub Token ועוד.<br/>
+              <strong>הקוד ייחודי למחשב הזה ולא מופיע בשום מקום אחר.</strong>
+            </div>
+            <div style={{background:'var(--bg3)',borderRadius:8,padding:'8px 10px',fontFamily:'monospace',fontSize:11,direction:'ltr',wordBreak:'break-all',color:'var(--accent)',border:'1px solid rgba(79,142,247,0.3)'}}>
+              {ADMIN_URL}
+            </div>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+              <button className="btn btn-secondary btn-sm"
+                onClick={()=>{navigator.clipboard?.writeText(ADMIN_URL).then(()=>toast('כתובת ניהול הועתקה ✓','success'));}}>
+                📋 העתק כתובת
+              </button>
+              {IS_ADMIN&&<button className="btn btn-secondary btn-sm" style={{opacity:.7,fontSize:10}}
+                onClick={()=>{
+                  if(!confirm('האם ליצור קוד אדמין חדש? הקוד הישן יפסיק לעבוד!'))return;
+                  const chars='abcdefghjkmnpqrstuvwxyz23456789';
+                  const seg=()=>Array.from({length:4},()=>chars[Math.random()*chars.length|0]).join('');
+                  const nc=`${seg()}-${seg()}-${seg()}`;
+                  localStorage.setItem('planmytrip-admin-code',nc);
+                  toast('קוד חדש נוצר — רענן את הדף ← העתק הכתובת החדשה','info');
+                }}>
+                🔄 חדש קוד
+              </button>}
+            </div>
+            <div style={{fontSize:10,color:'var(--text3)',lineHeight:1.7}}>
+              💡 מומלץ: שמור כתובת זו בסימניות של הדפדפן.
+            </div>
+          </div>
+        </details>
+
       </div>
 
       {/* ═══════════════════════
@@ -6110,7 +6166,7 @@ function App(){
     {id:'shopping',label:'🛒 קניות'},
     {id:'notes',label:'📝 הערות'},
     {id:'report',label:'📋 דו"ח'},
-    {id:'connectivity',label:IS_ADMIN?'🔐 אדמין':'🔗 חיבוריות'},
+    {id:'connectivity',label:'🔗 חיבוריות'},
     {id:'settings',label:'⚙️ הגדרות'},
   ];
 
