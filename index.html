@@ -315,25 +315,11 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v147';
+const APP_VERSION = 'v148';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
-/* ── קוד אדמין — נוצר אוטומטית בדפדפן, לא נשמר בקוד ולא מסונכרן ── */
-const _adminCode=(()=>{
-  try{
-    const KEY='planmytrip-admin-code';
-    let c=localStorage.getItem(KEY);
-    if(!c){
-      const chars='abcdefghjkmnpqrstuvwxyz23456789';
-      const seg=()=>Array.from({length:4},()=>chars[Math.random()*chars.length|0]).join('');
-      c=`${seg()}-${seg()}-${seg()}`;
-      localStorage.setItem(KEY,c);
-    }
-    return c;
-  }catch{return '';}
-})();
-const IS_ADMIN=!!_adminCode&&new URLSearchParams(location.search).get('admin')===_adminCode;
-const ADMIN_URL=`${location.origin}${location.pathname}?admin=${_adminCode}`;
+/* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
+const _adminCode=(()=>{try{return localStorage.getItem('planmytrip-admin-code')||'';}catch{return '';}})();
 
 /* בנה URL לגוגל מפות:
    • placeId → search/?api=1 + name + query_place_id  (פותח כרטיס מקום)
@@ -5142,13 +5128,22 @@ function SettingsTab({settings,onSettings,trips,activeTrip,onNewTrip,onLoadTrip,
 const FB_URL='https://planmytrip-de33c-default-rtdb.firebaseio.com';
 const FB_RULES_URL='https://console.firebase.google.com/u/1/project/planmytrip-de33c/database/planmytrip-de33c-default-rtdb/rules';
 
-function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,onExport,onImport}){
+function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,onExport,onImport,isAdmin,onAdminLogin,onAdminLogout}){
   const[s,setS]=useState({...settings});
   const[copied,setCopied]=useState(false);
   const[testing,setTesting]=useState(false);
   const[testResult,setTestResult]=useState(null);
   const[gistSaving,setGistSaving]=useState(false);
   const[gistUrl,setGistUrl]=useState(()=>localStorage.getItem('planmytrip-admin-gist-url')||'');
+  const[loginInput,setLoginInput]=useState('');
+  const[loginError,setLoginError]=useState(false);
+
+  const doAdminLogin=()=>{
+    const stored=localStorage.getItem('planmytrip-admin-code')||'';
+    if(!stored){toast('לא הוגדר קוד אדמין','error');return;}
+    if(loginInput===stored){setLoginError(false);setLoginInput('');onAdminLogin();}
+    else{setLoginError(true);}
+  };
   const upd=(k,v)=>setS(p=>({...p,[k]:v}));
 
   const backupToGist=async()=>{
@@ -5204,17 +5199,13 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
   const[adminNewCode,setAdminNewCode]=useState('');
   const currentAdminUrl=`${location.origin}${location.pathname}?admin=${encodeURIComponent(adminCodeInput||'')}`;
 
-  const goAdmin=(code)=>{
-    window.location.href=`${location.origin}${location.pathname}?admin=${encodeURIComponent(code)}`;
-  };
-
   const saveAdminCode=()=>{
     const code=(adminCodeInput||'').trim();
     if(!code){toast('הכנס קוד תקין','error');return;}
     localStorage.setItem('planmytrip-admin-code',code);
     setAdminSaved(true);
-    toast('קוד נשמר — עובר למצב אדמין...','success');
-    setTimeout(()=>goAdmin(code),600);
+    onAdminLogin();
+    toast('קוד אדמין נשמר ✓ — אתה במצב אדמין','success');
   };
 
   const changeAdminCode=()=>{
@@ -5223,8 +5214,12 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
     const nc=adminNewCode.trim();
     if(!nc){toast('הכנס קוד חדש','error');return;}
     localStorage.setItem('planmytrip-admin-code',nc);
-    toast('קוד עודכן — עובר למצב אדמין...','success');
-    setTimeout(()=>goAdmin(nc),600);
+    setAdminCodeInput(nc);
+    setAdminSaved(true);
+    setAdminEditMode(false);
+    setAdminCurrentVerify('');
+    setAdminNewCode('');
+    toast('קוד אדמין עודכן ✓','success');
   };
 
   const effectiveKey=s.syncKey||settings.syncKey;
@@ -5256,7 +5251,7 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
         <div style={{flex:1}}>
           <div style={{fontSize:17,fontWeight:800,marginBottom:2}}>חיבוריות</div>
           <div style={{fontSize:12,color:'var(--text2)',lineHeight:1.7}}>
-            <strong>הסנכרון בין מכשירים פועל אוטומטית</strong> — ללא הרשמה, ללא הגדרות.{IS_ADMIN&&<span style={{marginRight:6,fontSize:11,background:'rgba(139,92,246,.15)',color:'#a78bfa',padding:'1px 8px',borderRadius:10,fontWeight:700}}>🔐 מצב אדמין</span>}
+            <strong>הסנכרון בין מכשירים פועל אוטומטית</strong> — ללא הרשמה, ללא הגדרות.{isAdmin&&<span style={{marginRight:6,fontSize:11,background:'rgba(139,92,246,.15)',color:'#a78bfa',padding:'1px 8px',borderRadius:10,fontWeight:700}}>🔐 מצב אדמין</span>}
           </div>
         </div>
       </div>
@@ -5283,7 +5278,7 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
           </div>
 
           {/* GitHub — מצב אדמין בלבד */}
-          {IS_ADMIN&&<div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
+          {isAdmin&&<div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
             <div style={{background:'rgba(88,96,176,0.1)',border:'1.5px solid rgba(88,96,176,0.35)',borderRadius:10,padding:'7px 10px',textAlign:'center',width:'100%'}}>
               <div style={{fontSize:18}}>🐙</div>
               <div style={{fontWeight:700,fontSize:11}}>GitHub</div>
@@ -5300,17 +5295,47 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
 
     {/* ══ כתובת ניהול — פס קבוע מעל העמודות ══ */}
     <div style={{padding:'0 16px 12px',borderBottom:'1px solid var(--border)'}}>
-      <details style={{borderRadius:8,border:`1px solid ${IS_ADMIN?'rgba(139,92,246,.5)':'var(--border)'}`,overflow:'hidden'}}>
+      <details style={{borderRadius:8,border:`1px solid ${isAdmin?'rgba(139,92,246,.5)':'var(--border)'}`,overflow:'hidden'}}>
         <summary style={{padding:'8px 14px',cursor:'pointer',fontWeight:700,fontSize:12,
-          background:IS_ADMIN?'rgba(139,92,246,.08)':'var(--surface2)',
+          background:isAdmin?'rgba(139,92,246,.08)':'var(--surface2)',
           userSelect:'none',listStyle:'none',display:'flex',alignItems:'center',gap:8}}>
-          🔐 כתובת ניהול (אדמין)
-          {IS_ADMIN
-            ?<span style={{fontSize:10,background:'rgba(139,92,246,.2)',color:'#a78bfa',padding:'1px 8px',borderRadius:10,fontWeight:700}}>✓ פעיל כרגע</span>
-            :<span style={{fontSize:10,color:'var(--text3)',fontWeight:400}}>לחץ לפתוח</span>}
-          {gistUrl&&<span style={{marginRight:'auto',fontSize:10,background:'rgba(34,197,94,.15)',color:'var(--green)',padding:'1px 7px',borderRadius:10}}>✅ מגובה</span>}
+          🔐 כניסת אדמין
+          {isAdmin
+            ?<span style={{fontSize:10,background:'rgba(139,92,246,.2)',color:'#a78bfa',padding:'1px 8px',borderRadius:10,fontWeight:700}}>✓ פעיל</span>
+            :<span style={{fontSize:10,color:'var(--text3)',fontWeight:400}}>לחץ לכניסה</span>}
+          {isAdmin&&gistUrl&&<span style={{marginRight:'auto',fontSize:10,background:'rgba(34,197,94,.15)',color:'var(--green)',padding:'1px 7px',borderRadius:10}}>✅ מגובה</span>}
         </summary>
         <div style={{padding:'12px 14px',display:'flex',flexDirection:'column',gap:14}}>
+
+          {/* ── כניסה (אורח) ── */}
+          {!isAdmin&&<div>
+            {!_adminCode
+              ?<div style={{fontSize:11,color:'var(--text3)'}}>לא הוגדר קוד אדמין עדיין — הגדר קוד למטה.</div>
+              :<div style={{display:'flex',flexDirection:'column',gap:8}}>
+                <div style={{fontSize:11,color:'var(--text2)'}}>הכנס את קוד האדמין שלך:</div>
+                <div style={{display:'flex',gap:6}}>
+                  <input className="input" type="password" style={{flex:1,fontFamily:'monospace',direction:'ltr'}}
+                    value={loginInput} onChange={e=>{setLoginInput(e.target.value);setLoginError(false);}}
+                    onKeyDown={e=>e.key==='Enter'&&doAdminLogin()}
+                    placeholder="קוד אדמין..." autoComplete="off"/>
+                  <button className="btn btn-primary btn-sm" style={{flexShrink:0}} onClick={doAdminLogin}>
+                    🔓 כנס
+                  </button>
+                </div>
+                {loginError&&<div style={{fontSize:11,color:'var(--red)',fontWeight:600}}>❌ קוד שגוי</div>}
+              </div>}
+          </div>}
+
+          {/* ── תוכן אדמין ── */}
+          {isAdmin&&<>
+          <div style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',
+            background:'rgba(139,92,246,.08)',borderRadius:8,border:'1px solid rgba(139,92,246,.3)'}}>
+            <span style={{fontSize:12,color:'#a78bfa',fontWeight:700}}>🔐 מצב אדמין פעיל</span>
+            <button className="btn btn-secondary btn-sm" style={{marginRight:'auto',fontSize:10}}
+              onClick={()=>{onAdminLogout();toast('יצאת ממצב אדמין','info');}}>
+              🚪 צא
+            </button>
+          </div>
 
           {/* ── 1. קוד אדמין ── */}
           <div>
@@ -5393,6 +5418,8 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
                 כדי לגבות לגיטהאב: כנס למצב אדמין ← הגדר GitHub Token ← חזור לכאן ← לחץ "☁️ גבה".
               </div>}
           </div>
+
+          </>}  {/* סוף תוכן אדמין */}
 
         </div>
       </details>
@@ -5555,7 +5582,7 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
       {/* ═══════════════════════
           עמודה 2 — 🐙 GitHub (אדמין בלבד)
           ══════════════════════ */}
-      {IS_ADMIN&&<div className="conn-col">
+      {isAdmin&&<div className="conn-col">
         <div className="conn-col-title">
           🐙 GitHub Token
           <div style={{marginRight:'auto'}}>
@@ -5622,7 +5649,7 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
       {/* ═══════════════════════
           עמודה 3 — 🗺️ Google Maps (אדמין בלבד)
           ══════════════════════ */}
-      {IS_ADMIN&&<div className="conn-col">
+      {isAdmin&&<div className="conn-col">
         <div className="conn-col-title">
           🗺️ Google Maps API
           <div style={{marginRight:'auto'}}>
@@ -6048,6 +6075,7 @@ class ErrorBoundary extends React.Component {
 ══════════════════════════════════ */
 function App(){
   const saved=useMemo(()=>loadState(),[]);
+  const[isAdmin,setIsAdmin]=useState(false); // מתאפס בכל רענון — כניסה דרך סיסמה בלבד
   const[settings,setSettings]=useState(()=>{
     const def={githubToken:'',githubUsername:'nimrodekel-hub',githubRepo:'PlanMyTrip',
       theme:'dark',
@@ -6398,7 +6426,7 @@ function App(){
       case 'shopping': return <Checklist title="רשימת קניות" emoji="🛒" items={trip.shoppingList} onUpdate={items=>updTrip({...trip,shoppingList:items})}/>;
       case 'notes': return <NotesTab trip={trip} onUpdate={updTrip}/>;
       case 'report': return <ReportTab trip={trip}/>;
-      case 'connectivity': return <ConnectivityTab settings={settings} onSettings={setSettings} onPush={push} onPull={pull} ghBusy={ghBusy} syncStatus={syncStatus} onExport={exportData} onImport={importData}/>;
+      case 'connectivity': return <ConnectivityTab settings={settings} onSettings={setSettings} onPush={push} onPull={pull} ghBusy={ghBusy} syncStatus={syncStatus} onExport={exportData} onImport={importData} isAdmin={isAdmin} onAdminLogin={()=>setIsAdmin(true)} onAdminLogout={()=>setIsAdmin(false)}/>;
       case 'settings': return <SettingsTab settings={settings} onSettings={setSettings} trips={trips} activeTrip={trip} onNewTrip={newTrip} onLoadTrip={loadTrip} onDeleteTrip={delTrip} onPush={push} onPull={pull} ghBusy={ghBusy} genKey={genSyncKey}/>;
       default: return null;
     }
