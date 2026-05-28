@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v146';
+const APP_VERSION = 'v147';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נוצר אוטומטית בדפדפן, לא נשמר בקוד ולא מסונכרן ── */
@@ -5204,12 +5204,17 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
   const[adminNewCode,setAdminNewCode]=useState('');
   const currentAdminUrl=`${location.origin}${location.pathname}?admin=${encodeURIComponent(adminCodeInput||'')}`;
 
+  const goAdmin=(code)=>{
+    window.location.href=`${location.origin}${location.pathname}?admin=${encodeURIComponent(code)}`;
+  };
+
   const saveAdminCode=()=>{
     const code=(adminCodeInput||'').trim();
     if(!code){toast('הכנס קוד תקין','error');return;}
     localStorage.setItem('planmytrip-admin-code',code);
     setAdminSaved(true);
-    toast('קוד אדמין נשמר ✓ — השתמש בכתובת למטה לכניסה','success');
+    toast('קוד נשמר — עובר למצב אדמין...','success');
+    setTimeout(()=>goAdmin(code),600);
   };
 
   const changeAdminCode=()=>{
@@ -5218,12 +5223,8 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
     const nc=adminNewCode.trim();
     if(!nc){toast('הכנס קוד חדש','error');return;}
     localStorage.setItem('planmytrip-admin-code',nc);
-    setAdminCodeInput(nc);
-    setAdminSaved(true);
-    setAdminEditMode(false);
-    setAdminCurrentVerify('');
-    setAdminNewCode('');
-    toast('קוד אדמין עודכן ✓','success');
+    toast('קוד עודכן — עובר למצב אדמין...','success');
+    setTimeout(()=>goAdmin(nc),600);
   };
 
   const effectiveKey=s.syncKey||settings.syncKey;
@@ -5614,6 +5615,43 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
             ].map(({e,t})=><div key={e} style={{display:'flex',gap:8,alignItems:'flex-start',marginBottom:5,fontSize:11,color:'var(--text2)'}}>
               <span style={{flexShrink:0}}>{e}</span><span>{t}</span>
             </div>)}
+          </div>
+        </div>
+      </div>}
+
+      {/* ═══════════════════════
+          עמודה 3 — 🗺️ Google Maps (אדמין בלבד)
+          ══════════════════════ */}
+      {IS_ADMIN&&<div className="conn-col">
+        <div className="conn-col-title">
+          🗺️ Google Maps API
+          <div style={{marginRight:'auto'}}>
+            {s.googleMapsKey
+              ?<span className="chip chip-green" style={{fontSize:10}}>✓ מפתח מותאם</span>
+              :<span className="chip" style={{background:'rgba(34,197,94,0.15)',color:'var(--green)',fontSize:10}}>✓ ברירת מחדל</span>}
+          </div>
+        </div>
+        <div className="conn-desc" style={{borderRight:'3px solid rgba(34,197,94,0.5)'}}>
+          מפתח Google Maps מוטמע באפליקציה — משתמשים לא צריכים להגדיר כלום.<br/><br/>
+          <span style={{fontSize:11,color:'var(--text3)'}}>כאן תוכל להחליף למפתח אישי שלך אם תרצה להגביל שימוש לדומיין שלך בלבד.</span>
+        </div>
+        <div>
+          <label className="label">מפתח Google Maps API (אופציונלי — לדריסת ברירת המחדל)</label>
+          <input className="input" type="password" value={s.googleMapsKey||''} onChange={e=>upd('googleMapsKey',e.target.value)} autoComplete="off" placeholder={`ברירת מחדל: ${GMAPS_KEY.slice(0,12)}...`}/>
+          {s.googleMapsKey
+            ?<div style={{fontSize:11,color:'var(--green)',marginTop:3}}>✓ מפתח אישי פעיל</div>
+            :<div style={{fontSize:11,color:'var(--text3)',marginTop:3}}>משתמש בברירת המחדל המוטמעת</div>}
+        </div>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          <button className="btn btn-primary btn-sm" onClick={()=>{onSettings({...s});toast('נשמר ✓','success');}}>💾 שמור</button>
+          {s.googleMapsKey&&<button className="btn btn-secondary btn-sm" onClick={()=>{upd('googleMapsKey','');toast('חזר לברירת מחדל ✓','success');}}>↺ אפס למחדל</button>}
+        </div>
+        <div className="card" style={{background:'var(--surface2)',border:'none'}}>
+          <div className="card-body" style={{padding:'10px 12px',fontSize:11,color:'var(--text2)',lineHeight:1.8}}>
+            <div style={{fontWeight:700,marginBottom:6}}>🔒 להגבלת המפתח לדומיין שלך:</div>
+            1. פתח <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" style={{color:'var(--accent)'}}>Google Cloud Console ← Credentials</a><br/>
+            2. לחץ על המפתח ← "Application restrictions"<br/>
+            3. בחר "HTTP referrers" ← הוסף: <code style={{fontSize:10}}>https://nimrodekel-hub.github.io/*</code>
           </div>
         </div>
       </div>}
@@ -6322,7 +6360,7 @@ function App(){
         <div className="map-view-3col">
           {/* עמודה 1: מפה */}
           <div className="map-col map-col-map">
-            <MapView mapsKey={GMAPS_KEY} trip={trip} onAddToBank={addToBank} onAddToDay={addToDay}
+            <MapView mapsKey={settings.googleMapsKey||GMAPS_KEY} trip={trip} onAddToBank={addToBank} onAddToDay={addToDay}
               onSetDayLocation={setDayLocation} onUpdateBankItem={updateBankItem}
               highlightDay={hlDay} highlightItem={hlItem} routeHighlight={hlRoute}
               mapPickCallbackRef={mapPickCallbackRef} mapPickLabel={mapPickLabel} onCancelMapPick={cancelMapPick}
