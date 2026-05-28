@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v138';
+const APP_VERSION = 'v139';
 
 /* בנה URL לגוגל מפות:
    • placeId → search/?api=1 + name + query_place_id  (פותח כרטיס מקום)
@@ -5167,16 +5167,16 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
 
       {/* ── דיאגרמה ── */}
       <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:0,userSelect:'none'}}>
-        {/* שלושת השירותים בשורה עליונה */}
         <div style={{display:'flex',alignItems:'flex-end',gap:8,justifyContent:'center',width:'100%',maxWidth:560}}>
-          {/* Firebase */}
+
+          {/* סנכרון */}
           <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
-            <div style={{background:'rgba(251,146,60,0.13)',border:'1.5px solid rgba(251,146,60,0.45)',borderRadius:10,padding:'7px 10px',textAlign:'center',width:'100%'}}>
-              <div style={{fontSize:18}}>🔥</div>
-              <div style={{fontWeight:700,fontSize:11}}>Firebase</div>
-              <div style={{fontSize:10,color:'var(--text3)',lineHeight:1.4}}>סנכרון נתוני טיול<br/>בין מכשירים</div>
+            <div style={{background:'rgba(79,142,247,0.1)',border:'1.5px solid rgba(79,142,247,0.4)',borderRadius:10,padding:'7px 10px',textAlign:'center',width:'100%'}}>
+              <div style={{fontSize:18}}>☁️</div>
+              <div style={{fontWeight:700,fontSize:11}}>סנכרון</div>
+              <div style={{fontSize:10,color:'var(--text3)',lineHeight:1.4}}>שמירה אוטומטית<br/>בין מכשירים</div>
             </div>
-            <div style={{fontSize:13,color:settings.syncKey?'var(--green)':'var(--text3)',fontWeight:700}}>⇅</div>
+            <div style={{fontSize:13,color:'var(--green)',fontWeight:700}}>⇅</div>
           </div>
 
           {/* App — מרכז */}
