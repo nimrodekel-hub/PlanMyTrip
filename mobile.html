@@ -229,7 +229,13 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m81';
+const MOB_VER='m82';
+
+const genSyncKey=()=>{
+  const c='abcdefghjkmnpqrstuvwxyz23456789';
+  const r=()=>Array.from({length:3},()=>c[Math.random()*c.length|0]).join('');
+  return `${r()}-${r()}-${r()}`;
+};
 
 /* בנה URL לגוגל מפות — מובייל: Maps URLs API פותח כרטיס מקום באפליקציה */
 const mkMapsUrl=(placeId,lat,lng,name)=>
@@ -3306,6 +3312,8 @@ function TripScreen({trips,activeId,onSelectTrip,syncStatus,onRefresh,active,set
   const trip=trips.find(t=>t.id===activeId)||trips[0]||null;
   const totalExp=trip?.expenses?.reduce((s,e)=>s+(parseFloat(e.amount)||0),0)||0;
   const sl={idle:'⚪ לא מחובר',syncing:'🔄 מסנכרן...',synced:'✅ מסונכרן',error:'❌ שגיאה'};
+  const[syncCopied,setSyncCopied]=useState(false);
+  const copySyncCode=()=>{navigator.clipboard?.writeText(settings?.syncKey||'').then(()=>{setSyncCopied(true);setTimeout(()=>setSyncCopied(false),2000);});};
   return(
     <div className={`screen${active?'':' h'}`}>
       <div className="sh">
@@ -3368,6 +3376,29 @@ function TripScreen({trips,activeId,onSelectTrip,syncStatus,onRefresh,active,set
           </div>
         </div>
       </>:<div className="empty"><div className="eicon">✈️</div><div className="etitle">לא נמצאו טיולים</div><div className="edesc">צור טיול דרך אפליקציית המחשב</div></div>}
+
+      {/* ── קוד סינכרון ── */}
+      {settings?.syncKey&&<div style={{margin:'0 14px 8px'}}>
+        <div className="slabel" style={{marginTop:8}}>🔗 קוד סינכרון</div>
+        <div style={{background:'var(--surface)',border:'2px solid var(--accent)',borderRadius:12,padding:'14px',textAlign:'center'}}>
+          <div style={{fontSize:10,color:'var(--text2)',marginBottom:5,fontWeight:600,letterSpacing:1}}>הקוד שלך</div>
+          <div style={{fontSize:18,fontWeight:800,letterSpacing:4,fontFamily:'monospace',color:'var(--accent)',marginBottom:10,wordBreak:'break-all'}}>
+            {settings.syncKey}
+          </div>
+          <button onClick={copySyncCode}
+            style={{background:syncCopied?'var(--green)':'var(--accent)',color:'#fff',border:'none',borderRadius:8,
+              padding:'8px 18px',fontSize:13,cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:600,
+              width:'100%',marginBottom:10,transition:'background .2s'}}>
+            {syncCopied?'✓ הועתק!':'📋 העתק קוד'}
+          </button>
+          <div style={{fontSize:11,color:'var(--text2)',lineHeight:1.9,textAlign:'right'}}>
+            <strong>💻 מחשב חדש:</strong> עבור ל-🔗 חיבוריות ← הכנס קוד ← לחץ "⬇️ טען"<br/>
+            <strong>📱 סלולר נוסף:</strong> בקש קישור מאפליקציית המחשב<br/>
+            <span style={{color:'var(--green)',fontWeight:600}}>📱 מובייל זה: לא צריך לעשות כלום ✅</span>
+          </div>
+        </div>
+      </div>}
+
       <div style={{margin:'14px 14px 0',padding:'12px 14px',background:'var(--bg3)',borderRadius:10,display:'flex',flexDirection:'column',alignItems:'center',gap:7}}>
         <div style={{fontSize:11,color:'var(--text3)',fontWeight:600}}>PlanMyTrip</div>
         <div style={{display:'flex',gap:8,flexWrap:'wrap',justifyContent:'center'}}>
@@ -3410,7 +3441,9 @@ function App(){
   const saved=useMemo(()=>loadState(),[]);
   const[settings,setSettings]=useState(()=>{
     const def={firebaseUrl:FB_URL,syncKey:'',googleMapsKey:GMAPS_KEY,travelBuffer:1.2};
-    return{...def,...(saved?.settings||{}),firebaseUrl:FB_URL};
+    const merged={...def,...(saved?.settings||{}),firebaseUrl:FB_URL};
+    if(!merged.syncKey) merged.syncKey=genSyncKey(); // צור קוד אוטומטית בפתיחה ראשונה
+    return merged;
   });
   const[trips,setTrips]=useState(()=>{
     const raw=saved?.trips;
