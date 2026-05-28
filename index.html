@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v141';
+const APP_VERSION = 'v142';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נוצר אוטומטית בדפדפן, לא נשמר בקוד ולא מסונכרן ── */
@@ -5147,7 +5147,51 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
   const[copied,setCopied]=useState(false);
   const[testing,setTesting]=useState(false);
   const[testResult,setTestResult]=useState(null);
+  const[gistSaving,setGistSaving]=useState(false);
+  const[gistUrl,setGistUrl]=useState(()=>localStorage.getItem('planmytrip-admin-gist-url')||'');
   const upd=(k,v)=>setS(p=>({...p,[k]:v}));
+
+  const backupToGist=async()=>{
+    const tok=s.githubToken||settings.githubToken;
+    if(!tok){toast('הגדר GitHub Token קודם (בעמודת GitHub)','error');return;}
+    setGistSaving(true);
+    try{
+      const content=[
+        'PlanMyTrip — גיבוי קוד אדמין',
+        '================================',
+        `קוד אדמין : ${_adminCode}`,
+        `כתובת ניהול: ${ADMIN_URL}`,
+        '',
+        `נשמר: ${new Date().toLocaleString('he-IL')}`,
+        '',
+        'שמור קובץ זה בסוד — אל תשתף אותו.',
+      ].join('\n');
+      const gistId=localStorage.getItem('planmytrip-admin-gist-id');
+      const url=gistId?`https://api.github.com/gists/${gistId}`:'https://api.github.com/gists';
+      const method=gistId?'PATCH':'POST';
+      const r=await fetch(url,{method,
+        headers:{Authorization:`token ${tok}`,'Content-Type':'application/json'},
+        body:JSON.stringify({description:'PlanMyTrip Admin Backup',public:false,
+          files:{'planmytrip-admin-backup.txt':{content}}})});
+      if(!r.ok)throw new Error(`${r.status}`);
+      const d=await r.json();
+      localStorage.setItem('planmytrip-admin-gist-id',d.id);
+      localStorage.setItem('planmytrip-admin-gist-url',d.html_url);
+      setGistUrl(d.html_url);
+      toast('קוד אדמין גובה ל-Gist פרטי ✓','success');
+    }catch(e){
+      // אם ה-Gist נמחק — נאפס ונבצע שמירה חדשה
+      if(e.message==='404'){
+        localStorage.removeItem('planmytrip-admin-gist-id');
+        localStorage.removeItem('planmytrip-admin-gist-url');
+        setGistUrl('');
+        toast('Gist לא נמצא — לחץ שוב ליצירת חדש','info');
+      } else {
+        toast(`שגיאה בגיבוי: ${e.message}`,'error');
+      }
+    }
+    setGistSaving(false);
+  };
 
   const effectiveKey=s.syncKey||settings.syncKey;
   const copyKey=()=>{navigator.clipboard?.writeText(effectiveKey||'').then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});};
@@ -5393,6 +5437,10 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
                 onClick={()=>{navigator.clipboard?.writeText(ADMIN_URL).then(()=>toast('כתובת ניהול הועתקה ✓','success'));}}>
                 📋 העתק כתובת
               </button>
+              {IS_ADMIN&&<button className="btn btn-primary btn-sm"
+                onClick={backupToGist} disabled={gistSaving}>
+                {gistSaving?'⏳ שומר...':'☁️ גבה לגיטהאב'}
+              </button>}
               {IS_ADMIN&&<button className="btn btn-secondary btn-sm" style={{opacity:.7,fontSize:10}}
                 onClick={()=>{
                   if(!confirm('האם ליצור קוד אדמין חדש? הקוד הישן יפסיק לעבוד!'))return;
@@ -5400,13 +5448,25 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
                   const seg=()=>Array.from({length:4},()=>chars[Math.random()*chars.length|0]).join('');
                   const nc=`${seg()}-${seg()}-${seg()}`;
                   localStorage.setItem('planmytrip-admin-code',nc);
-                  toast('קוד חדש נוצר — רענן את הדף ← העתק הכתובת החדשה','info');
+                  localStorage.removeItem('planmytrip-admin-gist-id');
+                  localStorage.removeItem('planmytrip-admin-gist-url');
+                  toast('קוד חדש נוצר — רענן את הדף ← גבה שוב לגיטהאב','info');
                 }}>
                 🔄 חדש קוד
               </button>}
             </div>
+            {/* קישור לגיסט שמור */}
+            {gistUrl&&<div style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',
+              background:'rgba(34,197,94,.07)',borderRadius:8,border:'1px solid rgba(34,197,94,.25)'}}>
+              <span style={{fontSize:12}}>✅</span>
+              <div style={{flex:1,fontSize:11,color:'var(--text2)'}}>הקוד מגובה בגיטהאב</div>
+              <a href={gistUrl} target="_blank" rel="noreferrer"
+                style={{fontSize:11,color:'var(--accent)',fontWeight:600,textDecoration:'none',flexShrink:0}}>
+                🔗 פתח Gist
+              </a>
+            </div>}
             <div style={{fontSize:10,color:'var(--text3)',lineHeight:1.7}}>
-              💡 מומלץ: שמור כתובת זו בסימניות של הדפדפן.
+              💡 מומלץ: שמור כתובת זו בסימניות, ולחץ "☁️ גבה לגיטהאב" לגיבוי נוסף.
             </div>
           </div>
         </details>
