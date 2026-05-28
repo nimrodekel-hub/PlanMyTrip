@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v145';
+const APP_VERSION = 'v146';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נוצר אוטומטית בדפדפן, לא נשמר בקוד ולא מסונכרן ── */
@@ -5179,7 +5179,9 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
           setGistUrl('');
           return doFetch(null);
         }
-        if(r.status===401||r.status===403)throw new Error('אין הרשאה — ודא שה-Token כולל הרשאת gist');
+        // GitHub מחזיר 404 (לא 403) כשחסר scope — זו התנהגות ידועה שלהם
+        if(r.status===401||r.status===403||r.status===404)
+          throw new Error('אין הרשאה ל-Gist. פתרון: ב-GitHub → Settings → Tokens → ערוך את ה-Token ← סמן גם את scope "gist" ← Save');
         throw new Error(`שגיאה ${r.status}`);
       }
       return r.json();
@@ -5194,14 +5196,34 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
     setGistSaving(false);
   };
 
-  /* ── קוד אדמין — עריכה חיה ── */
+  /* ── קוד אדמין — מצב ושמירה ── */
   const[adminCodeInput,setAdminCodeInput]=useState(_adminCode);
+  const[adminSaved,setAdminSaved]=useState(!!_adminCode);
+  const[adminEditMode,setAdminEditMode]=useState(false);
+  const[adminCurrentVerify,setAdminCurrentVerify]=useState('');
+  const[adminNewCode,setAdminNewCode]=useState('');
   const currentAdminUrl=`${location.origin}${location.pathname}?admin=${encodeURIComponent(adminCodeInput||'')}`;
+
   const saveAdminCode=()=>{
     const code=(adminCodeInput||'').trim();
     if(!code){toast('הכנס קוד תקין','error');return;}
     localStorage.setItem('planmytrip-admin-code',code);
-    toast('קוד אדמין עודכן ✓ — השתמש בכתובת החדשה לכניסה','success');
+    setAdminSaved(true);
+    toast('קוד אדמין נשמר ✓ — השתמש בכתובת למטה לכניסה','success');
+  };
+
+  const changeAdminCode=()=>{
+    const stored=localStorage.getItem('planmytrip-admin-code')||_adminCode;
+    if(adminCurrentVerify!==stored){toast('קוד נוכחי שגוי ❌','error');return;}
+    const nc=adminNewCode.trim();
+    if(!nc){toast('הכנס קוד חדש','error');return;}
+    localStorage.setItem('planmytrip-admin-code',nc);
+    setAdminCodeInput(nc);
+    setAdminSaved(true);
+    setAdminEditMode(false);
+    setAdminCurrentVerify('');
+    setAdminNewCode('');
+    toast('קוד אדמין עודכן ✓','success');
   };
 
   const effectiveKey=s.syncKey||settings.syncKey;
@@ -5289,21 +5311,54 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
         </summary>
         <div style={{padding:'12px 14px',display:'flex',flexDirection:'column',gap:14}}>
 
-          {/* ── 1. הגדרת קוד אדמין ── */}
+          {/* ── 1. קוד אדמין ── */}
           <div>
-            <div style={{fontSize:11,fontWeight:700,marginBottom:4}}>🔑 קוד אדמין — הגדר קוד שתזכור</div>
-            <div style={{fontSize:11,color:'var(--text2)',marginBottom:8,lineHeight:1.6}}>
-              הקוד עובד מכל מחשב. בחר משהו שתזכור (כמו סיסמה קצרה), שמור, ואז שלח לגיטהאב לגיבוי.
-            </div>
-            <div style={{display:'flex',gap:6}}>
-              <input className="input" style={{flex:1,fontFamily:'monospace',fontSize:13,direction:'ltr',letterSpacing:1}}
-                value={adminCodeInput} onChange={e=>setAdminCodeInput(e.target.value.trim())}
-                placeholder="הכנס קוד שתזכור..."/>
-              <button className="btn btn-primary btn-sm" style={{flexShrink:0}}
-                onClick={saveAdminCode}>
-                💾 שמור קוד
-              </button>
-            </div>
+            <div style={{fontSize:11,fontWeight:700,marginBottom:6}}>🔑 קוד אדמין</div>
+            {!adminSaved
+              /* מצב א׳ — הגדרה ראשונה */
+              ?<>
+                <div style={{fontSize:11,color:'var(--text2)',marginBottom:8,lineHeight:1.6}}>
+                  בחר קוד שתזכור (כמו סיסמה קצרה) — יעבוד מכל מחשב.
+                </div>
+                <div style={{display:'flex',gap:6}}>
+                  <input className="input" style={{flex:1,fontFamily:'monospace',fontSize:13,direction:'ltr',letterSpacing:1}}
+                    value={adminCodeInput} onChange={e=>setAdminCodeInput(e.target.value.trim())}
+                    placeholder="הכנס קוד שתזכור..." autoComplete="off"/>
+                  <button className="btn btn-primary btn-sm" style={{flexShrink:0}} onClick={saveAdminCode}>
+                    💾 שמור
+                  </button>
+                </div>
+              </>
+              :!adminEditMode
+              /* מצב ב׳ — קוד שמור ומוסתר */
+              ?<div style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',
+                  background:'var(--bg3)',borderRadius:8,border:'1px solid var(--border)'}}>
+                <span style={{fontFamily:'monospace',fontSize:16,letterSpacing:3,color:'var(--text3)'}}>••••••••••</span>
+                <span style={{fontSize:11,color:'var(--green)',fontWeight:600}}>✓ מוגדר</span>
+                <button className="btn btn-secondary btn-sm" style={{marginRight:'auto'}}
+                  onClick={()=>setAdminEditMode(true)}>
+                  🔓 שנה קוד
+                </button>
+              </div>
+              /* מצב ג׳ — שינוי קוד (דורש אישור) */
+              :<div style={{display:'flex',flexDirection:'column',gap:8,padding:'10px 12px',
+                  background:'rgba(139,92,246,.06)',borderRadius:8,border:'1px solid rgba(139,92,246,.3)'}}>
+                <div style={{fontSize:11,color:'var(--text2)'}}>כדי לשנות, הכנס את הקוד הנוכחי:</div>
+                <input className="input" type="password" style={{fontFamily:'monospace',direction:'ltr'}}
+                  value={adminCurrentVerify} onChange={e=>setAdminCurrentVerify(e.target.value)}
+                  placeholder="קוד נוכחי..." autoComplete="off"/>
+                <input className="input" style={{fontFamily:'monospace',direction:'ltr'}}
+                  value={adminNewCode} onChange={e=>setAdminNewCode(e.target.value.trim())}
+                  placeholder="קוד חדש..." autoComplete="off"/>
+                <div style={{display:'flex',gap:6}}>
+                  <button className="btn btn-primary btn-sm" onClick={changeAdminCode}>✓ אשר שינוי</button>
+                  <button className="btn btn-secondary btn-sm"
+                    onClick={()=>{setAdminEditMode(false);setAdminCurrentVerify('');setAdminNewCode('');}}>
+                    ✕ ביטול
+                  </button>
+                </div>
+              </div>
+            }
           </div>
 
           {/* ── 2. כתובת הניהול ── */}
