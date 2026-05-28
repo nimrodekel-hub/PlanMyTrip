@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v143';
+const APP_VERSION = 'v144';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נוצר אוטומטית בדפדפן, לא נשמר בקוד ולא מסונכרן ── */
@@ -5159,8 +5159,8 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
       const content=[
         'PlanMyTrip — גיבוי קוד אדמין',
         '================================',
-        `קוד אדמין : ${_adminCode}`,
-        `כתובת ניהול: ${ADMIN_URL}`,
+        `קוד אדמין : ${adminCodeInput||_adminCode}`,
+        `כתובת ניהול: ${currentAdminUrl||ADMIN_URL}`,
         '',
         `נשמר: ${new Date().toLocaleString('he-IL')}`,
         '',
@@ -5191,6 +5191,16 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
       }
     }
     setGistSaving(false);
+  };
+
+  /* ── קוד אדמין — עריכה חיה ── */
+  const[adminCodeInput,setAdminCodeInput]=useState(_adminCode);
+  const currentAdminUrl=`${location.origin}${location.pathname}?admin=${encodeURIComponent(adminCodeInput||'')}`;
+  const saveAdminCode=()=>{
+    const code=(adminCodeInput||'').trim();
+    if(!code){toast('הכנס קוד תקין','error');return;}
+    localStorage.setItem('planmytrip-admin-code',code);
+    toast('קוד אדמין עודכן ✓ — השתמש בכתובת החדשה לכניסה','success');
   };
 
   const effectiveKey=s.syncKey||settings.syncKey;
@@ -5273,52 +5283,60 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
           🔐 כתובת ניהול (אדמין)
           {IS_ADMIN
             ?<span style={{fontSize:10,background:'rgba(139,92,246,.2)',color:'#a78bfa',padding:'1px 8px',borderRadius:10,fontWeight:700}}>✓ פעיל כרגע</span>
-            :<span style={{fontSize:10,color:'var(--text3)',fontWeight:400}}>לחץ לצפות בכתובת</span>}
-          {gistUrl&&!IS_ADMIN&&<span style={{marginRight:'auto',fontSize:10,background:'rgba(34,197,94,.15)',color:'var(--green)',padding:'1px 7px',borderRadius:10}}>✅ מגובה</span>}
+            :<span style={{fontSize:10,color:'var(--text3)',fontWeight:400}}>לחץ לפתוח</span>}
+          {gistUrl&&<span style={{marginRight:'auto',fontSize:10,background:'rgba(34,197,94,.15)',color:'var(--green)',padding:'1px 7px',borderRadius:10}}>✅ מגובה</span>}
         </summary>
-        <div style={{padding:'12px 14px',display:'flex',flexDirection:'column',gap:10}}>
-          <div style={{fontSize:11,color:'var(--text2)',lineHeight:1.7}}>
-            פתח כתובת זו כדי להיכנס למצב אדמין — שם תוכל להגדיר GitHub Token ועוד.<br/>
-            <strong>הקוד ייחודי למחשב הזה ולא מופיע בשום מקום אחר.</strong>
+        <div style={{padding:'12px 14px',display:'flex',flexDirection:'column',gap:14}}>
+
+          {/* ── 1. הגדרת קוד אדמין ── */}
+          <div>
+            <div style={{fontSize:11,fontWeight:700,marginBottom:4}}>🔑 קוד אדמין — הגדר קוד שתזכור</div>
+            <div style={{fontSize:11,color:'var(--text2)',marginBottom:8,lineHeight:1.6}}>
+              הקוד עובד מכל מחשב. בחר משהו שתזכור (כמו סיסמה קצרה), שמור, ואז שלח לגיטהאב לגיבוי.
+            </div>
+            <div style={{display:'flex',gap:6}}>
+              <input className="input" style={{flex:1,fontFamily:'monospace',fontSize:13,direction:'ltr',letterSpacing:1}}
+                value={adminCodeInput} onChange={e=>setAdminCodeInput(e.target.value.trim())}
+                placeholder="הכנס קוד שתזכור..."/>
+              <button className="btn btn-primary btn-sm" style={{flexShrink:0}}
+                onClick={saveAdminCode}>
+                💾 שמור קוד
+              </button>
+            </div>
           </div>
-          <div style={{background:'var(--bg3)',borderRadius:8,padding:'8px 10px',fontFamily:'monospace',fontSize:11,direction:'ltr',wordBreak:'break-all',color:'var(--accent)',border:'1px solid rgba(79,142,247,0.3)'}}>
-            {ADMIN_URL}
-          </div>
-          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+
+          {/* ── 2. כתובת הניהול ── */}
+          <div>
+            <div style={{fontSize:11,fontWeight:700,marginBottom:4}}>🔗 כתובת כניסה לאדמין</div>
+            <div style={{background:'var(--bg3)',borderRadius:8,padding:'8px 10px',fontFamily:'monospace',fontSize:11,direction:'ltr',wordBreak:'break-all',color:'var(--accent)',border:'1px solid rgba(79,142,247,0.3)',marginBottom:6}}>
+              {currentAdminUrl}
+            </div>
             <button className="btn btn-secondary btn-sm"
-              onClick={()=>{navigator.clipboard?.writeText(ADMIN_URL).then(()=>toast('כתובת ניהול הועתקה ✓','success'));}}>
+              onClick={()=>{navigator.clipboard?.writeText(currentAdminUrl).then(()=>toast('כתובת ניהול הועתקה ✓','success'));}}>
               📋 העתק כתובת
             </button>
-            {IS_ADMIN&&<button className="btn btn-primary btn-sm"
-              onClick={backupToGist} disabled={gistSaving}>
-              {gistSaving?'⏳ שומר...':'☁️ גבה לגיטהאב'}
-            </button>}
-            {IS_ADMIN&&<button className="btn btn-secondary btn-sm" style={{opacity:.7,fontSize:10}}
-              onClick={()=>{
-                if(!confirm('האם ליצור קוד אדמין חדש? הקוד הישן יפסיק לעבוד!'))return;
-                const chars='abcdefghjkmnpqrstuvwxyz23456789';
-                const seg=()=>Array.from({length:4},()=>chars[Math.random()*chars.length|0]).join('');
-                const nc=`${seg()}-${seg()}-${seg()}`;
-                localStorage.setItem('planmytrip-admin-code',nc);
-                localStorage.removeItem('planmytrip-admin-gist-id');
-                localStorage.removeItem('planmytrip-admin-gist-url');
-                toast('קוד חדש נוצר — רענן את הדף ← גבה שוב לגיטהאב','info');
-              }}>
-              🔄 חדש קוד
-            </button>}
           </div>
-          {gistUrl&&<div style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',
-            background:'rgba(34,197,94,.07)',borderRadius:8,border:'1px solid rgba(34,197,94,.25)'}}>
-            <span style={{fontSize:12}}>✅</span>
-            <div style={{flex:1,fontSize:11,color:'var(--text2)'}}>הקוד מגובה בגיטהאב</div>
-            <a href={gistUrl} target="_blank" rel="noreferrer"
-              style={{fontSize:11,color:'var(--accent)',fontWeight:600,textDecoration:'none',flexShrink:0}}>
-              🔗 פתח Gist
-            </a>
-          </div>}
-          <div style={{fontSize:10,color:'var(--text3)',lineHeight:1.7}}>
-            💡 מומלץ: שמור כתובת זו בסימניות, ולחץ "☁️ גבה לגיטהאב" לגיבוי נוסף.
+
+          {/* ── 3. גיבוי לגיטהאב ── */}
+          <div>
+            <div style={{fontSize:11,fontWeight:700,marginBottom:4}}>☁️ גיבוי הקוד לגיטהאב</div>
+            {(s.githubToken||settings.githubToken)
+              ?<div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+                <button className="btn btn-primary btn-sm"
+                  onClick={backupToGist} disabled={gistSaving||!adminCodeInput}>
+                  {gistSaving?'⏳ שומר...':'☁️ גבה לגיטהאב'}
+                </button>
+                {gistUrl&&<a href={gistUrl} target="_blank" rel="noreferrer"
+                  style={{fontSize:11,color:'var(--accent)',fontWeight:600,textDecoration:'none'}}>
+                  🔗 פתח Gist השמור
+                </a>}
+              </div>
+              :<div style={{fontSize:11,color:'var(--text3)',lineHeight:1.7,padding:'7px 10px',
+                background:'var(--bg3)',borderRadius:8}}>
+                כדי לגבות לגיטהאב: כנס למצב אדמין ← הגדר GitHub Token ← חזור לכאן ← לחץ "☁️ גבה".
+              </div>}
           </div>
+
         </div>
       </details>
     </div>
