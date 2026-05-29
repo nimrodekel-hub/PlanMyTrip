@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v149';
+const APP_VERSION = 'v150';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -5461,6 +5461,17 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
               }}>
               📲 קישור למובייל
             </button>
+            <button className="btn btn-secondary btn-sm" style={{opacity:.7}}
+              onClick={()=>{
+                if(!confirm('ליצור קוד סנכרון חדש? יש לעדכן את כל המכשירים האחרים לאחר מכן.'))return;
+                const newKey=genSyncKey();
+                const ns={...settings,syncKey:newKey};
+                onSettings(ns);
+                setTimeout(()=>onPush(ns),200);
+                toast('קוד חדש נוצר — עדכן את שאר המכשירים','info');
+              }}>
+              🔄 קוד חדש
+            </button>
           </div>
         </div>
 
@@ -5542,10 +5553,6 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
         <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
           <button className="btn btn-secondary btn-sm" onClick={testConnection} disabled={testing}>
             {testing?'⏳ בודק...':'🔌 בדוק חיבור'}
-          </button>
-          <button className="btn btn-secondary btn-sm" style={{opacity:.6,fontSize:10}}
-            onClick={()=>{upd('syncKey',genSyncKey());toast('קוד חדש נוצר — זכור לעדכן את כל המכשירים!','info');}}>
-            🔄 צור קוד חדש
           </button>
         </div>
         {testResult&&<div style={{padding:'8px 12px',borderRadius:8,fontSize:12,
