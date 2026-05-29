@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v155';
+const APP_VERSION = 'v156';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -498,8 +498,7 @@ const normTrip = t => {
 };
 const genSyncKey=()=>{
   const c='abcdefghjkmnpqrstuvwxyz23456789'; // ללא תווים מבלבלים (0/O, 1/l/I)
-  const r=()=>Array.from({length:3},()=>c[Math.random()*c.length|0]).join('');
-  return `${r()}-${r()}`; // פורמט: xxx-xxx
+  return Array.from({length:6},()=>c[Math.random()*c.length|0]).join(''); // פורמט: xxxxxx
 };
 
 /* ── Google Takeout parser ──
@@ -5479,11 +5478,6 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
               🔄 קוד חדש
             </button>
           </div>
-          <button className="btn btn-primary" style={{width:'100%',fontSize:13,fontWeight:700,padding:'8px 0',borderRadius:8}}
-            onClick={()=>onPush(settings)} disabled={ghBusy}>
-            {ghBusy?'⏳ שולח...':'📤 שלח עכשיו → מכשירים אחרים'}
-          </button>
-          <div style={{fontSize:10,color:'var(--text3)',marginTop:4}}>לחץ כדי לעדכן את Firebase עם הנתונים הנוכחיים</div>
         </div>
 
         {/* ── מה לעשות בכל מכשיר ── */}
