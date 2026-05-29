@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v156';
+const APP_VERSION = 'v157';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -2484,27 +2484,31 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
         </div>
         {/* תצוגת מסלול: מוצא → יעד */}
         {(day.startLocation||day.endLocation)
-          ?<div style={{fontSize:11,color:'var(--text3)',display:'flex',alignItems:'center',gap:4,flexWrap:'wrap',marginTop:1}}>
+          ?<div style={{fontSize:11,color:'var(--text3)',display:'flex',alignItems:'baseline',gap:4,flexWrap:'wrap',marginTop:2}}>
               {day.startLocation
-                ?<span style={{color:day.startPending?'var(--amber)':'var(--green)',fontWeight:600}}>
-                    {day.startPending?'❓':'🟢'} {day.startLocation}{day.startTime?` ${day.startTime}`:''}
+                ?<span style={{color:day.startPending?'var(--amber)':'var(--green)',fontWeight:600,whiteSpace:'nowrap'}}>
+                    {day.startPending?'❓':'🟢'} {day.startLocation}
+                    {day.startTime&&<span style={{fontWeight:400,fontSize:9,opacity:.75,marginRight:2}}> {day.startTime}</span>}
                   </span>
                 :<span style={{color:'var(--text3)'}}>🟢 —</span>}
-              <span style={{color:'var(--text3)'}}>→</span>
+              <span style={{color:'var(--text3)',flexShrink:0}}>→</span>
               {day.endLocation
-                ?<span style={{color:'var(--red)',fontWeight:600}}>🔴 {day.endLocation}{day.endTime?` ${day.endTime}`:''}</span>
+                ?<span style={{color:'var(--red)',fontWeight:600,whiteSpace:'nowrap'}}>
+                    🔴 {day.endLocation}
+                    {day.endTime&&<span style={{fontWeight:400,fontSize:9,opacity:.75,marginRight:2}}> {day.endTime}</span>}
+                  </span>
                 :<span style={{color:'var(--text3)'}}>🔴 —</span>}
             </div>
           :day.location&&<div style={{fontSize:11,color:'var(--text3)'}}>📍 {day.location}</div>
         }
       </div>
-      <div style={{display:'flex',alignItems:'center',gap:8}}>
-        {day.blocks.length>0&&<span className="chip chip-blue" style={{fontSize:10}}>{done}/{day.blocks.length}</span>}
-        {total>0&&<span style={{fontSize:11,color:'var(--amber)'}}>₪{total.toFixed(0)}</span>}
+      <div style={{display:'flex',alignItems:'center',gap:4,flexShrink:0}}>
+        {day.blocks.length>0&&<span className="chip chip-blue" style={{fontSize:9,padding:'1px 5px'}}>{done}/{day.blocks.length}</span>}
+        {total>0&&<span style={{fontSize:10,color:'var(--amber)'}}>₪{total.toFixed(0)}</span>}
         {onToggleVisibility&&(
           <button className="btn btn-secondary btn-icon btn-sm"
             title={dayVisible?'הסתר יום מהמפה':'הצג יום על המפה'}
-            style={{fontSize:13,padding:'3px 7px',opacity:dayVisible?1:0.4,border:'1px solid var(--border)'}}
+            style={{fontSize:11,padding:'2px 5px',opacity:dayVisible?1:0.4,border:'1px solid var(--border)',lineHeight:1}}
             onClick={e=>{e.stopPropagation();onToggleVisibility(day.id);}}>
             👁️
           </button>
@@ -2512,7 +2516,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
         {onFocusDay&&hasMapBlocks&&(
           <button className="btn btn-secondary btn-icon btn-sm"
             title="הצג את כל עצירות היום על המפה"
-            style={{background:dayColor,color:'#fff',border:'none',fontSize:12,padding:'4px 8px'}}
+            style={{background:dayColor,color:'#fff',border:'none',fontSize:11,padding:'2px 5px',lineHeight:1}}
             onClick={e=>{e.stopPropagation();onFocusDay(day.id,idx,[
               ...(day.startLat&&day.startLng?[{id:'__start__',type:'travel',title:`🟢 ${day.startLocation||'מוצא'}`,lat:day.startLat,lng:day.startLng,startTime:'00:00'}]:[]),
               ...day.blocks,
@@ -2521,7 +2525,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
             🗺️
           </button>
         )}
-        <span style={{color:'var(--text3)',fontSize:13}}>{open?'▼':'◀'}</span>
+        <span style={{color:'var(--text3)',fontSize:11}}>{open?'▼':'◀'}</span>
       </div>
     </div>
 
