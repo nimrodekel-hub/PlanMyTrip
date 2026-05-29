@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v151';
+const APP_VERSION = 'v152';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -6352,12 +6352,23 @@ function App(){
         ghSha.current=sha; data=content;
       }
       if(data?.trips){
-        const loaded=data.trips.map(normTrip).filter(Boolean);
-        if(loaded.length>0){
+        const remote=data.trips.map(normTrip).filter(Boolean);
+        if(remote.length>0){
           skipNextPush.current=true;
-          setTrips(loaded);
+          // ── Merge: remote גובר על קונפליקטים, טיולים מקומיים-בלבד נשמרים ──
+          const remoteIds=new Set(remote.map(t=>t.id));
+          const localOnly=trips.filter(t=>!remoteIds.has(t.id));
+          const merged=[...remote,...localOnly];
+          const added=remote.filter(t=>!trips.find(l=>l.id===t.id)).length;
+          const updated=remote.filter(t=> trips.find(l=>l.id===t.id)).length;
+          const kept=localOnly.length;
+          setTrips(merged);
           if(data.activeId)setActiveId(data.activeId);
-          toast(`נטענו ${loaded.length} טיולים ✓`,'success');
+          const parts=[];
+          if(added)parts.push(`${added} נוספו`);
+          if(updated)parts.push(`${updated} עודכנו`);
+          if(kept)parts.push(`${kept} מקומיים נשמרו`);
+          toast(`✅ מוזג: ${parts.join(' · ')}`, 'success');
         } else {
           toast('הנתונים נטענו אך אין טיולים שמורים','info');
         }
