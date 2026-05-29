@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v152';
+const APP_VERSION = 'v153';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -6171,6 +6171,14 @@ function App(){
               if(data.activeId) setActiveId(data.activeId);
               toast('הטיול נטען מ-Firebase ✓','success');
             }
+          } else if(trips.length>0){
+            // Firebase ריק אבל יש נתונים מקומיים — דחוף אוטומטית
+            setTimeout(()=>fbWrite(fbUrl,syncKey,{trips,activeId,savedAt:new Date().toISOString()})
+              .then(()=>{setSyncStatus('synced');})
+              .catch(e=>{
+                setSyncStatus('error');
+                if(e.message==='rules_denied') toast('🔒 Firebase חסם גישה — עדכן Rules בלשונית 🔗 חיבוריות','error');
+              }), 1500);
           }
           setSyncStatus('synced');
         })
