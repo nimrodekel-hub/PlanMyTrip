@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v154';
+const APP_VERSION = 'v155';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -5230,7 +5230,13 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
     setTesting(true); setTestResult(null);
     try{
       const r=await fetch(`${FB_URL.replace(/\/$/,'')}/planmytrip/${effectiveKey}.json?_=${Date.now()}`);
-      if(r.ok){setTestResult({ok:true,msg:'✅ החיבור תקין! Firebase נגיש ומוכן.'});}
+      if(r.ok){
+        const d=await r.json();
+        const hasData=d?.trips?.length>0;
+        setTestResult({ok:true,msg:hasData
+          ?`✅ Firebase תקין — יש ${d.trips.length} טיולים שמורים (${d.savedAt?new Date(d.savedAt).toLocaleString('he-IL'):'תאריך לא ידוע'})`
+          :'⚠️ Firebase נגיש אך ריק — יש ללחוץ "📤 שלח עכשיו" כדי להעלות את הנתונים'});
+      }
       else{setTestResult({ok:false,msg:`❌ שגיאה ${r.status} — עדכן את ה-Rules (ראה למטה)`});}
     }catch(e){setTestResult({ok:false,msg:`❌ חיבור נכשל — ${e.message}`});}
     finally{setTesting(false);}
@@ -5450,7 +5456,7 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
           <div style={{fontSize:22,fontWeight:800,letterSpacing:5,fontFamily:'monospace',color:'var(--accent)',marginBottom:14,wordBreak:'break-all'}}>
             {settings.syncKey}
           </div>
-          <div style={{display:'flex',gap:6,justifyContent:'center',flexWrap:'wrap'}}>
+          <div style={{display:'flex',gap:6,justifyContent:'center',flexWrap:'wrap',marginBottom:8}}>
             <button className="btn btn-primary btn-sm" onClick={copyKey}>
               {copied?'✓ הועתק':'📋 העתק קוד'}
             </button>
@@ -5473,6 +5479,11 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
               🔄 קוד חדש
             </button>
           </div>
+          <button className="btn btn-primary" style={{width:'100%',fontSize:13,fontWeight:700,padding:'8px 0',borderRadius:8}}
+            onClick={()=>onPush(settings)} disabled={ghBusy}>
+            {ghBusy?'⏳ שולח...':'📤 שלח עכשיו → מכשירים אחרים'}
+          </button>
+          <div style={{fontSize:10,color:'var(--text3)',marginTop:4}}>לחץ כדי לעדכן את Firebase עם הנתונים הנוכחיים</div>
         </div>
 
         {/* ── מה לעשות בכל מכשיר ── */}
