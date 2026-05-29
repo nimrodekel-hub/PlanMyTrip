@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v153';
+const APP_VERSION = 'v154';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -6171,18 +6171,22 @@ function App(){
               if(data.activeId) setActiveId(data.activeId);
               toast('הטיול נטען מ-Firebase ✓','success');
             }
+            setSyncStatus('synced');
           } else if(trips.length>0){
             // Firebase ריק אבל יש נתונים מקומיים — דחוף אוטומטית
-            setTimeout(()=>fbWrite(fbUrl,syncKey,{trips,activeId,savedAt:new Date().toISOString()})
-              .then(()=>{setSyncStatus('synced');})
+            toast('☁️ מעלה נתונים ל-Firebase...','info');
+            fbWrite(fbUrl,syncKey,{trips,activeId,savedAt:new Date().toISOString()})
+              .then(()=>{setSyncStatus('synced');toast('☁️ נתונים נשלחו ל-Firebase — ניתן לטעון מהמכשיר השני ✓','success');})
               .catch(e=>{
                 setSyncStatus('error');
                 if(e.message==='rules_denied') toast('🔒 Firebase חסם גישה — עדכן Rules בלשונית 🔗 חיבוריות','error');
-              }), 1500);
+                else toast(`שגיאה בשליחה ל-Firebase: ${e.message}`,'error');
+              });
+          } else {
+            setSyncStatus('synced');
           }
-          setSyncStatus('synced');
         })
-        .catch(()=>setSyncStatus('error'));
+        .catch(e=>{setSyncStatus('error');toast(`שגיאת קריאה מ-Firebase: ${e.message}`,'error');});
     } else if(tok&&user&&repo){
       // GitHub API — מסלול גיבוי
       setSyncStatus('syncing');
