@@ -229,12 +229,12 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m82';
+const MOB_VER='m83';
 
 const genSyncKey=()=>{
   const c='abcdefghjkmnpqrstuvwxyz23456789';
   const r=()=>Array.from({length:3},()=>c[Math.random()*c.length|0]).join('');
-  return `${r()}-${r()}-${r()}`;
+  return `${r()}-${r()}`; // פורמט: xxx-xxx
 };
 
 /* בנה URL לגוגל מפות — מובייל: Maps URLs API פותח כרטיס מקום באפליקציה */

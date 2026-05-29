@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v148';
+const APP_VERSION = 'v149';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -499,7 +499,7 @@ const normTrip = t => {
 const genSyncKey=()=>{
   const c='abcdefghjkmnpqrstuvwxyz23456789'; // ללא תווים מבלבלים (0/O, 1/l/I)
   const r=()=>Array.from({length:3},()=>c[Math.random()*c.length|0]).join('');
-  return `${r()}-${r()}-${r()}`; // פורמט: xxx-xxx-xxx
+  return `${r()}-${r()}`; // פורמט: xxx-xxx
 };
 
 /* ── Google Takeout parser ──
