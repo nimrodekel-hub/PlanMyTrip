@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v157';
+const APP_VERSION = 'v158';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -2543,28 +2543,30 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
         <div style={{display:'flex',flexDirection:'column',gap:6}}>
           {/* מוצא */}
           <div>
-            <div style={{display:'flex',alignItems:'center',gap:5}}>
-              <span style={{fontSize:11,color:'var(--green)',fontWeight:700,width:48,flexShrink:0}}>🟢 מוצא</span>
+            <div style={{display:'flex',alignItems:'center',gap:4}}>
+              <span style={{fontSize:11,color:'var(--green)',fontWeight:700,width:42,flexShrink:0}}>🟢 מוצא</span>
               <input className="input" style={{flex:1,minWidth:0,
                 background:day.startPending?'rgba(234,179,8,0.13)':'',
                 borderColor:day.startPending?'var(--amber)':''}}
                 value={day.startLocation}
                 onChange={e=>onUpdate({...day,startLocation:e.target.value,startPending:false})}
                 placeholder="מאיפה יוצאים..."/>
-              <input type="time" value={day.startTime||'08:00'}
-                onChange={e=>onUpdate({...day,startTime:e.target.value})}
-                style={{width:72,background:'var(--bg2)',border:'1px solid var(--border)',
-                  color:'var(--text)',borderRadius:6,padding:'6px 4px',fontSize:12,
-                  fontFamily:'Heebo,sans-serif',flexShrink:0}}/>
-              <button title="בחר מהבנק או מהמפה" onClick={()=>setLocationPicking({field:'start'})}
-                className="btn btn-secondary btn-icon btn-sm" style={{flexShrink:0,fontSize:14}}>📍</button>
-              {day.startLat&&day.startLng&&<button title="הצג במפה"
-                style={{background:'none',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',padding:'4px 7px',fontSize:13,flexShrink:0}}
-                onClick={()=>window.__gmFocus?.(day.startLat,day.startLng,16)}>🔍</button>}
-              {day.startLat&&day.startLng&&<a href={`https://www.google.com/maps?q=${day.startLat},${day.startLng}`}
-                target="_blank" rel="noreferrer"
-                style={{background:'none',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',padding:'4px 7px',fontSize:13,textDecoration:'none',flexShrink:0,display:'inline-flex',alignItems:'center'}}
-                title="פתח בגוגל מפות">🗺️</a>}
+              <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
+                <input type="time" value={day.startTime||'08:00'}
+                  onChange={e=>onUpdate({...day,startTime:e.target.value})}
+                  style={{width:58,background:'var(--bg2)',border:'1px solid var(--border)',
+                    color:'var(--text)',borderRadius:6,padding:'4px 2px',fontSize:11,
+                    fontFamily:'Heebo,sans-serif'}}/>
+                <button title="בחר מהבנק או מהמפה" onClick={()=>setLocationPicking({field:'start'})}
+                  className="btn btn-secondary btn-icon btn-sm" style={{fontSize:12,padding:'3px 5px'}}>📍</button>
+                {day.startLat&&day.startLng&&<button title="הצג במפה"
+                  style={{background:'none',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',padding:'3px 5px',fontSize:12}}
+                  onClick={()=>window.__gmFocus?.(day.startLat,day.startLng,16)}>🔍</button>}
+                {day.startLat&&day.startLng&&<a href={`https://www.google.com/maps?q=${day.startLat},${day.startLng}`}
+                  target="_blank" rel="noreferrer"
+                  style={{background:'none',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',padding:'3px 5px',fontSize:12,textDecoration:'none',display:'inline-flex',alignItems:'center'}}
+                  title="פתח בגוגל מפות">🗺️</a>}
+              </div>
             </div>
             {cascadeNeeded&&(
               <div style={{display:'flex',alignItems:'center',gap:6,marginTop:4,paddingRight:52}}>
@@ -2586,26 +2588,28 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
           </div>
           {/* יעד */}
           <div>
-            <div style={{display:'flex',alignItems:'center',gap:5}}>
-              <span style={{fontSize:11,color:'var(--red)',fontWeight:700,width:48,flexShrink:0}}>🔴 יעד</span>
+            <div style={{display:'flex',alignItems:'center',gap:4}}>
+              <span style={{fontSize:11,color:'var(--red)',fontWeight:700,width:42,flexShrink:0}}>🔴 יעד</span>
               <input className="input" style={{flex:1,minWidth:0}}
                 value={day.endLocation}
                 onChange={e=>onUpdate({...day,endLocation:e.target.value})}
                 placeholder="לאן מגיעים..."/>
-              <input type="time" value={day.endTime||'20:00'}
-                onChange={e=>onUpdate({...day,endTime:e.target.value})}
-                style={{width:72,background:'var(--bg2)',border:'1px solid var(--border)',
-                  color:'var(--text)',borderRadius:6,padding:'6px 4px',fontSize:12,
-                  fontFamily:'Heebo,sans-serif',flexShrink:0}}/>
-              <button title="בחר מהבנק או מהמפה" onClick={()=>setLocationPicking({field:'end'})}
-                className="btn btn-secondary btn-icon btn-sm" style={{flexShrink:0,fontSize:14}}>📍</button>
-              {day.endLat&&day.endLng&&<button title="הצג במפה"
-                style={{background:'none',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',padding:'4px 7px',fontSize:13,flexShrink:0}}
-                onClick={()=>window.__gmFocus?.(day.endLat,day.endLng,16)}>🔍</button>}
-              {day.endLat&&day.endLng&&<a href={`https://www.google.com/maps?q=${day.endLat},${day.endLng}`}
-                target="_blank" rel="noreferrer"
-                style={{background:'none',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',padding:'4px 7px',fontSize:13,textDecoration:'none',flexShrink:0,display:'inline-flex',alignItems:'center'}}
-                title="פתח בגוגל מפות">🗺️</a>}
+              <div style={{display:'flex',alignItems:'center',gap:2,flexShrink:0}}>
+                <input type="time" value={day.endTime||'20:00'}
+                  onChange={e=>onUpdate({...day,endTime:e.target.value})}
+                  style={{width:58,background:'var(--bg2)',border:'1px solid var(--border)',
+                    color:'var(--text)',borderRadius:6,padding:'4px 2px',fontSize:11,
+                    fontFamily:'Heebo,sans-serif'}}/>
+                <button title="בחר מהבנק או מהמפה" onClick={()=>setLocationPicking({field:'end'})}
+                  className="btn btn-secondary btn-icon btn-sm" style={{fontSize:12,padding:'3px 5px'}}>📍</button>
+                {day.endLat&&day.endLng&&<button title="הצג במפה"
+                  style={{background:'none',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',padding:'3px 5px',fontSize:12}}
+                  onClick={()=>window.__gmFocus?.(day.endLat,day.endLng,16)}>🔍</button>}
+                {day.endLat&&day.endLng&&<a href={`https://www.google.com/maps?q=${day.endLat},${day.endLng}`}
+                  target="_blank" rel="noreferrer"
+                  style={{background:'none',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',padding:'3px 5px',fontSize:12,textDecoration:'none',display:'inline-flex',alignItems:'center'}}
+                  title="פתח בגוגל מפות">🗺️</a>}
+              </div>
             </div>
             {overrunMins>0&&(
               <div style={{display:'flex',alignItems:'center',gap:6,marginTop:5}}>
