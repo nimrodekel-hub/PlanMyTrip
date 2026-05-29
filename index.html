@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v150';
+const APP_VERSION = 'v151';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -6217,7 +6217,11 @@ function App(){
           ghSha.current=res.content.sha;
         }
         setSyncStatus('synced');
-      }catch(e){setSyncStatus('error');console.error('Sync error:',e.message);}
+      }catch(e){
+        setSyncStatus('error');
+        if(e.message==='rules_denied')toast('🔒 Firebase חסם גישה — עדכן Rules בלשונית 🔗 חיבוריות','error');
+        else console.error('Sync error:',e.message);
+      }
     },2000);
     return ()=>clearTimeout(autoSyncTimer.current);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -6339,13 +6343,28 @@ function App(){
       let data=null;
       if(s.firebaseUrl&&s.syncKey){
         data=await fbRead(s.firebaseUrl,s.syncKey);
-        toast('נטען מ-Firebase ✓','success');
+        if(!data){
+          toast('לא נמצאו נתונים לקוד זה — ודא שהקוד נכון ושהמכשיר המקורי סינכרן לאחרונה','error');
+          setSyncStatus('error'); return;
+        }
       } else {
         const{content,sha}=await ghLoad(s.githubToken,s.githubUsername,s.githubRepo,'trip_data.json');
         ghSha.current=sha; data=content;
-        toast('נמשך מגיטהאב ✓','success');
       }
-      if(data?.trips){const loaded=data.trips.map(normTrip).filter(Boolean);if(loaded.length>0){skipNextPush.current=true;setTrips(loaded);if(data.activeId)setActiveId(data.activeId);}}
+      if(data?.trips){
+        const loaded=data.trips.map(normTrip).filter(Boolean);
+        if(loaded.length>0){
+          skipNextPush.current=true;
+          setTrips(loaded);
+          if(data.activeId)setActiveId(data.activeId);
+          toast(`נטענו ${loaded.length} טיולים ✓`,'success');
+        } else {
+          toast('הנתונים נטענו אך אין טיולים שמורים','info');
+        }
+      } else {
+        toast('נתונים לא תקינים — לא ניתן לטעון','error');
+        setSyncStatus('error'); return;
+      }
       setSyncStatus('synced');
     }catch(e){setSyncStatus('error');toast(`שגיאת טעינה: ${e.message}`,'error');}
     finally{setGhBusy(false);}
