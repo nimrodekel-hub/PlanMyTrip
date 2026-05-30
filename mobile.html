@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m85';
+const MOB_VER='m86';
 
 const genSyncKey=()=>{
   const c='abcdefghjkmnpqrstuvwxyz23456789';
@@ -386,13 +386,15 @@ const getBankSrc=item=>BANK_SRC[item._listSource]||null;
 
 /* build a round SVG marker (circle + emoji) — like Google Maps saved-list pins */
 const makeBankIcon=src=>{
-  if(!window.google?.maps||!src)return null;
+  if(!window.google?.maps)return null;
+  // fallback: gold star for items without _listSource (don't show red default pin)
+  const s=src||{color:'#f59e0b',emoji:'⭐'};
   const svg=
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 44" width="44" height="44">`+
-    `<circle cx="22" cy="22" r="20" fill="${src.color}" stroke="white" stroke-width="2.5"/>`+
+    `<circle cx="22" cy="22" r="20" fill="${s.color}" stroke="white" stroke-width="2.5"/>`+
     `<text x="22" y="29" text-anchor="middle" `+
       `font-family="Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif" `+
-      `font-size="16">${src.emoji}</text>`+
+      `font-size="16">${s.emoji}</text>`+
     `</svg>`;
   return{
     url:'data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(svg),
@@ -648,6 +650,17 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
             icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:16,fillColor:fc,fillOpacity:1,strokeColor:'#fff',strokeWeight:2},
             title:block.title||'',
             zIndex:110,
+          });
+          m.addListener('click',()=>{
+            if(mapPickCallbackRef?.current){
+              const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;
+              cb({name:block.title||'פעילות',lat:block.lat,lng:block.lng,address:block.location||block.address||''});return;
+            }
+            setSheet({lat:block.lat,lng:block.lng,
+              name:block.title||(isStart?'נקודת מוצא':isEnd?'נקודת יעד':'פעילות'),
+              address:block.location||block.address||'',
+              inBank:false,placeId:block.placeId||null,website:'',
+              rating:block.placeRating||null,placeType:block.placeType||''});
           });
           bounds.extend({lat:block.lat,lng:block.lng});
           hlDayMkRef.current.push(m);

@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v174';
+const APP_VERSION = 'v175';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -1413,6 +1413,15 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
     if (allPins.length===0) return;
     const bounds=new window.google.maps.LatLngBounds();
     // נקודת מוצא — ירוקה
+    const _mkClick=(pin,fallbackName)=>()=>{
+      if(mapPickCallbackRef?.current){
+        const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;
+        cb({name:pin.title||fallbackName,lat:pin.lat,lng:pin.lng,address:pin.location||pin.title||''});return;
+      }
+      window.__gmShowSheet?.({name:pin.title||fallbackName,address:pin.location||pin.title||'',
+        lat:pin.lat,lng:pin.lng,placeId:pin.placeId||null,
+        rating:pin.placeRating||null,placeType:pin.placeType||''});
+    };
     if (startPin?.lat&&startPin?.lng){
       const m=new window.google.maps.Marker({
         position:{lat:startPin.lat,lng:startPin.lng},
@@ -1422,6 +1431,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         title:startPin.title||'מוצא',
         zIndex:102,
       });
+      m.addListener('click',_mkClick(startPin,'נקודת מוצא'));
       bounds.extend({lat:startPin.lat,lng:startPin.lng});
       hlDayMarkers.current.push(m);
     }
@@ -1435,10 +1445,11 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         title:`${i+2}. ${block.title||''}`,
         zIndex:100,
       });
+      m.addListener('click',_mkClick(block,'פעילות'));
       bounds.extend({lat:block.lat,lng:block.lng});
       hlDayMarkers.current.push(m);
     });
-    // נקודת סיום — אדומה
+    // נקודת סיום
     if (endPin?.lat&&endPin?.lng){
       const m=new window.google.maps.Marker({
         position:{lat:endPin.lat,lng:endPin.lng},
@@ -1448,6 +1459,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         title:endPin.title||'יעד',
         zIndex:102,
       });
+      m.addListener('click',_mkClick(endPin,'נקודת יעד'));
       bounds.extend({lat:endPin.lat,lng:endPin.lng});
       hlDayMarkers.current.push(m);
     }
