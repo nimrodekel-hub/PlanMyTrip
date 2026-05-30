@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v177';
+const APP_VERSION = 'v178';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -908,12 +908,13 @@ const makeSearchMarkerIcon=types=>{
 /* ══════════════════════════════════
    פאנל מידע מקום (תחתון) — מחליף את InfoWindow
 ══════════════════════════════════ */
-function MapBottomSheet({place,trip,onClose,onAddToBank,onAddToDay,onAddToDayBank,onSetDayLocation}){
-  const [editName,setEditName]=useState(place.name||'');
+function MapBottomSheet({place,trip,onClose,onAddToBank,onAddToDay,onAddToDayBank,onSetDayLocation,onSaveCustomName}){
+  const [editName,setEditName]=useState(place.customName||place.name||'');
   const [selDay,setSelDay]=useState('');
   const [selDayBank,setSelDayBank]=useState('');
   const [selLoc,setSelLoc]=useState('');
-  useEffect(()=>{setEditName(place.name||'');},[place.name]);
+  const origName=place.name||'';
+  useEffect(()=>{setEditName(place.customName||place.name||'');},[place.name,place.customName]);
   const days=trip?.days||[];
   const daysOpts=days.map((d,i)=><option key={d.id} value={d.id}>יום {i+1}{d.location?' — '+d.location:''}{d.date?' ('+d.date+')':''}</option>);
   const mapsUrl=mkMapsUrl(place.placeId,place.lat,place.lng,place.name);
@@ -922,7 +923,8 @@ function MapBottomSheet({place,trip,onClose,onAddToBank,onAddToDay,onAddToDayBan
   const isOpen=place.openStatus==='פתוח עכשיו';
   const openColor=isOpen?'#22c55e':'#ef4444';
   const handleBank=()=>{
-    onAddToBank({...place,name:editName});
+    const cn=editName!==origName?editName:undefined;
+    onAddToBank({...place,customName:cn});
     onClose();
     toast(`"${editName}" נוסף לבנק האטרקציות`,'success');
   };
@@ -972,7 +974,13 @@ function MapBottomSheet({place,trip,onClose,onAddToBank,onAddToDay,onAddToDayBan
           padding:'2px 0 4px',fontSize:14,fontWeight:700,
           fontFamily:'Heebo,Arial,sans-serif',direction:'rtl',
           color:'var(--text)',background:'none',outline:'none',
-          boxSizing:'border-box',marginBottom:5}}/>
+          boxSizing:'border-box',marginBottom:3}}/>
+      {(place.customName&&place.customName!==origName)&&<div style={{fontSize:10,color:'var(--text3)',marginBottom:3}}>שם מקורי: {origName}</div>}
+      {place.placeId&&editName!==(place.customName||origName)&&<button
+        onClick={()=>{onSaveCustomName?.({placeId:place.placeId,customName:editName});toast(`שם נשמר: "${editName}" ✓`,'success');}}
+        style={{fontSize:11,background:'var(--accent)',color:'#fff',border:'none',borderRadius:5,padding:'4px 10px',cursor:'pointer',fontFamily:'Heebo,Arial,sans-serif',fontWeight:600,marginBottom:4,display:'block'}}>
+        💾 שמור שם בכל המקומות
+      </button>}
       {/* סוג + דירוג + מחיר */}
       <div style={{display:'flex',alignItems:'center',gap:5,flexWrap:'wrap',marginBottom:place.address?3:5}}>
         {place.placeType&&<span style={{fontSize:11,color:'#fff',background:'#888',borderRadius:10,padding:'1px 7px'}}>{place.placeType}</span>}
@@ -1028,7 +1036,7 @@ function MapBottomSheet({place,trip,onClose,onAddToBank,onAddToDay,onAddToDayBan
 /* ══════════════════════════════════
    מפת גוגל
 ══════════════════════════════════ */
-function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateBankItem,highlightDay,highlightItem,routeHighlight,mapPickCallbackRef,mapPickLabel,onCancelMapPick,onAddToDayBank,shownDayIds}){
+function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateBankItem,highlightDay,highlightItem,routeHighlight,mapPickCallbackRef,mapPickLabel,onCancelMapPick,onAddToDayBank,shownDayIds,onSaveCustomName}){
   const mapRef=useRef(null), mapInst=useRef(null), markers=useRef([]);
   const hlDayMarkers=useRef([]), hlItemMarker=useRef(null);
   const hlDayRoutes=useRef([]), hlRouteRenderer=useRef(null);
@@ -1047,6 +1055,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
   const onSetDayLocationRef=useRef(onSetDayLocation);
   const onUpdateBankRef=useRef(onUpdateBankItem);
   const onAddToDayBankRef=useRef(onAddToDayBank);
+  const onSaveCustomNameRef=useRef(onSaveCustomName);
   const mapsKeyRef=useRef(mapsKey);
   useEffect(()=>{tripRef.current=trip;},[trip]);
   useEffect(()=>{onAddToBankRef.current=onAddToBank;},[onAddToBank]);
@@ -1054,6 +1063,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
   useEffect(()=>{onSetDayLocationRef.current=onSetDayLocation;},[onSetDayLocation]);
   useEffect(()=>{onUpdateBankRef.current=onUpdateBankItem;},[onUpdateBankItem]);
   useEffect(()=>{onAddToDayBankRef.current=onAddToDayBank;},[onAddToDayBank]);
+  useEffect(()=>{onSaveCustomNameRef.current=onSaveCustomName;},[onSaveCustomName]);
   useEffect(()=>{mapsKeyRef.current=mapsKey;},[mapsKey]);
 
   useEffect(()=>{
@@ -1683,6 +1693,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       onAddToDay={(dayId,p)=>onAddToDayRef.current?.(dayId,p)}
       onAddToDayBank={(dayId,p)=>onAddToDayBankRef.current?.(dayId,p)}
       onSetDayLocation={(dayId,type,name,lat,lng,p)=>onSetDayLocationRef.current?.(dayId,type,name,lat,lng,p)}
+      onSaveCustomName={p=>onSaveCustomNameRef.current?.(p.placeId,null,p.customName)}
     />}
     <div ref={mapRef} style={{flex:1,width:'100%'}}/>
   </div>;
@@ -1960,7 +1971,7 @@ function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onMoveToDayB
         {/* תוכן */}
         <div style={{fontSize:13,fontWeight:600,color:'var(--text)',cursor:'pointer',display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}} onClick={()=>onEdit(block)}>
           {BANK_SRC_PICKER[bankInfo?._listSource]&&<span style={{fontSize:12,opacity:.8}} title={bankInfo._listSource}>{BANK_SRC_PICKER[bankInfo._listSource].emoji}</span>}
-          {block.title||`(${BLOCK_HE[block.type]} ללא שם)`}
+          {block.customName||block.title||`(${BLOCK_HE[block.type]} ללא שם)`}
         </div>
         {block.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1,lineHeight:1.4}}>{block.placeType}</div>}
         {block.location&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>📍 {block.location}</div>}
@@ -3408,7 +3419,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontSize:13,fontWeight:600,display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
                               {src&&<span style={{fontSize:12,opacity:.8}} title={item._listSource||bankInfo?._listSource}>{src.emoji}</span>}
-                              <span>📌 {item.name}</span>
+                              <span>📌 {item.customName||item.name}</span>
                             </div>
                             {placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1}}>{placeType}</div>}
                             {item.address&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>📍 {item.address}</div>}
@@ -3463,16 +3474,22 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
 /* ══════════════════════════════════
    פריט בנק אטרקציות
 ══════════════════════════════════ */
-function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,onSelect,onEnrich,enriching,onNoteChange,onAddToDayBank,onSetDayStart,onSetDayEnd}){
+function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,onSelect,onEnrich,enriching,onNoteChange,onAddToDayBank,onSetDayStart,onSetDayEnd,onSaveCustomName}){
   const[selDay,setSelDay]=useState('');
   const[selDayBank,setSelDayBank]=useState('');
   const[selDayStart,setSelDayStart]=useState('');
   const[selDayEnd,setSelDayEnd]=useState('');
   const[noteVal,setNoteVal]=useState(item.note||'');
   const[showNote,setShowNote]=useState(!!(item.note));
+  const[nameEdit,setNameEdit]=useState(false);
+  const[nameVal,setNameVal]=useState(item.customName||item.name||'');
   useEffect(()=>{setNoteVal(item.note||'');setShowNote(!!(item.note));},[item.id,item.note]);
+  useEffect(()=>{setNameVal(item.customName||item.name||'');},[item.id,item.customName,item.name]);
   const focusMap=()=>{if(item.lat){onLocate?.(item.lat,item.lng);onFocusItem?.(item.lat,item.lng,item.name);}};
   const saveNote=(val)=>{if(onNoteChange&&val!==item.note)onNoteChange(item.id,val);};
+  const doSaveNameWith=(val)=>{onSaveCustomName?.(item.placeId,item.id,val);};
+  const doSaveName=()=>{doSaveNameWith(nameVal);setNameEdit(false);toast(`שם עודכן: "${nameVal}"`,nameVal?'success':'info');};
+  const smallBtnStyle={fontSize:11,background:'var(--surface)',border:'1px solid var(--border)',borderRadius:4,padding:'2px 5px',cursor:'pointer',fontFamily:'Heebo,Arial,sans-serif',lineHeight:1.4};
   /* קישור גוגל מפות — מה-url שנשמר בייבוא, או בנה מ-placeId */
   const mapsUrl=item.url||mkMapsUrl(item.placeId,item.lat,item.lng,item.name);
   const srcInfo=BANK_SRC_PICKER[item._listSource]||null;
@@ -3483,8 +3500,24 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
       {onSelect&&<input type="checkbox" checked={!!selected} onChange={e=>onSelect(item.id,e.target.checked)}
         style={{marginTop:3,flexShrink:0,cursor:'pointer',width:14,height:14}} onClick={e=>e.stopPropagation()}/>}
       <div style={{flex:1,minWidth:0,cursor:item.lat?'pointer':'default'}} onClick={focusMap}>
-        <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-          {srcInfo&&<span style={{marginLeft:4,fontSize:13}} title={item._listSource}>{srcInfo.emoji}</span>}{item.name}</div>
+        {nameEdit?(
+          <div style={{display:'flex',gap:4,alignItems:'center',marginBottom:4}} onClick={e=>e.stopPropagation()}>
+            <input value={nameVal} onChange={e=>setNameVal(e.target.value)}
+              style={{flex:1,fontSize:13,fontWeight:600,border:'1px solid var(--accent)',borderRadius:5,padding:'2px 6px',background:'var(--bg)',color:'var(--text)',fontFamily:'Heebo,Arial,sans-serif',direction:'rtl'}}
+              onKeyDown={e=>{if(e.key==='Enter')doSaveName();if(e.key==='Escape')setNameEdit(false);}}
+              autoFocus/>
+            <button onClick={doSaveName} style={{...smallBtnStyle,background:'var(--accent)',color:'#fff'}} title="שמור שם">✓</button>
+            <button onClick={()=>setNameEdit(false)} style={smallBtnStyle} title="ביטול">✕</button>
+            {item.customName&&<button onClick={()=>{setNameVal(item.name||'');doSaveNameWith(item.name||'');setNameEdit(false);}} style={{...smallBtnStyle,fontSize:9}} title="שחזר שם מקורי">⟲</button>}
+          </div>
+        ):(
+          <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:2}}>
+            {item.customName&&<span style={{fontSize:9,color:'var(--accent)',marginLeft:3,verticalAlign:'middle'}} title="שם מותאם">✎</span>}
+            {srcInfo&&<span style={{marginLeft:4,fontSize:13}} title={item._listSource}>{srcInfo.emoji}</span>}
+            <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>{item.customName||item.name}</span>
+            <button onClick={e=>{e.stopPropagation();setNameEdit(true);}} style={{background:'none',border:'none',cursor:'pointer',fontSize:11,opacity:.5,padding:'0 2px',lineHeight:1,marginRight:2,flexShrink:0}} title="שנה שם">✏️</button>
+          </div>
+        )}
         {item.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1,lineHeight:1.4}}>{item.placeType}</div>}
         {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginTop:1}}>{item.address}</div>}
         {item._notFound&&<div style={{fontSize:10,color:'#9ca3af',display:'inline-flex',alignItems:'center',gap:3,marginTop:2,background:'var(--bg2)',borderRadius:4,padding:'1px 6px',border:'1px solid var(--border)'}}>
@@ -3812,6 +3845,20 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
   // ref לטיול — מונע stale-closure בלולאות async
   const tripRef=useRef(trip);
   useEffect(()=>{tripRef.current=trip;},[trip]);
+  const saveCustomNameLocal=(placeId,bankItemId,customName)=>{
+    const cn=(customName||'').trim()||undefined;
+    onUpdate(prev=>({
+      ...prev,
+      interestBank:(prev.interestBank||[]).map(i=>
+        (placeId&&i.placeId===placeId)||(bankItemId&&!placeId&&i.id===bankItemId)?{...i,customName:cn}:i
+      ),
+      days:placeId?prev.days.map(d=>({
+        ...d,
+        blocks:d.blocks.map(b=>b.placeId===placeId?{...b,customName:cn}:b),
+        dayBank:(d.dayBank||[]).map(i=>i.placeId===placeId?{...i,customName:cn}:i)
+      })):prev.days
+    }));
+  };
 
   // ── קישור אוטומטי לגוגל מיד כשהמפה טעונה ויש אטרקציות ללא placeId ──
   const autoEnrichRunning=useRef(false);
@@ -4550,6 +4597,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
                   onEnrich={enrichItem} enriching={enrichingId===item.id}
                   onAddToDayBank={addItemToDayBank}
                   onSetDayStart={setItemAsStart} onSetDayEnd={setItemAsEnd}
+                  onSaveCustomName={saveCustomNameLocal}
                   onNoteChange={(id,note)=>{onUpdate({...tripRef.current,interestBank:tripRef.current.interestBank.map(i=>i.id===id?{...i,note}:i)});}}/>
               </div>
             ))}
@@ -4590,6 +4638,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
                 selected={selected.has(item.id)} onSelect={toggleSelect}
                 onEnrich={enrichItem} enriching={enrichingId===item.id}
                 onAddToDayBank={addItemToDayBank}
+                onSaveCustomName={saveCustomNameLocal}
                 onNoteChange={(id,note)=>{onUpdate({...tripRef.current,interestBank:tripRef.current.interestBank.map(i=>i.id===id?{...i,note}:i)});}}/>
             ))}
           </div>;
@@ -6569,6 +6618,22 @@ function App(){
     if(!trip)return;
     updTrip({...trip,interestBank:trip.interestBank.map(i=>i.id===id?{...i,...patch}:i)});
   },[trip,updTrip]);
+  const saveCustomName=useCallback((placeId,bankItemId,customName)=>{
+    if(!trip)return;
+    const cn=(customName||'').trim()||undefined;
+    updTrip(prev=>({
+      ...prev,
+      interestBank:(prev.interestBank||[]).map(i=>
+        (placeId&&i.placeId===placeId)||(bankItemId&&!placeId&&i.id===bankItemId)
+          ?{...i,customName:cn}:i
+      ),
+      days:placeId?prev.days.map(d=>({
+        ...d,
+        blocks:d.blocks.map(b=>b.placeId===placeId?{...b,customName:cn}:b),
+        dayBank:(d.dayBank||[]).map(i=>i.placeId===placeId?{...i,customName:cn}:i)
+      })):prev.days
+    }));
+  },[trip,updTrip]);
 
   const setDayLocation=useCallback((dayId,field,name,lat,lng,placeData=null)=>{
     if(!trip)return;
@@ -6596,6 +6661,7 @@ function App(){
     const start=last?addMins(last.startTime,last.durationMins):(day.currentTime||'09:00');
     const newBlock=defaultBlock('activity',start);
     newBlock.title=item.name;
+    if(item.customName) newBlock.customName=item.customName;
     newBlock.location=item.address||'';
     if(item.lat){newBlock.lat=item.lat; newBlock.lng=item.lng;}
     if(item.placeId) newBlock.placeId=item.placeId;
@@ -6744,7 +6810,7 @@ function App(){
               onSetDayLocation={setDayLocation} onUpdateBankItem={updateBankItem}
               highlightDay={hlDay} highlightItem={hlItem} routeHighlight={hlRoute}
               mapPickCallbackRef={mapPickCallbackRef} mapPickLabel={mapPickLabel} onCancelMapPick={cancelMapPick}
-              onAddToDayBank={addToDayBank} shownDayIds={shownDayIds}/>
+              onAddToDayBank={addToDayBank} shownDayIds={shownDayIds} onSaveCustomName={saveCustomName}/>
           </div>
           {/* backdrop בסלולר */}
           <div className={`mob-panel-backdrop${mobilePanel!=='map'?' show':''}`}
