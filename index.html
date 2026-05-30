@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v176';
+const APP_VERSION = 'v177';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -2242,7 +2242,11 @@ function DayBankSuggestions({day,onAddItems}){
 }
 
 function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute,onMoveToBank,settings,onPickFromMap,onBankNoteUpdate,dayVisible=true,allDaysVisible=true,onToggleVisibility}){
-  const[open,setOpen]=useState(true),[editing,setEd]=useState(null);
+  // פתוח כברירת מחדל רק אם היום הוא היום או מחר (לפי תאריך), אחרת — מכווץ
+  const _today=new Date().toISOString().slice(0,10);
+  const _tomorrow=new Date(Date.now()+864e5).toISOString().slice(0,10);
+  const _defaultOpen=day.date?(day.date===_today||day.date===_tomorrow):idx<2;
+  const[open,setOpen]=useState(_defaultOpen),[editing,setEd]=useState(null);
   const[travelTimes,setTravelTimes]=useState({});
   const[locationPicking,setLocationPicking]=useState(null); // {field:'start'|'end'}
   const[bankPickForBlock,setBankPickForBlock]=useState(null); // {type}

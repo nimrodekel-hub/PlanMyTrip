@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m87';
+const MOB_VER='m88';
 
 const genSyncKey=()=>{
   const c='abcdefghjkmnpqrstuvwxyz23456789';
@@ -1378,7 +1378,17 @@ function LocationPickerSheet({bank,title,onPick,onPickFromMap,onClose,onCreateEm
    SCHEDULE SCREEN — day-by-day
 ════════════════════════════════ */
 function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap}){
-  const[dayIdx,setDayIdx]=useState(0);
+  // פתיחה אוטומטית על היום הנוכחי (לפי תאריך)
+  const[dayIdx,setDayIdx]=useState(()=>{
+    const ds=trip?.days||[];
+    const _today=new Date().toISOString().slice(0,10);
+    const _tomorrow=new Date(Date.now()+864e5).toISOString().slice(0,10);
+    const ti=ds.findIndex(d=>d.date===_today);
+    if(ti>=0)return ti;
+    const mi=ds.findIndex(d=>d.date===_tomorrow);
+    if(mi>=0)return mi;
+    return 0;
+  });
   const[travelTimes,setTravelTimes]=useState({});
   const[editing,setEditing]=useState(null);
   const[locationPicking,setLocationPicking]=useState(null); // {field:'start'|'end'}
