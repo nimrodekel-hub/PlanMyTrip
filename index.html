@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v173';
+const APP_VERSION = 'v174';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -789,7 +789,7 @@ function VehicleHeader({trip,theme,syncStatus,hasGh,hasFb,syncKey,onThemeToggle,
   const[showQR,setShowQR]=useState(false);
 
   const mobileUrl=syncKey
-    ?(window.location.origin+window.location.pathname.replace(/[^/]+$/,'')+`mobile.html?key=${syncKey}`)
+    ?(window.location.origin+window.location.pathname.replace(/[^/]+$/,'')+`mobile.html#k=${syncKey}`)
     :null;
 
   const saveTracker=(dateKey,logKey,newDate)=>{
@@ -5691,7 +5691,7 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
             </button>
             <button className="btn btn-secondary btn-sm"
               onClick={()=>{
-                const u=`${location.origin}${location.pathname.replace(/[^\/]*$/,'')}mobile.html?key=${settings.syncKey}`;
+                const u=`${location.origin}${location.pathname.replace(/[^\/]*$/,'')}mobile.html#k=${settings.syncKey}`;
                 navigator.clipboard?.writeText(u).then(()=>toast('קישור למובייל הועתק — שלח לעצמך 📲','success'));
               }}>
               📲 קישור למובייל

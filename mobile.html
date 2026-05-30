@@ -3456,16 +3456,28 @@ function BottomNav({active,onChange}){
 }
 
 /* ════════════════════════════════
-   URL ?key= PARAM — auto-connect on first visit
+   URL key — auto-connect (supports ?key= and #k=)
+   הקוד נשמר ב-hash (#k=xxx) שלא נמחק אף פעם,
+   גם אם iOS Safari מנקה את localStorage
 ════════════════════════════════ */
 (()=>{
   try{
-    const urlKey=new URLSearchParams(window.location.search).get('key');
-    if(urlKey){
+    // קרא קוד מ-?key= (QR ישן) או מ-#k= (hash קבוע)
+    const spKey=new URLSearchParams(window.location.search).get('key');
+    const hpKey=(window.location.hash.match(/(?:^#|[&])k=([^&]+)/)||[])[1];
+    const key=spKey||hpKey;
+    if(key){
       const cur=loadState()||{};
-      saveState({...cur,settings:{...(cur.settings||{}),syncKey:urlKey,firebaseUrl:FB_URL}});
-      window.history.replaceState({},'',window.location.pathname);
-      location.reload();
+      const existing=cur?.settings?.syncKey;
+      // ?key= תמיד גובר (סריקת QR חדשה); #k= רק אם אין עדיין קוד ב-localStorage
+      if(spKey||!existing){
+        saveState({...cur,settings:{...(cur.settings||{}),syncKey:key,firebaseUrl:FB_URL}});
+      }
+      if(spKey){
+        // המר ?key= ל-#k= ושמור ב-URL לצמיתות (ישרוד ניקוי localStorage)
+        window.history.replaceState({},'',window.location.pathname+'#k='+key);
+        location.reload();
+      }
     }
   }catch{}
 })();
@@ -3478,7 +3490,16 @@ function App(){
   const[settings,setSettings]=useState(()=>{
     const def={firebaseUrl:FB_URL,syncKey:'',googleMapsKey:GMAPS_KEY,travelBuffer:1.2};
     const merged={...def,...(saved?.settings||{}),firebaseUrl:FB_URL};
-    if(!merged.syncKey) merged.syncKey=genSyncKey(); // צור קוד אוטומטית בפתיחה ראשונה
+    // גיבוי: אם localStorage נמחק (iOS Safari ITP) — שחזר קוד מה-hash של ה-URL
+    if(!merged.syncKey){
+      const hpKey=(window.location.hash.match(/(?:^#|[&])k=([^&]+)/)||[])[1];
+      if(hpKey){
+        merged.syncKey=hpKey;
+        // שמור מחדש ל-localStorage
+        try{saveState({...loadState(),settings:{...merged,syncKey:hpKey}});}catch{}
+      }
+    }
+    if(!merged.syncKey) merged.syncKey=genSyncKey();
     return merged;
   });
   const[trips,setTrips]=useState(()=>{
@@ -3491,6 +3512,15 @@ function App(){
   const[syncStatus,setSyncStatus]=useState('idle');
   const[mapsReady,setMapsReady]=useState(!!window.google?.maps);
   const skipPush=useRef(false);
+
+  // שמור את קוד הסנכרון ב-hash של ה-URL כדי שישרוד ניקוי localStorage (iOS Safari)
+  useEffect(()=>{
+    if(settings?.syncKey){
+      const cur=(window.location.hash.match(/(?:^#|[&])k=([^&]+)/)||[])[1];
+      if(cur!==settings.syncKey)
+        window.history.replaceState({},'',window.location.pathname+'#k='+settings.syncKey);
+    }
+  },[settings?.syncKey]);
   const autoSaveTimer=useRef(null);
   const syncMounted=useRef(false);
   const tripsRef=useRef(trips);
