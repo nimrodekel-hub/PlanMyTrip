@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v162';
+const APP_VERSION = 'v163';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -3353,7 +3353,7 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
   </div>;
 }
 
-const DAYS_PER_PAGE=4;
+const DAYS_PER_PAGE=3;
 
 function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,onFocusRoute,compact=false,settings,onPickFromMap,shownDayIds=null,onToggleDayVisibility}){
   const[showBank,setShowBank]=useState(!compact);
