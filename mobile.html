@@ -3513,6 +3513,13 @@ function App(){
 
   useEffect(()=>{loadFromFirebase();},[]);// eslint-disable-line
 
+  /* טעינה מחדש כשהמשתמש חוזר לטאב */
+  useEffect(()=>{
+    const onVisible=()=>{if(document.visibilityState==='visible')loadFromFirebase();};
+    document.addEventListener('visibilitychange',onVisible);
+    return()=>document.removeEventListener('visibilitychange',onVisible);
+  },[loadFromFirebase]);
+
   /* persist to localStorage (including settings changes) */
   useEffect(()=>{
     saveState({settings,trips,activeId});
