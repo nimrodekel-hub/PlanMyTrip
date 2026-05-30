@@ -3307,6 +3307,33 @@ function DocsTab({trip}){
 /* ════════════════════════════════
    TRIP SCREEN
 ════════════════════════════════ */
+function SyncCodeInput({settings,onSettingsChange,onRefresh}){
+  const[code,setCode]=useState('');
+  const apply=()=>{
+    const k=code.trim().toLowerCase();
+    if(!k){toast('הכנס קוד','e');return;}
+    if(k===settings?.syncKey){toast('קוד זהה לנוכחי','e');return;}
+    onSettingsChange({...settings,syncKey:k,firebaseUrl:FB_URL});
+    setCode('');
+    setTimeout(()=>onRefresh(true),300);
+  };
+  return(
+    <div style={{display:'flex',gap:6}}>
+      <input value={code} onChange={e=>setCode(e.target.value.trim())}
+        placeholder="הדבק קוד מהמחשב..."
+        onKeyDown={e=>e.key==='Enter'&&apply()}
+        style={{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:8,
+          padding:'9px 10px',color:'var(--text)',fontFamily:'monospace',fontSize:14,
+          letterSpacing:3,outline:'none',direction:'ltr',minWidth:0}}/>
+      <button onClick={apply}
+        style={{background:'var(--green)',color:'#fff',border:'none',borderRadius:8,
+          padding:'9px 14px',fontSize:13,cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:700,flexShrink:0}}>
+        ✓ חבר
+      </button>
+    </div>
+  );
+}
+
 function TripScreen({trips,activeId,onSelectTrip,syncStatus,onRefresh,active,settings,onSettingsChange}){
   const trip=trips.find(t=>t.id===activeId)||trips[0]||null;
   const totalExp=trip?.expenses?.reduce((s,e)=>s+(parseFloat(e.amount)||0),0)||0;
@@ -3341,7 +3368,7 @@ function TripScreen({trips,activeId,onSelectTrip,syncStatus,onRefresh,active,set
         </div>
         <div className="slabel">פעולות</div>
         <div className="card" style={{margin:'0 14px'}}>
-          <div className="crow" style={{cursor:'pointer'}} onClick={onRefresh}>
+          <div className="crow" style={{cursor:'pointer'}} onClick={()=>onRefresh(true)}>
             <div className="cicon">🔄</div><div className="cmain"><div className="ctitle">רענן נתונים מהענן</div><div className="csub">טעינה מחדש מ-Firebase</div></div>
           </div>
           <div className="crow" style={{cursor:'pointer'}} onClick={()=>{if(window.confirm('לפתוח אפליקציית מחשב?'))window.open('index.html','_blank');}}>
@@ -3377,26 +3404,36 @@ function TripScreen({trips,activeId,onSelectTrip,syncStatus,onRefresh,active,set
       </>:<div className="empty"><div className="eicon">✈️</div><div className="etitle">לא נמצאו טיולים</div><div className="edesc">צור טיול דרך אפליקציית המחשב</div></div>}
 
       {/* ── קוד סינכרון ── */}
-      {settings?.syncKey&&<div style={{margin:'0 14px 8px'}}>
+      <div style={{margin:'0 14px 8px'}}>
         <div className="slabel" style={{marginTop:8}}>🔗 קוד סינכרון</div>
-        <div style={{background:'var(--surface)',border:'2px solid var(--accent)',borderRadius:12,padding:'14px',textAlign:'center'}}>
-          <div style={{fontSize:10,color:'var(--text2)',marginBottom:5,fontWeight:600,letterSpacing:1}}>הקוד שלך</div>
-          <div style={{fontSize:18,fontWeight:800,letterSpacing:4,fontFamily:'monospace',color:'var(--accent)',marginBottom:10,wordBreak:'break-all'}}>
-            {settings.syncKey}
+        <div style={{background:'var(--surface)',border:'2px solid var(--accent)',borderRadius:12,padding:'14px'}}>
+          {/* קוד נוכחי */}
+          <div style={{textAlign:'center',marginBottom:12}}>
+            <div style={{fontSize:10,color:'var(--text2)',marginBottom:4,fontWeight:600,letterSpacing:1}}>קוד נוכחי</div>
+            <div style={{fontSize:18,fontWeight:800,letterSpacing:4,fontFamily:'monospace',color:'var(--accent)',wordBreak:'break-all'}}>
+              {settings?.syncKey||'—'}
+            </div>
           </div>
-          <button onClick={copySyncCode}
-            style={{background:syncCopied?'var(--green)':'var(--accent)',color:'#fff',border:'none',borderRadius:8,
-              padding:'8px 18px',fontSize:13,cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:600,
-              width:'100%',marginBottom:10,transition:'background .2s'}}>
-            {syncCopied?'✓ הועתק!':'📋 העתק קוד'}
-          </button>
-          <div style={{fontSize:11,color:'var(--text2)',lineHeight:1.9,textAlign:'right'}}>
-            <strong>💻 מחשב חדש:</strong> עבור ל-🔗 חיבוריות ← הכנס קוד ← לחץ "⬇️ טען"<br/>
-            <strong>📱 סלולר נוסף:</strong> בקש קישור מאפליקציית המחשב<br/>
-            <span style={{color:'var(--green)',fontWeight:600}}>📱 מובייל זה: לא צריך לעשות כלום ✅</span>
+          {/* כפתורי פעולה */}
+          <div style={{display:'flex',gap:8,marginBottom:12}}>
+            <button onClick={copySyncCode}
+              style={{flex:1,background:syncCopied?'var(--green)':'var(--bg3)',color:syncCopied?'#fff':'var(--text)',border:'1px solid var(--border)',borderRadius:8,
+                padding:'8px',fontSize:13,cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:600,transition:'background .2s'}}>
+              {syncCopied?'✓ הועתק':'📋 העתק'}
+            </button>
+            <button onClick={()=>onRefresh(true)}
+              style={{flex:1,background:'var(--accent)',color:'#fff',border:'none',borderRadius:8,
+                padding:'8px',fontSize:13,cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:600}}>
+              🔄 רענן
+            </button>
+          </div>
+          {/* הזנת קוד חדש מהמחשב */}
+          <div style={{borderTop:'1px solid var(--border)',paddingTop:12}}>
+            <div style={{fontSize:11,color:'var(--text2)',marginBottom:6,fontWeight:600}}>יש לך קוד מהמחשב? הכנס כאן:</div>
+            <SyncCodeInput settings={settings} onSettingsChange={onSettingsChange} onRefresh={onRefresh}/>
           </div>
         </div>
-      </div>}
+      </div>
 
       <div style={{margin:'14px 14px 0',padding:'12px 14px',background:'var(--bg3)',borderRadius:10,display:'flex',flexDirection:'column',alignItems:'center',gap:7}}>
         <div style={{fontSize:11,color:'var(--text3)',fontWeight:600}}>PlanMyTrip</div>
@@ -3497,7 +3534,7 @@ function App(){
   },[]);// eslint-disable-line
 
   /* load from Firebase */
-  const loadFromFirebase=useCallback(async()=>{
+  const loadFromFirebase=useCallback(async(showEmpty=false)=>{
     const{firebaseUrl:fbUrl,syncKey}=settings;
     if(!fbUrl||!syncKey)return;
     setSyncStatus('syncing');
@@ -3506,6 +3543,8 @@ function App(){
       if(data?.trips?.length>0){
         const loaded=data.trips.map(normTrip).filter(Boolean);
         if(loaded.length>0){skipPush.current=true;setTrips(loaded);if(data.activeId)setActiveId(data.activeId);toast('הטיול נטען מ-Firebase ✓','s');}
+      } else if(showEmpty){
+        toast(`לא נמצאו נתונים לקוד "${syncKey}" — ודא שהקוד תואם למחשב`,'e');
       }
       setSyncStatus('synced');
     }catch{setSyncStatus('error');toast('שגיאה בטעינה מ-Firebase','e');}
