@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v169';
+const APP_VERSION = 'v170';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -1426,7 +1426,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         position:{lat:endPin.lat,lng:endPin.lng},
         map:mapInst.current,
         label:{text:String(regularBlocks.length+2),color:'#fff',fontSize:'13px',fontWeight:'bold'},
-        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:18,fillColor:'#dc2626',fillOpacity:1,strokeColor:'#fff',strokeWeight:3},
+        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:18,fillColor:color,fillOpacity:1,strokeColor:'#fff',strokeWeight:3},
         title:endPin.title||'יעד',
         zIndex:102,
       });
@@ -1857,7 +1857,7 @@ function BlockModal({block,onSave,onClose,onDelete,prevEndTime,onCascadeSave,onC
 /* ══════════════════════════════════
    בלוק בציר הזמן
 ══════════════════════════════════ */
-function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,onFocusRoute,onNoteChange,onSwap,dragging,dragOver,onDragStart,onDragOver,onDrop,onDragEnd,nowProgress,mapNum}){
+function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onMoveToDayBank,onFocusItem,onFocusRoute,onNoteChange,onSwap,dragging,dragOver,onDragStart,onDragOver,onDrop,onDragEnd,nowProgress,mapNum}){
   // תומך בשני פורמטים: durationMins (דסקטופ) ו-endTime (מובייל)
   const end=block.durationMins!=null?addMins(block.startTime,block.durationMins):(block.endTime||'');
   const col=BLOCK_COLOR[block.type]||'var(--text3)';
@@ -1917,6 +1917,10 @@ function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,
               onClick={e=>{e.stopPropagation();toggleNote();}}>📝</button>}
             <button style={{...btnStyle,color:'#6b7280'}} title="ערוך פרטים"
               onClick={e=>{e.stopPropagation();onEdit(block);}}>✏️</button>
+            {onMoveToDayBank&&!block.isAutoTravel&&(
+              <button style={{...btnStyle,color:'#8b5cf6'}} title="החזר לבנק היומי"
+                onClick={e=>{e.stopPropagation();onMoveToDayBank(block);}}>📌</button>
+            )}
             {onDelete&&(
               <button style={{...btnStyle,color:'#ef4444',fontWeight:700,fontSize:13}} title="הסר מהיום"
                 onClick={e=>{e.stopPropagation();if(window.confirm(`להסיר "${block.title||'פעילות'}" מהיום?`))onDelete(block.id);}}>✕</button>
@@ -2075,6 +2079,15 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     }else{
       onUpdate({...day,blocks:remaining});
     }
+  };
+  const moveBlockToDayBank=(block)=>{
+    const bankItem={id:uid(),name:block.title||'פעילות',address:block.location||'',
+      lat:block.lat||null,lng:block.lng||null,placeId:block.placeId||'',
+      rating:block.placeRating||null,placeType:block.placeType||'',
+      openStatus:block.placeOpenStatus||'',todayHours:block.placeTodayHours||'',
+      phone:block.placePhone||'',website:block.placeWebsite||''};
+    onUpdate({...day,blocks:day.blocks.filter(b=>b.id!==block.id),dayBank:[...(day.dayBank||[]),bankItem]});
+    toast(`"${block.title||'פעילות'}" הועבר לבנק היומי 📌`,'success');
   };
   const handleDrop=(toIdx)=>{
     const from=dragIdxRef.current;
@@ -2809,7 +2822,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
           })();
           return [startConn,...sorted.map((bl,si)=>[
             nowInsert===si&&nowLine,
-            <BlockItem key={bl.id} block={bl} interestBank={day._tripBank||[]} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onFocusItem={(lat,lng,name)=>onFocusItem?.(lat,lng,name,day.id)} onFocusRoute={focusRoute}
+            <BlockItem key={bl.id} block={bl} interestBank={day._tripBank||[]} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onMoveToDayBank={moveBlockToDayBank} onFocusItem={(lat,lng,name)=>onFocusItem?.(lat,lng,name,day.id)} onFocusRoute={focusRoute}
               onSwap={swapSrc?executeSwap:null}
               onNoteChange={(id,note)=>{const b=day.blocks.find(x=>x.id===id);if(b){updBlock({...b,notes:note});if(b.placeId)onBankNoteUpdate?.(b.placeId,note);}}}
               dragging={dragOver!==null&&dragIdxRef.current===si} dragOver={dragOver===si}
@@ -3439,13 +3452,13 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,onFocusRoute
       {/* ניווט ימים */}
       {totalDays>DAYS_PER_PAGE&&<div style={{display:'flex',alignItems:'center',gap:6}}>
         <button className="btn btn-secondary btn-sm" disabled={!canNext}
-          onClick={()=>setDayOffset(o=>Math.min(o+DAYS_PER_PAGE,totalDays-1))}
+          onClick={()=>setDayOffset(o=>Math.min(o+1,totalDays-DAYS_PER_PAGE))}
           style={{padding:'3px 9px',opacity:canNext?1:0.35}}>הבא ▶</button>
         <span style={{fontSize:12,color:'var(--text2)',minWidth:90,textAlign:'center'}}>
           ימים {pageFrom}–{pageTo} / {totalDays}
         </span>
         <button className="btn btn-secondary btn-sm" disabled={!canPrev}
-          onClick={()=>setDayOffset(o=>Math.max(0,o-DAYS_PER_PAGE))}
+          onClick={()=>setDayOffset(o=>Math.max(0,o-1))}
           style={{padding:'3px 9px',opacity:canPrev?1:0.35}}>◀ קודם</button>
       </div>}
       <button className="btn btn-secondary btn-sm" onClick={()=>setShowBank(b=>!b)}>
@@ -6144,9 +6157,9 @@ function App(){
       ...(d.endLat&&d.endLng?[{id:'__end__',type:'travel',title:`🔴 ${d.endLocation||'יעד'}`,lat:d.endLat,lng:d.endLng,startTime:'23:59'}]:[]),
     ]:[];
     if(shownDayIds===null){
-      // כל הימים גלויים → בחר יום זה בלבד + מרכז מפה
+      // כל הימים גלויים → בחר יום זה בלבד
       setShownDayIds(new Set([dayId]));
-      if(day){setHlDay({dayId,dayIndex:dayIdx,blocks:mkBlocks(day)});setHlRoute(null);setTab('map');}
+      if(day){setHlDay({dayId,dayIndex:dayIdx,blocks:mkBlocks(day)});setHlRoute(null);}
       return;
     }
     const next=new Set(shownDayIds);
@@ -6154,14 +6167,14 @@ function App(){
       // בטל בחירה
       next.delete(dayId);
       if(next.size===0){setShownDayIds(null);setHlDay(null);}
-      else setShownDayIds(next);
+      else{setShownDayIds(next);setHlDay(null);}
     } else {
-      // הוסף יום → מרכז מפה עליו
+      // הוסף יום
       next.add(dayId);
       if(next.size===days.length){setShownDayIds(null);setHlDay(null);}
       else{
         setShownDayIds(next);
-        if(day){setHlDay({dayId,dayIndex:dayIdx,blocks:mkBlocks(day)});setHlRoute(null);setTab('map');}
+        if(day){setHlDay({dayId,dayIndex:dayIdx,blocks:mkBlocks(day)});setHlRoute(null);}
       }
     }
   },[trip,shownDayIds]);
