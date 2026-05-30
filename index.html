@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v178';
+const APP_VERSION = 'v179';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -1238,29 +1238,29 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       const svc=new window.google.maps.places.PlacesService(map);
       const OK_ST=window.google.maps.places.PlacesServiceStatus.OK;
       const dow=new Date().getDay(),wdIdx=dow===0?6:dow-1;
-      const legacyBasic=()=>new Promise(res=>{svc.getDetails({placeId,fields:['name','formatted_address','geometry','photos','place_id','types']},(p,st)=>{res(st===OK_ST&&p?p:null);});});
-      const legacyRich=(geo)=>new Promise(res=>{svc.getDetails({placeId,fields:['rating','opening_hours','reviews','website','formatted_phone_number','user_ratings_total','price_level']},(p,st)=>{res(st===OK_ST&&p?{...p,geometry:geo}:null);});});
+      // קריאה אחת בלבד (במקום שתיים) — מצמצמת חיובים ב-50%
+      // הוסרו: reviews (לא מוצג), photos (לא מוצג) — שניהם גורמים לחיוב מיותר
+      const legacyCombined=()=>new Promise(res=>{svc.getDetails({placeId,
+        fields:['name','formatted_address','geometry','place_id','types',
+                'rating','opening_hours','website','formatted_phone_number',
+                'user_ratings_total','price_level']},
+        (p,st)=>{res(st===OK_ST&&p?p:null);});});
       const geocoderLookup=()=>new Promise(res=>{geocoder.geocode({placeId,language:'he'},(results,status)=>{if(status!=='OK'||!results?.[0]){res(null);return;}const comps=results[0].address_components||[];const addr=results[0].formatted_address||'';const loc=results[0].geometry?.location;const poiTypes=['establishment','point_of_interest','natural_feature','tourist_attraction','park','airport','premise','colloquial_area','shopping_mall','restaurant','food','store','lodging','transit_station','zoo','amusement_park','aquarium','stadium','museum','school','university'];const poiComp=comps.find(c=>c.types.some(t=>poiTypes.includes(t)));const firstIsStreet=comps[0]?.types.some(t=>['route','street_address','intersection'].includes(t));const hasStreetNum=comps.some(c=>c.types.includes('street_number'));const fromAddr=(!firstIsStreet&&!hasStreetNum)?addr.split(',')[0]?.trim():'';const name=poiComp?.long_name||fromAddr||'';res({name,address:addr,lat:loc?.lat()||lat0,lng:loc?.lng()||lng0});});});
-      // placesV1 הוסר — גרם לחיובים של Contact Data + Atmosphere Data ב-Places API (New)
-      // הלגאסי API מספק את כל המידע הדרוש ללא חיוב נוסף
-      const placesV1=async()=>null;
+      const placesV1=async()=>null; // הוסר — גרם לחיובים ב-Places API (New)
       const nominatimLookup=async()=>{try{const[r18,r16]=await Promise.all([fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat0}&lon=${lng0}&format=json&zoom=18&namedetails=1&extratags=1&accept-language=he`,{headers:{'Accept-Language':'he'}}),fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat0}&lon=${lng0}&format=json&zoom=16&namedetails=1&accept-language=he`,{headers:{'Accept-Language':'he'}})]);const[d18,d16]=await Promise.all([r18.json(),r16.json()]);const pickName=(d)=>{const isRoad=d.class==='highway'||d.type==='road'||d.type==='residential'||d.type==='service';const poi=d.namedetails?.['name:he']||d.namedetails?.name||(!isRoad?d.name:'')||'';const cat=d.address?.tourism||d.address?.amenity||d.address?.leisure||d.address?.natural||d.address?.historic||d.address?.shop||'';return poi||cat||'';};const n18=pickName(d18),n16=pickName(d16);const name=n18||n16||null;const parts=[d18.address?.road,d18.address?.city||d18.address?.town||d18.address?.village].filter(Boolean);const address=parts.join(', ')||d18.display_name?.split(',').slice(0,2).join(',')||'';return{name,address};}catch{return null;}};
       const isStreetAddr=s=>/^\d|.*\s\d+$|^דרך\s|^רחוב\s|^שדרות\s|^הרחוב\s|^St\s|^Rd\s|^Ave\s/i.test(s?.trim()||'');
       try{
-        const[basic,geo,v1]=await Promise.all([legacyBasic(),geocoderLookup(),placesV1()]);
-        const rich=basic?await legacyRich(basic.geometry):null;
-        let name=v1?.name||basic?.name||geo?.name||'';
-        let address=v1?.address||basic?.formatted_address||geo?.address||'';
-        let lat=basic?.geometry?.location?.lat()||geo?.lat||lat0;
-        let lng=basic?.geometry?.location?.lng()||geo?.lng||lng0;
+        // קריאה אחת משולבת במקום שתי קריאות
+        const[combined,geo]=await Promise.all([legacyCombined(),geocoderLookup()]);
+        let name=combined?.name||geo?.name||'';
+        let address=combined?.formatted_address||geo?.address||'';
+        let lat=combined?.geometry?.location?.lat()||geo?.lat||lat0;
+        let lng=combined?.geometry?.location?.lng()||geo?.lng||lng0;
         if(!name){const fromAddr=(address||'').split(',')[0]?.trim()||'';if(fromAddr&&!isStreetAddr(fromAddr)){name=fromAddr;}else{const nom=await nominatimLookup();const nomName=nom?.name||'';if(nom?.address&&!address)address=nom.address;const nomFromAddr=(nom?.address||address||'').split(',')[0]?.trim()||'';name=nomName&&!isStreetAddr(nomName)?nomName:fromAddr&&!isStreetAddr(fromAddr)?fromAddr:nomFromAddr?nomFromAddr:'מקום';}}
         let details={};
-        if(v1){details={rating:v1.rating,userRatingsTotal:v1.userRatingsTotal,openStatus:v1.openStatus,todayHours:v1.todayHours,allHours:v1.allHours,priceLevel:v1.priceLevel,phone:v1.phone,website:v1.website,reviews:v1.reviews};}
-        else if(rich){let openStatus='';try{openStatus=rich.opening_hours?.isOpen()?'פתוח עכשיו':'סגור עכשיו';}catch{}details={rating:rich.rating,userRatingsTotal:rich.user_ratings_total,openStatus,todayHours:rich.opening_hours?.weekday_text?.[wdIdx]?.replace(/^[^:]+:\s*/,'')||'',allHours:(rich.opening_hours?.weekday_text||[]).join('<br/>'),priceLevel:rich.price_level,phone:rich.formatted_phone_number||'',website:rich.website||'',reviews:rich.reviews||[]};}
-        const photoUrl=basic?.photos?.[0]?.getUrl({maxWidth:300,maxHeight:110})||'';
-        const _noGoogle=!v1&&!basic&&!geo;
-        const placeType=getPlaceTypeLabel(v1?.types||basic?.types||[]);
-        const placeData={name,address,lat,lng,placeId,photoUrl,placeType,rating:details.rating||null,userRatingsTotal:details.userRatingsTotal||null,openStatus:details.openStatus||'',todayHours:details.todayHours||'',allHours:details.allHours||'',phone:details.phone||'',website:details.website||'',reviews:details.reviews||[]};
+        if(combined){let openStatus='';try{openStatus=combined.opening_hours?.isOpen()?'פתוח עכשיו':'סגור עכשיו';}catch{}details={rating:combined.rating,userRatingsTotal:combined.user_ratings_total,openStatus,todayHours:combined.opening_hours?.weekday_text?.[wdIdx]?.replace(/^[^:]+:\s*/,'')||'',allHours:(combined.opening_hours?.weekday_text||[]).join('<br/>'),priceLevel:combined.price_level,phone:combined.formatted_phone_number||'',website:combined.website||''};}
+        const placeType=getPlaceTypeLabel(combined?.types||[]);
+        const placeData={name,address,lat,lng,placeId,placeType,rating:details.rating||null,userRatingsTotal:details.userRatingsTotal||null,openStatus:details.openStatus||'',todayHours:details.todayHours||'',allHours:details.allHours||'',phone:details.phone||'',website:details.website||''};
         // שמור בcache לסשן — מניעת קריאות כפולות
         if(placeId) window.__placeCache[placeId]=placeData;
         window.__gmShowSheet?.(placeData);
@@ -3825,7 +3825,7 @@ const fetchViaGitHubAction=async(apiUrl,settings,onStatus)=>{
    פאנל בנק אטרקציות (עמודה עצמאית)
    תכונות: קיבוץ לפי מדינה, בחירה קבוצתית, העשרת פרטים מגוגל מפות
 ══════════════════════════════════ */
-function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDayLocation}){
+function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDayLocation,allKnownPlaces}){
   const[showTakeout,setShowTakeout]=useState(false);
   const[showLinkImport,setShowLinkImport]=useState(false);
   const[linkUrl,setLinkUrl]=useState('');
@@ -3860,39 +3860,8 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     }));
   };
 
-  // ── קישור אוטומטי לגוגל מיד כשהמפה טעונה ויש אטרקציות ללא placeId ──
-  const autoEnrichRunning=useRef(false);
-  useEffect(()=>{
-    if(autoEnrichRunning.current) return;
-    let cancelled=false;
-    const tryStart=()=>{
-      if(cancelled) return;
-      if(!window.google?.maps?.places){setTimeout(tryStart,2000);return;}
-      const need=tripRef.current.interestBank.filter(i=>!i.placeId&&!i._notFound);
-      if(!need.length) return;
-      autoEnrichRunning.current=true;
-      (async()=>{
-        let bank=[...tripRef.current.interestBank];
-        for(let idx=0;idx<need.length;idx++){
-          if(cancelled) break;
-          const cur=tripRef.current.interestBank.find(i=>i.id===need[idx].id);
-          if(!cur||cur.placeId||cur._notFound) continue; // כבר טופל
-          setBatchProgress({done:idx,total:need.length,name:need[idx].name});
-          const updated=await enrichOneAsync(need[idx]);
-          if(updated){
-            bank=bank.map(b=>b.id===need[idx].id?updated:b);
-            onUpdate({...tripRef.current,interestBank:bank});
-          }
-          await new Promise(r=>setTimeout(r,500));
-        }
-        if(!cancelled) setBatchProgress(null);
-        autoEnrichRunning.current=false;
-      })();
-    };
-    setTimeout(tryStart,800);
-    return()=>{cancelled=true;};
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[trip.id]); // מופעל מחדש כשמחליפים טיול
+  // ── ה-auto-enrich האוטומטי הוסר — גרם לחיובים מיותרים ב-Places API ──
+  // כעת: המשתמש מחליט מתי לקשר לגוגל (כפתור מפורש בלבד)
 
   /* חילוץ שם מדינה מהכתובת — חלק אחרון אחרי פסיק, ללא מיקוד */
   /* מיפוי אנגלית → עברית לשמות מדינות (לאיחוד קבוצות) */
@@ -4153,15 +4122,32 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     else{toast(`✓ "${updated.name}" קושר לגוגל — ${updated.address||'ללא כתובת'}`,'success');}
   };
 
+  /* בדיקה ב-allKnownPlaces: האם המקום כבר ידוע מטיול אחר? חוסך קריאת API */
+  const lookupKnown=(item)=>{
+    if(!allKnownPlaces)return null;
+    const nk=(item.name||'').trim().toLowerCase();
+    const ck=item.lat&&item.lng?`${Math.round(item.lat*1e4)},${Math.round(item.lng*1e4)}`:null;
+    return allKnownPlaces[nk]||(ck&&allKnownPlaces[ck])||null;
+  };
+
   /* העשרה קבוצתית — כל הפריטים ללא כתובת, אחד אחרי השני */
+  /* אם מקום כבר ידוע מטיול אחר — מעתיק ממנו ללא קריאה לגוגל */
   const batchEnrichMissing=async()=>{
     if(!window.google?.maps?.places){toast('Google Maps אינו זמין — יש לוודא שהמפה טעונה','error');return;}
     const toEnrich=tripRef.current.interestBank.filter(i=>!i.placeId&&!i._notFound);
     if(!toEnrich.length){toast('כל האטרקציות כבר מקושרות לגוגל ✓','success');return;}
     let currentBank=[...tripRef.current.interestBank];
-    let successCount=0,notFoundCount=0;
+    let successCount=0,notFoundCount=0,cachedCount=0;
     for(let idx=0;idx<toEnrich.length;idx++){
       setBatchProgress({done:idx,total:toEnrich.length,name:toEnrich[idx].name});
+      // קודם בדוק אם כבר ידוע מטיול אחר — ללא קריאה ל-API
+      const known=lookupKnown(toEnrich[idx]);
+      if(known){
+        const fromCache={...toEnrich[idx],...known};
+        currentBank=currentBank.map(b=>b.id===toEnrich[idx].id?fromCache:b);
+        onUpdate({...tripRef.current,interestBank:currentBank});
+        cachedCount++;continue;
+      }
       const updated=await enrichOneAsync(toEnrich[idx]);
       if(updated){
         currentBank=currentBank.map(b=>b.id===toEnrich[idx].id?updated:b);
@@ -4171,7 +4157,11 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       await new Promise(r=>setTimeout(r,500));
     }
     setBatchProgress(null);
-    toast(`קושרו ${successCount} אטרקציות לגוגל${notFoundCount?` (${notFoundCount} לא נמצאו בגוגל)`:''}  ✓`,'success');
+    const parts=[];
+    if(cachedCount)parts.push(`${cachedCount} מטיולים אחרים (ללא API)`);
+    if(successCount)parts.push(`${successCount} מגוגל`);
+    if(notFoundCount)parts.push(`${notFoundCount} לא נמצאו`);
+    toast(`קושרו: ${parts.join(', ')} ✓`,'success');
   };
 
   /* ══════════════════════════════════
@@ -4360,7 +4350,8 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
         const{name,lat,lng}=parseMapsUrl(url);
         if(!name&&!lat) throw new Error('לא ניתן לפרש את הקישור');
         const base={id:uid(),name:name||'מקום מגוגל מפות',address:'',lat,lng,url,_listSource:listSrc,_noCoords:!lat};
-        const enriched=window.google?.maps?.places?await enrichOneAsync(base):null;
+        const _known=lookupKnown(base);
+      const enriched=_known?{...base,..._known}:(window.google?.maps?.places?await enrichOneAsync(base):null);
         const fi=enriched?{...enriched,_listSource:listSrc,url}:base;
         if(tripRef.current.interestBank.some(ex=>isTakeoutDup(fi,ex))){toast(`"${fi.name}" כבר קיים`,'error');setLinkImporting(false);return;}
         onUpdate({...tripRef.current,interestBank:[...tripRef.current.interestBank,fi]});
@@ -4399,7 +4390,8 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       if(!lat&&html){const cM=html.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);if(cM){lat=parseFloat(cM[1]);lng=parseFloat(cM[2]);}}
       if(!placeName) throw new Error('לא ניתן לפרש את הקישור — נסה קישור ישיר מגוגל מפות');
       const base={id:uid(),name:placeName,address:'',lat,lng,url,_listSource:listSrc,_noCoords:!lat};
-      const enriched=window.google?.maps?.places?await enrichOneAsync(base):null;
+      const _known=lookupKnown(base);
+      const enriched=_known?{...base,..._known}:(window.google?.maps?.places?await enrichOneAsync(base):null);
       const fi=enriched?{...enriched,_listSource:listSrc,url}:base;
       if(tripRef.current.interestBank.some(ex=>isTakeoutDup(fi,ex))){toast(`"${fi.name}" כבר קיים`,'error');setLinkImporting(false);return;}
       onUpdate({...tripRef.current,interestBank:[...tripRef.current.interestBank,fi]});
@@ -4665,10 +4657,18 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       </div>}
       {/* כפתור השלמת כתובות קבוצתית — מופיע רק כשיש פריטים ללא כתובת */}
       {!batchProgress&&trip.interestBank.some(i=>!i.placeId&&!i._notFound)&&(
-        <button className="btn btn-amber btn-sm" style={{width:'100%'}}
-          disabled={!!enrichingId} onClick={batchEnrichMissing}>
-          🔍 קשר לגוגל ({trip.interestBank.filter(i=>!i.placeId&&!i._notFound).length} אטרקציות ממתינות)
-        </button>
+        <div style={{background:'rgba(234,179,8,.1)',border:'1px solid rgba(234,179,8,.35)',borderRadius:8,padding:'8px 10px',marginBottom:2}}>
+          <div style={{fontSize:11,fontWeight:700,color:'var(--amber)',marginBottom:5}}>
+            🔍 {trip.interestBank.filter(i=>!i.placeId&&!i._notFound).length} אטרקציות ממתינות לקישור לגוגל מפות
+          </div>
+          <div style={{fontSize:10,color:'var(--text3)',marginBottom:6,lineHeight:1.4}}>
+            קישור מאפשר דירוגים, שעות פתיחה ומיקום מדויק. כל קישור = קריאה ל-API של גוגל.
+          </div>
+          <button className="btn btn-amber btn-sm" style={{width:'100%'}}
+            disabled={!!enrichingId} onClick={batchEnrichMissing}>
+            🔗 קשר הכל לגוגל עכשיו
+          </button>
+        </div>
       )}
       <button className="btn btn-secondary btn-sm" style={{width:'100%'}}
         onClick={()=>{const n=prompt('שם המקום:');if(n)addToBank({name:n,address:'',id:uid()});}}>
@@ -6618,6 +6618,23 @@ function App(){
     if(!trip)return;
     updTrip({...trip,interestBank:trip.interestBank.map(i=>i.id===id?{...i,...patch}:i)});
   },[trip,updTrip]);
+  // מיפוי כלל-טיולי: name/coords → placeId+נתונים — מונע קריאות כפולות לגוגל
+  const allKnownPlaces=useMemo(()=>{
+    const m={};
+    trips.forEach(t=>{
+      (t.interestBank||[]).forEach(item=>{
+        if(!item.placeId)return;
+        const nk=(item.name||'').trim().toLowerCase();
+        const entry={placeId:item.placeId,rating:item.rating||null,openStatus:item.openStatus||'',
+          todayHours:item.todayHours||'',phone:item.phone||'',website:item.website||'',
+          placeType:item.placeType||'',address:item.address||''};
+        if(nk)m[nk]=entry;
+        if(item.lat&&item.lng)m[`${Math.round(item.lat*1e4)},${Math.round(item.lng*1e4)}`]=entry;
+      });
+    });
+    return m;
+  },[trips]);
+
   const saveCustomName=useCallback((placeId,bankItemId,customName)=>{
     if(!trip)return;
     const cn=(customName||'').trim()||undefined;
@@ -6834,6 +6851,7 @@ function App(){
               onFocusItem={(lat,lng,name)=>{setHlItem({lat,lng,name});setHlDay(null);}}
               onClose={()=>setMobilePanel('map')}
               settings={settings} onSetDayLocation={setDayLocation}
+              allKnownPlaces={allKnownPlaces}
             />:noTrip}
           </div>
         </div>
