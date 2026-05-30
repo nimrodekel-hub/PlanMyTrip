@@ -3314,7 +3314,8 @@ function SyncCodeInput({settings,onSettingsChange,onRefresh}){
     if(k===settings?.syncKey){toast('קוד זהה לנוכחי','e');return;}
     onSettingsChange({...settings,syncKey:k,firebaseUrl:FB_URL});
     setCode('');
-    setTimeout(()=>onRefresh(true),300);
+    // מעביר את המפתח החדש ישירות — עוקף את הקלוז'ר הישן של settings
+    onRefresh(true,k);
   };
   return(
     <div style={{display:'flex',gap:6}}>
@@ -3533,8 +3534,9 @@ function App(){
   },[]);// eslint-disable-line
 
   /* load from Firebase */
-  const loadFromFirebase=useCallback(async(showEmpty=false)=>{
-    const{firebaseUrl:fbUrl,syncKey}=settings;
+  const loadFromFirebase=useCallback(async(showEmpty=false,overrideKey=null)=>{
+    const fbUrl=settings.firebaseUrl||FB_URL;
+    const syncKey=overrideKey||settings.syncKey;
     if(!fbUrl||!syncKey)return;
     setSyncStatus('syncing');
     try{
@@ -3563,26 +3565,25 @@ function App(){
     saveState({settings,trips,activeId});
   },[trips,activeId,settings]);// eslint-disable-line
 
-  /* debounced auto-save to Firebase */
-  const debounceSave=useCallback((newTrips,newActiveId)=>{
+  /* auto-push to Firebase on every trips/activeId change (2s debounce) */
+  useEffect(()=>{
+    if(!syncMounted.current){syncMounted.current=true;return;}
+    if(skipPush.current){skipPush.current=false;return;}
     const{firebaseUrl:fbUrl,syncKey}=settings;
     if(!fbUrl||!syncKey)return;
     clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current=setTimeout(async()=>{
       setSyncStatus('syncing');
-      try{await fbWrite(fbUrl,syncKey,{trips:newTrips,activeId:newActiveId,savedAt:new Date().toISOString()});setSyncStatus('synced');}
+      try{await fbWrite(fbUrl,syncKey,{trips,activeId,savedAt:new Date().toISOString()});setSyncStatus('synced');}
       catch{setSyncStatus('error');}
-    },1800);
-  },[settings]);
+    },2000);
+    return()=>clearTimeout(autoSaveTimer.current);
+  },[trips,activeId]);// eslint-disable-line
 
-  /* updateTrip — updates the active trip and triggers save */
+  /* updateTrip — updates the active trip */
   const updateTrip=useCallback(updatedTrip=>{
-    setTrips(prev=>{
-      const next=prev.map(t=>t.id===updatedTrip.id?updatedTrip:t);
-      debounceSave(next,activeId);
-      return next;
-    });
-  },[activeId,debounceSave]);
+    setTrips(prev=>prev.map(t=>t.id===updatedTrip.id?updatedTrip:t));
+  },[]);
 
   return(
     <>
