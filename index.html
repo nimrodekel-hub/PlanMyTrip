@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v172';
+const APP_VERSION = 'v173';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -3315,6 +3315,25 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
       />
     )}
 
+    {/* ── המלצות מבנק האטרקציות ── */}
+    <div style={{margin:'4px 0'}}>
+      <button
+        onClick={()=>setShowSuggestions(o=>!o)}
+        style={{
+          width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8,
+          padding:'7px 14px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
+          background:showSuggestions?'rgba(16,185,129,.18)':'rgba(16,185,129,.07)',
+          border:`1px solid rgba(16,185,129,${showSuggestions?.5:.25})`,
+          color:'#059669',transition:'all .15s',
+        }}>
+        <span>✨</span>
+        <span>מצא מבנק האטרקציות</span>
+        <span style={{fontSize:10,color:'var(--text3)',fontWeight:400}}>⭐ בנק האטרקציות → 📌 בנק יומי</span>
+        <span style={{marginRight:'auto',fontSize:11}}>{showSuggestions?'▲':'▼'}</span>
+      </button>
+      {showSuggestions&&<DayBankSuggestions day={day} onAddItems={addSuggestedItems}/>}
+    </div>
+
     {/* ── בנק יומי ── */}
     {(()=>{
       const addDayBankItemToSchedule=(item)=>{
@@ -3339,30 +3358,15 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
       };
       return(
         <div style={{margin:'8px 0',borderRadius:10,border:'1px solid var(--border)',overflow:'hidden'}}>
-          {/* ── כותרת בנק יומי + כפתור המלצות ── */}
-          <div style={{display:'flex',alignItems:'stretch',background:'var(--bg2)'}}>
-            <div onClick={()=>setShowDayBank(o=>!o)}
-              style={{display:'flex',flex:1,alignItems:'center',gap:8,padding:'8px 12px',cursor:'pointer',userSelect:'none'}}>
-              <span style={{fontSize:13,fontWeight:700}}>📌 בנק יומי</span>
-              <span className="chip chip-blue" style={{fontSize:10}}>{(day.dayBank||[]).length}</span>
-              <div style={{flex:1}}/>
-              <span style={{fontSize:11,color:'var(--text3)'}}>{showDayBank?'▲':'▼'}</span>
-            </div>
-            <button
-              onClick={e=>{e.stopPropagation();setShowSuggestions(o=>{const n=!o;if(n)setShowDayBank(true);return n;});}}
-              title="מצא אטרקציות מהבנק הכללי בקרבת המסלול של היום"
-              style={{margin:'5px 8px 5px 0',padding:'0 11px',borderRadius:7,cursor:'pointer',fontSize:12,
-                background:showSuggestions?'rgba(16,185,129,.22)':'rgba(16,185,129,.07)',
-                border:`1px solid rgba(16,185,129,${showSuggestions?.55:.28})`,
-                color:'#059669',fontWeight:600,whiteSpace:'nowrap',flexShrink:0,lineHeight:1,
-                transition:'all .15s',
-              }}>
-              ✨ מצא
-            </button>
+          <div onClick={()=>setShowDayBank(o=>!o)}
+            style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',cursor:'pointer',background:'var(--bg2)',userSelect:'none'}}>
+            <span style={{fontSize:13,fontWeight:700}}>📌 בנק יומי</span>
+            <span className="chip chip-blue" style={{fontSize:10}}>{(day.dayBank||[]).length}</span>
+            <div style={{flex:1}}/>
+            <span style={{fontSize:11,color:'var(--text3)'}}>{showDayBank?'▲':'▼'}</span>
           </div>
           {showDayBank&&(
             <div style={{padding:'6px 10px',display:'flex',flexDirection:'column',gap:6}}>
-              {showSuggestions&&<DayBankSuggestions day={day} onAddItems={addSuggestedItems}/>}
               {(day.dayBank||[]).length===0
                 ?<div style={{fontSize:11,color:'var(--text3)',textAlign:'center',padding:'10px 0'}}>אין פעילויות בבנק היומי — הוסף מהמפה או מבנק האטרקציות</div>
                 :(day.dayBank||[]).map(item=>{
