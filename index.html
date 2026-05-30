@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v165';
+const APP_VERSION = 'v166';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -946,6 +946,20 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
     });
     mapInst.current=map;
     window.__gmFocus=(lat,lng,zoom=17)=>{ map.panTo({lat,lng}); map.setZoom(zoom); };
+    // פונקציה גלובלית להדגשת פריט — מאפשרת קריאה ישירה מחוץ ל-MapView
+    window.__gmHighlightItem=(lat,lng,name)=>{
+      if(hlItemMarker.current){hlItemMarker.current.setMap(null);hlItemMarker.current=null;}
+      const m=new window.google.maps.Marker({
+        position:{lat,lng},map,title:name||'',
+        animation:window.google.maps.Animation.BOUNCE,zIndex:200,
+      });
+      setTimeout(()=>{if(m.getMap())m.setAnimation(null);},1800);
+      map.panTo({lat,lng});
+      if(map.getZoom()<15)map.setZoom(15);
+      hlItemMarker.current=m;
+    };
+    // הפעל pending highlight שנוצר לפני שהמפה הייתה מוכנה
+    if(window.__gmPendingItem){const p=window.__gmPendingItem;window.__gmPendingItem=null;window.__gmHighlightItem(p.lat,p.lng,p.name);}
 
     // מיקום נוכחי — פעם אחת בטעינה
     const goToCurrentLoc=(onDone)=>{
@@ -1298,6 +1312,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       e.stop();
       showPlaceById(e.placeId,e.latLng.lat(),e.latLng.lng());
     });
+    return()=>{window.__gmHighlightItem=null;window.__gmFocus=null;};
   },[ready]);
 
   // סמנים על המפה
@@ -6535,7 +6550,9 @@ function App(){
           </div>
         </div>
       );
-      case 'timeline': return <TimelineTab trip={trip} onUpdate={updTrip} onPickFromMap={pickLocationFromMap} settings={settings} shownDayIds={shownDayIds} onToggleDayVisibility={toggleDayVisibility} onFocusItem={(lat,lng,name)=>{setHlItem({lat,lng,name});setHlDay(null);setHlRoute(null);setTab('map');}} onFocusRoute={r=>{setHlRoute(r);setHlDay(null);setTab('map');}}/>;
+      case 'timeline': return <TimelineTab trip={trip} onUpdate={updTrip} onPickFromMap={pickLocationFromMap} settings={settings} shownDayIds={shownDayIds} onToggleDayVisibility={toggleDayVisibility}
+          onFocusItem={(lat,lng,name)=>{setHlDay(null);setHlRoute(null);setTab('map');if(window.__gmHighlightItem)window.__gmHighlightItem(lat,lng,name);else window.__gmPendingItem={lat,lng,name};}}
+          onFocusRoute={r=>{setHlRoute(r);setHlDay(null);setTab('map');}}/>;
       case 'expenses': return <ExpensesTab trip={trip} onUpdate={updTrip}/>;
       case 'documents': return <DocsTab trip={trip} onUpdate={updTrip} settings={settings}/>;
       case 'packing': return <Checklist title="רשימת ציוד" emoji="🎒" items={trip.packingList} onUpdate={items=>updTrip({...trip,packingList:items})}/>;
