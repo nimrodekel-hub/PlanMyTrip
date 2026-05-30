@@ -1369,7 +1369,7 @@ function LocationPickerSheet({bank,title,onPick,onPickFromMap,onClose,onCreateEm
                     borderBottom:'1px solid var(--border)',display:'flex',gap:10,alignItems:'center'}}>
                   <span style={{fontSize:18}}>{getTypeEmoji(item.types||[])}</span>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontWeight:600,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
+                    <div style={{fontWeight:600,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.customName||item.name}</div>
                     {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.address}</div>}
                   </div>
                   {src&&<span style={{fontSize:14,flexShrink:0,opacity:.8}}>{src.emoji}</span>}
@@ -1721,7 +1721,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
     const startTime=last?.endTime||day?.startTime||'09:00';
     const endTime=addMins(startTime,60);
     const b={id:uid(),type,
-      title:item.name||'',startTime,endTime,
+      title:item.customName||item.name||'',startTime,endTime,
       note:item.note||'',
       placeId:item.placeId||'',address:item.address||'',
       lat:item.lat||null,lng:item.lng||null,
@@ -1983,8 +1983,8 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
   // pick location from bank
   const pickLocation=(item,field)=>{
     updDay(field==='start'
-      ?{startLocation:item.name,startLat:item.lat||null,startLng:item.lng||null}
-      :{endLocation:item.name,endLat:item.lat||null,endLng:item.lng||null});
+      ?{startLocation:item.customName||item.name,startLat:item.lat||null,startLng:item.lng||null}
+      :{endLocation:item.customName||item.name,endLat:item.lat||null,endLng:item.lng||null});
     setLocationPicking(null);
     toast(`${field==='start'?'נקודת מוצא':'נקודת יעד'} עודכנה ✓`,'s');
   };
@@ -3025,20 +3025,20 @@ function BankScreen({trip,active,onShowOnMap,onUpdate}){
       const sorted=[...(day.blocks||[])].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
       const last=sorted[sorted.length-1];
       const start=last?.endTime||day.startTime||'09:00';
-      const blk={id:uid(),type:'activity',title:item.name,
+      const blk={id:uid(),type:'activity',title:item.customName||item.name,
         startTime:start,endTime:addMins(start,90),
         note:'',address:item.address||'',lat:item.lat||null,lng:item.lng||null,
         placeId:item.placeId||'',placeRating:item.rating||null,placeType:item.placeType||'',
         placeOpenStatus:item.openStatus||'',placeTodayHours:item.todayHours||'',
         placePhone:item.phone||'',placeWebsite:item.website||''};
       onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,blocks:[...(d.blocks||[]),blk]}:d)});
-      toast(`"${item.name}" נוסף ללוז 📅`,'s');
+      toast(`"${item.customName||item.name}" נוסף ללוז 📅`,'s');
     } else if(mode==='start'){
-      onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,startLocation:item.name||'',startLat:item.lat||null,startLng:item.lng||null}:d)});
-      toast(`"${item.name}" הוגדר כנקודת מוצא 🟢`,'s');
+      onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,startLocation:item.customName||item.name||'',startLat:item.lat||null,startLng:item.lng||null}:d)});
+      toast(`"${item.customName||item.name}" הוגדר כנקודת מוצא 🟢`,'s');
     } else if(mode==='end'){
-      onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,endLocation:item.name||'',endLat:item.lat||null,endLng:item.lng||null}:d)});
-      toast(`"${item.name}" הוגדר כנקודת יעד 🔴`,'s');
+      onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,endLocation:item.customName||item.name||'',endLat:item.lat||null,endLng:item.lng||null}:d)});
+      toast(`"${item.customName||item.name}" הוגדר כנקודת יעד 🔴`,'s');
     }
     setDayActionSel(null);
   };

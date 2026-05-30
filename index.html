@@ -2075,7 +2075,7 @@ function LocationPickerModal({bank,title,onPick,onPickFromMap,onClose,onCreateEm
                     border:'1px solid var(--border)',display:'flex',gap:10,alignItems:'center'}}>
                   <span style={{fontSize:18,flexShrink:0}}>{item.types?.length?'🏛':'📍'}</span>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontWeight:600,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
+                    <div style={{fontWeight:600,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.customName||item.name}</div>
                     {item.address&&<div style={{fontSize:11,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.address}</div>}
                   </div>
                   {src&&<span style={{fontSize:13,flexShrink:0,opacity:.8}} title={item._listSource}>{src.emoji}</span>}
@@ -2359,7 +2359,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     const start=last?addMins(last.startTime,bDur(last)):(day.currentTime||'09:00');
     const block={
       ...defaultBlock(type,start),
-      title:item.name||'',location:item.address||'',
+      title:item.customName||item.name||'',location:item.address||'',
       lat:item.lat||null,lng:item.lng||null,placeId:item.placeId||'',
       notes:item.note||'',
       placeRating:item.rating||null,placeUserRatings:item.userRatingsTotal||null,
@@ -2492,8 +2492,8 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
   const pickLocationItem=(item,field)=>{
     onUpdate({...day,
       ...(field==='start'
-        ?{startLocation:item.name,startLat:item.lat||null,startLng:item.lng||null,startPending:false}
-        :{endLocation:item.name,endLat:item.lat||null,endLng:item.lng||null})
+        ?{startLocation:item.customName||item.name,startLat:item.lat||null,startLng:item.lng||null,startPending:false}
+        :{endLocation:item.customName||item.name,endLat:item.lat||null,endLng:item.lng||null})
     });
     setLocationPicking(null);
     toast(`${field==='start'?'נקודת מוצא':'נקודת יעד'} עודכנה ✓`,'success');
@@ -4087,12 +4087,12 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
   };
 
   const setItemAsStart=(dayId,item)=>{
-    onSetDayLocation?.(dayId,'start',item.name,item.lat,item.lng,item);
-    toast(`"${item.name}" הוגדר כנקודת מוצא 🟢`,'success');
+    onSetDayLocation?.(dayId,'start',item.customName||item.name,item.lat,item.lng,item);
+    toast(`"${item.customName||item.name}" הוגדר כנקודת מוצא 🟢`,'success');
   };
   const setItemAsEnd=(dayId,item)=>{
-    onSetDayLocation?.(dayId,'end',item.name,item.lat,item.lng,item);
-    toast(`"${item.name}" הוגדר כנקודת יעד 🔴`,'success');
+    onSetDayLocation?.(dayId,'end',item.customName||item.name,item.lat,item.lng,item);
+    toast(`"${item.customName||item.name}" הוגדר כנקודת יעד 🔴`,'success');
   };
 
   /* הוספה ליום */
@@ -4102,7 +4102,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     const last=sorted[sorted.length-1];
     const start=last?addMins(last.startTime,last.durationMins):(day.currentTime||'09:00');
     const nb=defaultBlock('activity',start);
-    nb.title=item.name; nb.location=item.address||'';
+    nb.title=item.customName||item.name; nb.location=item.address||'';
     if(item.lat){nb.lat=item.lat;nb.lng=item.lng;}
     if(item.placeId)nb.placeId=item.placeId;
     if(item.rating)nb.placeRating=item.rating;
