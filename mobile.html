@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m86';
+const MOB_VER='m87';
 
 const genSyncKey=()=>{
   const c='abcdefghjkmnpqrstuvwxyz23456789';
@@ -641,12 +641,14 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
           if(!block.lat||!block.lng)return;
           const isStart=block.id==='__start__';
           const isEnd=block.id==='__end__';
+          const isAuto=block.isAutoTravel;
           const fc=isStart?'#16a34a':isEnd?'#dc2626':DAY_C;
-          const lbl=String(pinNum++);
+          // מוצא/יעד — עיגול צבעוני בלי מספר; autoTravel — לא ממוספר; פעילות — 1,2,3...
+          const lbl=(isStart||isEnd||isAuto)?null:String(pinNum++);
           const m=new window.google.maps.Marker({
             position:{lat:block.lat,lng:block.lng},
             map:mapRef.current,
-            label:{text:lbl,color:'#fff',fontSize:'11px',fontWeight:'bold'},
+            ...(lbl?{label:{text:lbl,color:'#fff',fontSize:'11px',fontWeight:'bold'}}:{}),
             icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:16,fillColor:fc,fillOpacity:1,strokeColor:'#fff',strokeWeight:2},
             title:block.title||'',
             zIndex:110,
@@ -660,7 +662,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
               name:block.title||(isStart?'נקודת מוצא':isEnd?'נקודת יעד':'פעילות'),
               address:block.location||block.address||'',
               inBank:false,placeId:block.placeId||null,website:'',
-              rating:block.placeRating||null,placeType:block.placeType||''});
+              rating:block.placeRating||null,placeType:block.placeType||'',notes:block.notes||''});
           });
           bounds.extend({lat:block.lat,lng:block.lng});
           hlDayMkRef.current.push(m);
@@ -1110,6 +1112,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
             </a>
           </div>}
           {sheet.address&&<div className="bsheet-addr">📍 {sheet.address}</div>}
+          {sheet.notes&&<div style={{fontSize:12,color:'var(--text2)',padding:'0 16px 8px',lineHeight:1.4,background:'rgba(0,0,0,0.03)',borderRadius:6,margin:'0 8px 4px'}}>💬 {sheet.notes}</div>}
           {(sheet.placeId||sheet.lat)&&<div style={{padding:'4px 16px 8px'}}>
             <a href={mkMapsUrl(sheet.placeId,sheet.lat,sheet.lng,sheet.name)||`https://www.google.com/maps?q=${sheet.lat},${sheet.lng}`}
               target="_blank" rel="noreferrer"
