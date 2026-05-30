@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m84';
+const MOB_VER='m85';
 
 const genSyncKey=()=>{
   const c='abcdefghjkmnpqrstuvwxyz23456789';
@@ -3312,6 +3312,11 @@ function SyncCodeInput({settings,onSettingsChange,onRefresh}){
     const k=code.trim().toLowerCase();
     if(!k){toast('הכנס קוד','e');return;}
     if(k===settings?.syncKey){toast('קוד זהה לנוכחי','e');return;}
+    // שמור מיידית וסינכרונית — BEFORE React async state update
+    // כך הקוד שרוד גם אם מרעננים מיד אחרי הלחיצה
+    try{const cur=loadState()||{};saveState({...cur,settings:{...(cur.settings||{}),syncKey:k,firebaseUrl:FB_URL}});}catch{}
+    // עדכן URL hash מיידית — גיבוי שאינו תלוי ב-localStorage בכלל
+    window.history.replaceState({},'',window.location.pathname+'#k='+k);
     onSettingsChange({...settings,syncKey:k,firebaseUrl:FB_URL});
     setCode('');
     // מעביר את המפתח החדש ישירות — עוקף את הקלוז'ר הישן של settings
@@ -3432,6 +3437,35 @@ function TripScreen({trips,activeId,onSelectTrip,syncStatus,onRefresh,active,set
             <div style={{fontSize:11,color:'var(--text2)',marginBottom:6,fontWeight:600}}>יש לך קוד מהמחשב? הכנס כאן:</div>
             <SyncCodeInput settings={settings} onSettingsChange={onSettingsChange} onRefresh={onRefresh}/>
           </div>
+          {/* שמור קישור קבוע */}
+          {settings?.syncKey&&(()=>{
+            const[copied,setCopied]=useState(false);
+            const url=window.location.origin+window.location.pathname+'#k='+settings.syncKey;
+            const copy=()=>{navigator.clipboard?.writeText(url).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);});};
+            return(
+              <div style={{borderTop:'1px solid var(--border)',paddingTop:12,marginTop:4}}>
+                <div style={{fontSize:11,color:'var(--amber)',fontWeight:700,marginBottom:6}}>
+                  📌 שמור את הקישור הזה — כדי לא לאבד סנכרון:
+                </div>
+                <div style={{display:'flex',gap:6}}>
+                  <div style={{flex:1,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:7,
+                    padding:'7px 9px',fontSize:11,fontFamily:'monospace',color:'var(--text3)',
+                    overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',direction:'ltr'}}>
+                    {url}
+                  </div>
+                  <button onClick={copy} style={{
+                    background:copied?'var(--green)':'var(--bg3)',color:copied?'#fff':'var(--text)',
+                    border:'1px solid var(--border)',borderRadius:7,padding:'7px 10px',
+                    fontSize:12,cursor:'pointer',fontWeight:600,flexShrink:0,transition:'background .2s'}}>
+                    {copied?'✓':'📋'}
+                  </button>
+                </div>
+                <div style={{fontSize:10,color:'var(--text3)',marginTop:5,lineHeight:1.5}}>
+                  שלח לעצמך בוואטסאפ ← פתח ב-Chrome ← הוסף לסימניות
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
