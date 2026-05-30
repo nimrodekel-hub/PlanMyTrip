@@ -170,6 +170,7 @@
     .trip-chip.active { background:var(--accent); border-color:var(--accent); color:#fff; }
 
     ::-webkit-scrollbar { width:3px; } ::-webkit-scrollbar-track { background:transparent; } ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+    .dur-drum::-webkit-scrollbar{display:none;}
 
     /* ── Day navigation (schedule) ── */
     .day-nav { display:flex; align-items:center; justify-content:space-between; padding:12px 16px 8px; flex-shrink:0; gap:8px; }
@@ -1159,6 +1160,67 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
 }
 
 /* ════════════════════════════════
+   DURATION DRUM PICKER
+════════════════════════════════ */
+const DUR_OPTS=[5,10,15,20,25,30,40,45,50,60,75,90,105,120,150,180,210,240,300,360,420,480];
+const fmtDurLabel=m=>m<60?`${m} דק׳`:m===60?'שעה':m%60===0?`${m/60} שעות`:`${Math.floor(m/60)}ש׳ ${m%60}ד׳`;
+const DRUM_H=44;
+function DurationDrum({value,onChange}){
+  const listRef=useRef();
+  const tRef=useRef();
+  // scroll to selected on mount and on external value change
+  useEffect(()=>{
+    const i=DUR_OPTS.indexOf(value);
+    if(i>=0&&listRef.current) listRef.current.scrollTop=i*DRUM_H;
+  },[value]);
+  const onScroll=()=>{
+    clearTimeout(tRef.current);
+    tRef.current=setTimeout(()=>{
+      if(!listRef.current)return;
+      const i=Math.round(listRef.current.scrollTop/DRUM_H);
+      const dur=DUR_OPTS[Math.max(0,Math.min(i,DUR_OPTS.length-1))];
+      onChange(dur);
+    },80);
+  };
+  const selIdx=DUR_OPTS.indexOf(value);
+  return(
+    <div style={{position:'relative',height:DRUM_H*3,overflow:'hidden',borderRadius:10,
+      background:'var(--bg3)',border:'1px solid var(--border)'}}>
+      {/* הדגשת הפריט המרכזי */}
+      <div style={{position:'absolute',top:DRUM_H,left:0,right:0,height:DRUM_H,
+        background:'rgba(79,142,247,.13)',borderTop:'2px solid var(--accent2)',
+        borderBottom:'2px solid var(--accent2)',pointerEvents:'none',zIndex:1}}/>
+      {/* עמעום עליון */}
+      <div style={{position:'absolute',top:0,left:0,right:0,height:DRUM_H*0.8,
+        background:'linear-gradient(to bottom,var(--bg3) 30%,transparent)',
+        pointerEvents:'none',zIndex:2}}/>
+      {/* עמעום תחתון */}
+      <div style={{position:'absolute',bottom:0,left:0,right:0,height:DRUM_H*0.8,
+        background:'linear-gradient(to top,var(--bg3) 30%,transparent)',
+        pointerEvents:'none',zIndex:2}}/>
+      <div ref={listRef} className="dur-drum" onScroll={onScroll}
+        style={{height:'100%',overflowY:'scroll',scrollSnapType:'y mandatory',
+          scrollbarWidth:'none',WebkitOverflowScrolling:'touch'}}>
+        {/* ריפוד עליון */}
+        <div style={{height:DRUM_H,flexShrink:0,scrollSnapAlign:'start'}}/>
+        {DUR_OPTS.map((v,i)=>(
+          <div key={v} style={{height:DRUM_H,scrollSnapAlign:'start',
+            display:'flex',alignItems:'center',justifyContent:'center',
+            fontSize:i===selIdx?20:15,fontWeight:i===selIdx?700:400,
+            color:i===selIdx?'var(--accent2)':'var(--text3)',
+            cursor:'pointer',userSelect:'none',transition:'font-size .12s,color .12s'}}
+            onClick={()=>{onChange(v);if(listRef.current)listRef.current.scrollTop=i*DRUM_H;}}>
+            {fmtDurLabel(v)}
+          </div>
+        ))}
+        {/* ריפוד תחתון */}
+        <div style={{height:DRUM_H,flexShrink:0,scrollSnapAlign:'start'}}/>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════
    BLOCK EDIT SHEET (mobile)
 ════════════════════════════════ */
 function BlockEditSheet({block,onSave,onDelete,onClose,isNew,prevEndTime,onCascadeSave,onCascadeSaveUnlink}){
@@ -1241,11 +1303,10 @@ function BlockEditSheet({block,onSave,onDelete,onClose,isNew,prevEndTime,onCasca
               </div>}
             </div>
             <div style={{flex:1}}>
-              <label style={lbl}>משך (דקות)</label>
-              <input type="number" min="5" step="5" value={b.durationMins||60}
-                onChange={e=>upd('durationMins',e.target.value)}
-                style={{...inp,direction:'ltr',width:'100%'}}/>
-              {b.endTime&&<div style={{fontSize:10,color:'var(--text3)',marginTop:3}}>סיום: {b.endTime}</div>}
+              <label style={lbl}>משך</label>
+              <DurationDrum value={DUR_OPTS.includes(b.durationMins)?b.durationMins:DUR_OPTS.find(v=>v>=b.durationMins)||60}
+                onChange={v=>upd('durationMins',v)}/>
+              {b.endTime&&<div style={{fontSize:10,color:'var(--text3)',marginTop:3,textAlign:'center'}}>סיום: {b.endTime}</div>}
             </div>
           </div>
           {/* notes */}
