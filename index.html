@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v158';
+const APP_VERSION = 'v159';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -6125,6 +6125,7 @@ function App(){
   const ghSha=useRef(null);
   const autoSyncTimer=useRef(null);
   const skipNextPush=useRef(false);
+  const lastPushTime=useRef(0); // timestamp של הפוש האחרון שלנו — לזיהוי שינויים חיצוניים
   const syncMounted=useRef(false);
   const mapPickCallbackRef=useRef(null);
   const[mapPickLabel,setMapPickLabel]=useState(null);
@@ -6224,6 +6225,36 @@ function App(){
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
 
+  // ── טעינה מחדש כשחוזרים לטאב (סנכרון דו-כיווני) ──
+  useEffect(()=>{
+    const onVisible=()=>{
+      if(document.visibilityState!=='visible')return;
+      const{firebaseUrl:fbUrl,syncKey}=settings;
+      if(!fbUrl||!syncKey)return;
+      fbRead(fbUrl,syncKey).then(data=>{
+        if(!data?.trips?.length)return;
+        const remote=data.trips.map(normTrip).filter(Boolean);
+        if(!remote.length)return;
+        // בדוק אם יש שינוי לפי savedAt לפני שמחליפים
+        const remoteTime=data.savedAt?new Date(data.savedAt).getTime():0;
+        const localTime=lastPushTime.current||0;
+        if(remoteTime>localTime){
+          skipNextPush.current=true;
+          const remoteIds=new Set(remote.map(t=>t.id));
+          setTrips(prev=>{
+            const localOnly=prev.filter(t=>!remoteIds.has(t.id));
+            return [...remote,...localOnly];
+          });
+          if(data.activeId)setActiveId(data.activeId);
+          setSyncStatus('synced');
+        }
+      }).catch(()=>{});
+    };
+    document.addEventListener('visibilitychange',onVisible);
+    return()=>document.removeEventListener('visibilitychange',onVisible);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[settings]);
+
   // ── שמירה אוטומטית אחרי כל שינוי (debounce 2s) ──
   useEffect(()=>{
     if(!syncMounted.current){syncMounted.current=true;return;}
@@ -6236,6 +6267,7 @@ function App(){
       try{
         if(fbUrl&&syncKey){
           await fbWrite(fbUrl,syncKey,{trips,activeId,savedAt:new Date().toISOString()});
+          lastPushTime.current=Date.now();
         } else if(tok&&user&&repo){
           if(!ghSha.current){try{const r=await ghLoad(tok,user,repo,'trip_data.json');ghSha.current=r.sha;}catch{}}
           const res=await ghSave(tok,user,repo,'trip_data.json',{trips,activeId,savedAt:new Date().toISOString()},ghSha.current);
@@ -6344,6 +6376,7 @@ function App(){
     try{
       if(s.firebaseUrl&&s.syncKey){
         await fbWrite(s.firebaseUrl,s.syncKey,{trips,activeId,savedAt:new Date().toISOString()});
+        lastPushTime.current=Date.now();
         toast('נשמר ב-Firebase ✓','success');
       } else {
         if(!ghSha.current){try{const r=await ghLoad(s.githubToken,s.githubUsername,s.githubRepo,'trip_data.json');ghSha.current=r.sha;}catch{}}
