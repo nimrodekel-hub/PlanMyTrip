@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v160';
+const APP_VERSION = 'v161';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -2059,7 +2059,7 @@ function LocationPickerModal({bank,title,onPick,onPickFromMap,onClose,onCreateEm
   );
 }
 
-function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute,onMoveToBank,settings,onPickFromMap,onBankNoteUpdate,dayVisible=true,onToggleVisibility}){
+function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute,onMoveToBank,settings,onPickFromMap,onBankNoteUpdate,dayVisible=true,allDaysVisible=true,onToggleVisibility}){
   const[open,setOpen]=useState(true),[editing,setEd]=useState(null);
   const[travelTimes,setTravelTimes]=useState({});
   const[locationPicking,setLocationPicking]=useState(null); // {field:'start'|'end'}
@@ -2518,26 +2518,27 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
       <div style={{display:'flex',alignItems:'center',gap:4,flexShrink:0}}>
         {day.blocks.length>0&&<span className="chip chip-blue" style={{fontSize:9,padding:'1px 5px'}}>{done}/{day.blocks.length}</span>}
         {total>0&&<span style={{fontSize:10,color:'var(--amber)'}}>₪{total.toFixed(0)}</span>}
-        {onToggleVisibility&&(
-          <button className="btn btn-secondary btn-icon btn-sm"
-            title={dayVisible?'הסתר יום מהמפה':'הצג יום על המפה'}
-            style={{fontSize:11,padding:'2px 5px',opacity:dayVisible?1:0.4,border:'1px solid var(--border)',lineHeight:1}}
-            onClick={e=>{e.stopPropagation();onToggleVisibility(day.id);}}>
-            👁️
-          </button>
-        )}
-        {onFocusDay&&hasMapBlocks&&(
-          <button className="btn btn-secondary btn-icon btn-sm"
-            title="הצג את כל עצירות היום על המפה"
-            style={{background:dayColor,color:'#fff',border:'none',fontSize:11,padding:'2px 5px',lineHeight:1}}
-            onClick={e=>{e.stopPropagation();onFocusDay(day.id,idx,[
-              ...(day.startLat&&day.startLng?[{id:'__start__',type:'travel',title:`🟢 ${day.startLocation||'מוצא'}`,lat:day.startLat,lng:day.startLng,startTime:'00:00'}]:[]),
-              ...day.blocks,
-              ...(day.endLat&&day.endLng?[{id:'__end__',type:'travel',title:`🔴 ${day.endLocation||'יעד'}`,lat:day.endLat,lng:day.endLng,startTime:'23:59'}]:[]),
-            ]);}}>
-            🗺️
-          </button>
-        )}
+        {onToggleVisibility&&(()=>{
+          // 3 מצבים: all=כולם גלויים, on=יום זה נבחר, off=יום זה מוסתר
+          const st=allDaysVisible?'all':dayVisible?'on':'off';
+          const styles={
+            all:{background:'var(--bg2)',color:'var(--text3)',border:'1px solid var(--border)'},
+            on: {background:dayColor,color:'#fff',border:`1px solid ${dayColor}`,boxShadow:`0 0 0 2px ${dayColor}44`},
+            off:{background:'var(--bg2)',color:'var(--text3)',border:'1px solid var(--border)',opacity:.35},
+          };
+          const titles={
+            all:'לחץ להתמקד ביום זה בלבד',
+            on: 'יום זה נבחר — לחץ לבטל בחירה',
+            off:'יום זה מוסתר — לחץ להציג',
+          };
+          return(
+            <button title={titles[st]}
+              style={{...styles[st],fontSize:12,padding:'2px 6px',lineHeight:1,borderRadius:6,cursor:'pointer',transition:'all .15s'}}
+              onClick={e=>{e.stopPropagation();onToggleVisibility(day.id);}}>
+              {st==='off'?'🙈':'👁️'}
+            </button>
+          );
+        })()}
         <span style={{color:'var(--text3)',fontSize:11}}>{open?'▼':'◀'}</span>
       </div>
     </div>
@@ -3418,6 +3419,7 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,onFocusRoute
               onMoveToBank={(block)=>moveBlockToBank(block,day.id)} settings={settings} onPickFromMap={onPickFromMap}
               onBankNoteUpdate={updateBankNote}
               dayVisible={shownDayIds===null||shownDayIds.has(day.id)}
+              allDaysVisible={shownDayIds===null}
               onToggleVisibility={onToggleDayVisibility}/>
           ))
         }
@@ -3477,7 +3479,10 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,onFocusRoute
               <DayPanel day={{...day,_tripBank:trip.interestBank||[]}} idx={clampedOffset+i} onUpdate={updDay} onDelete={()=>delDay(day.id)}
                 onFocusDay={onFocusDay} onFocusItem={onFocusItem} onFocusRoute={onFocusRoute}
                 onMoveToBank={(block)=>moveBlockToBank(block,day.id)} settings={settings} onPickFromMap={onPickFromMap}
-                onBankNoteUpdate={updateBankNote}/>
+                onBankNoteUpdate={updateBankNote}
+                dayVisible={shownDayIds===null||shownDayIds.has(day.id)}
+                allDaysVisible={shownDayIds===null}
+                onToggleVisibility={onToggleDayVisibility}/>
             </div>
           </div>
         ))
@@ -6132,21 +6137,37 @@ function App(){
   const prevTabRef=useRef('timeline'); // tab to return to after map pick
 
   const toggleDayVisibility=useCallback((dayId)=>{
-    if(dayId==='__all__'){setShownDayIds(null);return;}
-    setShownDayIds(prev=>{
-      if(prev===null){
-        // מעבר למצב סלקטיבי — הסתר רק את היום הזה
-        const next=new Set((trip?.days||[]).map(d=>d.id));
-        next.delete(dayId);
-        return next.size===(trip?.days||[]).length?null:next;
+    if(dayId==='__all__'){setShownDayIds(null);setHlDay(null);return;}
+    const days=trip?.days||[];
+    const dayIdx=days.findIndex(d=>d.id===dayId);
+    const day=dayIdx>=0?days[dayIdx]:null;
+    const mkBlocks=d=>d?[
+      ...(d.startLat&&d.startLng?[{id:'__start__',type:'travel',title:`🟢 ${d.startLocation||'מוצא'}`,lat:d.startLat,lng:d.startLng,startTime:'00:00'}]:[]),
+      ...(d.blocks||[]),
+      ...(d.endLat&&d.endLng?[{id:'__end__',type:'travel',title:`🔴 ${d.endLocation||'יעד'}`,lat:d.endLat,lng:d.endLng,startTime:'23:59'}]:[]),
+    ]:[];
+    if(shownDayIds===null){
+      // כל הימים גלויים → בחר יום זה בלבד + מרכז מפה
+      setShownDayIds(new Set([dayId]));
+      if(day){setHlDay({dayId,dayIndex:dayIdx,blocks:mkBlocks(day)});setHlRoute(null);}
+      return;
+    }
+    const next=new Set(shownDayIds);
+    if(next.has(dayId)){
+      // בטל בחירה
+      next.delete(dayId);
+      if(next.size===0){setShownDayIds(null);setHlDay(null);}
+      else setShownDayIds(next);
+    } else {
+      // הוסף יום → מרכז מפה עליו
+      next.add(dayId);
+      if(next.size===days.length){setShownDayIds(null);setHlDay(null);}
+      else{
+        setShownDayIds(next);
+        if(day){setHlDay({dayId,dayIndex:dayIdx,blocks:mkBlocks(day)});setHlRoute(null);}
       }
-      const next=new Set(prev);
-      if(next.has(dayId))next.delete(dayId);else next.add(dayId);
-      // אם כל הימים מסומנים — חזור למצב "הכל"
-      if(next.size===(trip?.days||[]).length)return null;
-      return next;
-    });
-  },[trip]);
+    }
+  },[trip,shownDayIds]);
 
   const pickLocationFromMap=useCallback((label,callback)=>{
     prevTabRef.current=tab; // capture current tab before switching
