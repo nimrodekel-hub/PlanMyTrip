@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m89';
+const MOB_VER='m90';
 
 const genSyncKey=()=>{
   const c='abcdefghjkmnpqrstuvwxyz23456789';
@@ -868,7 +868,11 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
           fields:['name','rating','formatted_address','website','types','geometry','opening_hours','international_phone_number']},
           (res2,st3)=>{
             if(st3===PS.OK&&res2){
-              setSheet(parseDetails(res2,freshId,la,lo));
+              const parsed=parseDetails(res2,freshId,la,lo);
+              // שמור ב-session cache — תחת ה-placeId החדש
+              window.__placeCache=window.__placeCache||{};
+              window.__placeCache[freshId]=parsed;
+              setSheet(parsed);
               // silently update placeId in bank if item is from bank
               if(bankItem&&onUpdate&&trip&&freshId!==placeId){
                 const updated=(trip.interestBank||[]).map(i=>
