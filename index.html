@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v183';
+const APP_VERSION = 'v184';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -1388,10 +1388,12 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:item.customName||item.name||'',lat:item.lat,lng:item.lng,address:item.address||''});return;}
         // הצג נתונים שמורים מיידית
         const cached=item.placeId?window.__placeCache?.[item.placeId]:null;
-        const p=cached||{name:item.customName||item.name,address:item.address||'',lat:item.lat,lng:item.lng,
-          placeId:item.placeId||null,rating:item.rating??null,customName:item.customName||null,
+        const base=cached||{name:item.customName||item.name,address:item.address||'',lat:item.lat,lng:item.lng,
+          placeId:item.placeId||null,rating:item.rating??null,
           openStatus:item.openStatus||'',todayHours:item.todayHours||'',
           phone:item.phone||'',website:item.website||'',placeType:item.placeType||''};
+        // תמיד עקוף עם customName של הפריט (גם אם ה-cache מחזיר שם גוגל מקורי)
+        const p={...base,name:item.customName||base.name,customName:item.customName||null};
         window.__gmShowSheet?.(p);
         // שלח ל-Google רק אם: לא בcache סשן AND הנתונים ישנים (יותר מ-7 ימים)
         const _staleSec=7*24*3600;
@@ -4678,6 +4680,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
                 selected={selected.has(item.id)} onSelect={toggleSelect}
                 onEnrich={enrichItem} enriching={enrichingId===item.id}
                 onAddToDayBank={addItemToDayBank}
+                onSetDayStart={setItemAsStart} onSetDayEnd={setItemAsEnd}
                 onSaveCustomName={saveCustomNameLocal}
                 onChangeListSource={saveListSource}
                 onNoteChange={(id,note)=>{onUpdate({...tripRef.current,interestBank:tripRef.current.interestBank.map(i=>i.id===id?{...i,note}:i)});}}/>

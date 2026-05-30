@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m94';
+const MOB_VER='m95';
 
 const genSyncKey=()=>{
   const c='abcdefghjkmnpqrstuvwxyz23456789';
@@ -793,7 +793,8 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
     // show stored bank data IMMEDIATELY so bottom sheet opens with existing info
     if(bankItem){
       setSheet({placeId:placeId||null,lat,lng,inBank,
-        name:bankItem.name||'',address:bankItem.address||'',
+        name:bankItem.customName||bankItem.name||'',address:bankItem.address||'',
+        customName:bankItem.customName||null,
         rating:bankItem.rating??null,website:bankItem.website||'',
         types:bankItem.types||[],placeType:bankItem.placeType||'',
         openStatus:bankItem.openStatus||'',
@@ -809,7 +810,11 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
     // SESSION CACHE — כבר שלפנו מקום זה בסשן הנוכחי?
     window.__placeCache=window.__placeCache||{};
     if(window.__placeCache[placeId]){
-      setSheet({...window.__placeCache[placeId],inBank});
+      // תמיד עקוף עם customName של הפריט (גם אם ה-cache מחזיר שם גוגל מקורי)
+      const _cached=window.__placeCache[placeId];
+      setSheet({..._cached,inBank,
+        name:bankItem?.customName||_cached.name,
+        customName:bankItem?.customName||null});
       return;
     }
     // STALENESS CHECK — אם הנתונים עדכניים (פחות מ-7 ימים) — אין צורך לפנות ל-Google
