@@ -499,6 +499,20 @@ const DARK_MAP=[{elementType:'geometry',stylers:[{color:'#1d2c4d'}]},{elementTyp
 ════════════════════════════════ */
 let _toast=null;
 const toast=(msg,type='i')=>_toast?.(msg,type);
+/* קישור גוגל מפות — אייקון G אחיד */
+function GLink({lat,lng,url,title='פתח בגוגל מפות',style={},onClick}){
+  const href=url||(lat!=null&&lng!=null?`https://www.google.com/maps?q=${lat},${lng}`:'#');
+  return(
+    <a href={href} target="_blank" rel="noreferrer" title={title} onClick={onClick}
+      style={{display:'inline-flex',alignItems:'center',justifyContent:'center',
+        width:26,height:26,borderRadius:7,textDecoration:'none',flexShrink:0,
+        border:'1px solid rgba(66,133,244,.35)',background:'rgba(66,133,244,.08)',
+        ...style}}>
+      <span style={{fontWeight:900,fontSize:13,color:'#4285f4',fontFamily:'Arial,sans-serif',lineHeight:1}}>G</span>
+    </a>
+  );
+}
+
 function ToastLayer(){
   const[items,setItems]=useState([]);
   _toast=useCallback((msg,type)=>{const id=uid();setItems(p=>[...p,{id,msg,type}]);setTimeout(()=>setItems(p=>p.filter(t=>t.id!==id)),3200);},[]);
@@ -1083,13 +1097,13 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
           </div>}
           {sheet.address&&<div className="bsheet-addr">📍 {sheet.address}</div>}
           {(sheet.placeId||sheet.lat)&&<div style={{padding:'4px 16px 8px'}}>
-            <button
-              onClick={()=>{const u=mkMapsUrl(sheet.placeId,sheet.lat,sheet.lng,sheet.name);if(u)window.open(u,'_blank','noopener,noreferrer');}}
-              style={{background:'rgba(66,133,244,.1)',border:'1px solid rgba(66,133,244,.25)',borderRadius:8,padding:'7px 14px',
-                fontSize:13,color:'#4285F4',cursor:'pointer',fontFamily:'Heebo,sans-serif',fontWeight:600,
-                display:'inline-flex',alignItems:'center',gap:6}}>
-              🗺️ פתח בגוגל מפות
-            </button>
+            <a href={mkMapsUrl(sheet.placeId,sheet.lat,sheet.lng,sheet.name)||`https://www.google.com/maps?q=${sheet.lat},${sheet.lng}`}
+              target="_blank" rel="noreferrer"
+              style={{display:'inline-flex',alignItems:'center',gap:7,fontSize:13,padding:'7px 14px',
+                borderRadius:8,background:'rgba(66,133,244,.1)',color:'#4285F4',
+                border:'1px solid rgba(66,133,244,.3)',textDecoration:'none',fontWeight:600,fontFamily:'Heebo,sans-serif'}}>
+              <span style={{fontWeight:900,fontSize:14,fontFamily:'Arial,sans-serif'}}>G</span> פתח בגוגל מפות
+            </a>
           </div>}
           <div className="bsheet-actions">
             {!sheet.inBank&&<button className="bsheet-btn bank" onClick={addToBank}>⭐ שמור לבנק</button>}
@@ -2011,10 +2025,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
               title="בחר מהבנק או מהמפה"
               style={{flexShrink:0,padding:'6px 7px',fontSize:14,background:'var(--bg2)',
                 border:'1px solid var(--border)',borderRadius:7,cursor:'pointer',lineHeight:1}}>📍</button>
-            {day.startLat&&day.startLng&&<a href={`https://www.google.com/maps?q=${day.startLat},${day.startLng}`}
-              target="_blank" rel="noreferrer"
-              style={{padding:'0 4px',fontSize:16,textDecoration:'none',color:'#4285F4',display:'inline-flex',alignItems:'center',flexShrink:0}}
-              title="פתח בגוגל מפות">↗</a>}
+            {day.startLat&&day.startLng&&<GLink lat={day.startLat} lng={day.startLng}/>}
           </div>
           {/* cascade hint */}
           {cascadeNeeded&&(
@@ -2039,10 +2050,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
               title="בחר מהבנק או מהמפה"
               style={{flexShrink:0,padding:'6px 7px',fontSize:14,background:'var(--bg2)',
                 border:'1px solid var(--border)',borderRadius:7,cursor:'pointer',lineHeight:1}}>📍</button>
-            {day.endLat&&day.endLng&&<a href={`https://www.google.com/maps?q=${day.endLat},${day.endLng}`}
-              target="_blank" rel="noreferrer"
-              style={{padding:'0 4px',fontSize:16,textDecoration:'none',color:'#4285F4',display:'inline-flex',alignItems:'center',flexShrink:0}}
-              title="פתח בגוגל מפות">↗</a>}
+            {day.endLat&&day.endLng&&<GLink lat={day.endLat} lng={day.endLng}/>}
           </div>
         </div>
 
@@ -2193,12 +2201,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                         <div style={{display:'flex',gap:2,flexShrink:0,alignItems:'center'}}>
                           {hasLoc&&<button onClick={()=>onShowOnMap&&onShowOnMap({lat:b.lat,lng:b.lng,placeId:b.placeId,name:b.title||BLOCK_HE[b.type],address:b.address||''})}
                             style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--accent2)'}}>🗺️</button>}
-                          {hasLoc&&<button
-                            onClick={e=>{e.stopPropagation();const u=mkMapsUrl(b.placeId,b.lat,b.lng,b.title);if(u)window.open(u,'_blank','noopener,noreferrer');}}
-                            style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'#4285F4',display:'inline-flex',alignItems:'center',lineHeight:1}}
-                            title="פתח בגוגל מפות">
-                            <span style={{fontSize:13}}>↗</span>
-                          </button>}
+                          {hasLoc&&<GLink url={mkMapsUrl(b.placeId,b.lat,b.lng,b.title)} onClick={e=>e.stopPropagation()}/>}
                           <button onClick={()=>{
                               if(inlineNote?.blockId===b.id){setInlineNote(null);}
                               else{setInlineNote({blockId:b.id,value:bankInfo?.note||b.note||''});}
@@ -2220,9 +2223,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                             if(!fLat||!tLat)return null;
                             const tm=b.isTransit?'transit':b.isWalking?'walking':'driving';
                             const url=`https://www.google.com/maps/dir/?api=1&origin=${fLat},${fLng}&destination=${tLat},${tLng}&travelmode=${tm}`;
-                            return<a key="rt-link" href={url} target="_blank" rel="noreferrer"
-                              style={{padding:'4px 5px',fontSize:15,color:'var(--accent2)',textDecoration:'none'}}
-                              onClick={e=>e.stopPropagation()}>🗺️</a>;
+                            return<GLink key="rt-link" url={url} onClick={e=>e.stopPropagation()} title="פתח מסלול בגוגל מפות"/>;
                           })()}
                           {/* drag handle — מוסתר לנסיעות אוטומטיות */}
                           {b.isAutoTravel
@@ -2492,10 +2493,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                             <div style={{display:'flex',flexDirection:'column',gap:4,flexShrink:0,alignItems:'flex-end'}}>
                               {hasLoc&&<button onClick={()=>onShowOnMap&&onShowOnMap({lat:item.lat,lng:item.lng,placeId:item.placeId,name:item.name,address:item.address||''})}
                                 style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--accent2)'}}>🗺️</button>}
-                              {hasLoc&&<a href={mkMapsUrl(item.placeId,item.lat,item.lng,item.name)}
-                                target="_blank" rel="noreferrer"
-                                style={{padding:'4px 5px',fontSize:13,color:'#4285F4',textDecoration:'none',display:'inline-flex',alignItems:'center'}}
-                                onClick={e=>e.stopPropagation()}>↗</a>}
+                              {hasLoc&&<GLink url={mkMapsUrl(item.placeId,item.lat,item.lng,item.name)} onClick={e=>e.stopPropagation()}/>}
                               <button onClick={addToSchedule}
                                 style={{background:'rgba(79,142,247,.12)',color:'var(--accent2)',border:'1px solid rgba(79,142,247,.3)',
                                   borderRadius:7,padding:'4px 8px',fontSize:11,fontWeight:700,cursor:'pointer',
@@ -2570,9 +2568,9 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                   {transitSearch.fromLat&&<a href={`https://www.google.com/maps/dir/?api=1&origin=${transitSearch.fromLat},${transitSearch.fromLng}&destination=${transitSearch.toLat},${transitSearch.toLng}&travelmode=${transitSearch.isWalking?'walking':'transit'}`}
                     target="_blank" rel="noreferrer"
                     style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12,padding:'8px 14px',
-                      borderRadius:10,background:'rgba(79,142,247,.12)',color:'var(--accent)',
-                      border:'1px solid rgba(79,142,247,.3)',textDecoration:'none',fontWeight:700}}>
-                    🗺️ פתח מסלול ב-Google Maps
+                      borderRadius:10,background:'rgba(66,133,244,.1)',color:'#4285f4',
+                      border:'1px solid rgba(66,133,244,.3)',textDecoration:'none',fontWeight:700,fontFamily:'Heebo,sans-serif'}}>
+                    <span style={{fontWeight:900,fontSize:13,fontFamily:'Arial,sans-serif'}}>G</span> פתח מסלול ב-Google Maps
                   </a>}
                 </div>
               )}
