@@ -1532,7 +1532,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
       .map(i=>({...i,id:uid()}));
     if(!toAdd.length)return;
     onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,dayBank:[...(d.dayBank||[]),...toAdd]}:d)});
-    toast(toAdd.length===1?`"${toAdd[0].name}" נוסף לבנק היומי ✨`:`${toAdd.length} מקומות נוספו לבנק היומי ✨`,'s');
+    toast(toAdd.length===1?`"${toAdd[0].customName||toAdd[0].name}" נוסף לבנק היומי ✨`:`${toAdd.length} מקומות נוספו לבנק היומי ✨`,'s');
   };
 
   // drag-and-drop reorder — מחשב מחדש startTime/endTime אחרי הזזה
@@ -1575,7 +1575,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
   const executeSwap=(bankItem,targetBlock)=>{
     const nb={
       id:uid(),type:'activity',
-      title:bankItem.name,
+      title:bankItem.customName||bankItem.name,
       startTime:targetBlock.startTime,
       endTime:targetBlock.endTime,
       note:bankItem.note||'',
@@ -1600,7 +1600,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
     const newDayBank=[...(day.dayBank||[]).filter(i=>i.id!==bankItem.id),oldItem];
     onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,blocks:newBlocks,dayBank:newDayBank}:d)});
     setSwapSrc(null);
-    toast(`"${bankItem.name}" הוחלף עם "${targetBlock.title||'פעילות'}" 🔄`,'s');
+    toast(`"${bankItem.customName||bankItem.name}" הוחלף עם "${targetBlock.customName||targetBlock.title||'פעילות'}" 🔄`,'s');
   };
 
   const deleteBlock=id=>{
@@ -2124,7 +2124,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
             display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
             <span style={{fontSize:15}}>🔄</span>
             <div style={{flex:1,fontSize:12,fontWeight:600,color:'#d97706',lineHeight:1.4}}>
-              בחר פעילות בלו"ז להחלפה עם "{swapSrc.name}"
+              בחר פעילות בלו"ז להחלפה עם "{swapSrc.customName||swapSrc.name}"
             </div>
             <button onClick={()=>setSwapSrc(null)}
               style={{background:'none',border:'none',cursor:'pointer',fontSize:18,
@@ -2322,7 +2322,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                           border:'none',borderTop:'1px solid rgba(245,158,11,.35)',padding:'8px 12px',
                           fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'Heebo,sans-serif',
                           display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
-                        🔄 החלף עם "{swapSrc.name}"
+                        🔄 החלף עם "{swapSrc.customName||swapSrc.name}"
                       </button>
                     )}
                     {/* inline note editor */}
@@ -2516,7 +2516,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                     const types=item.types||bankInfo?.types||[];
                     const hasLoc=!!(item.lat&&item.lng);
                     const addToSchedule=()=>{
-                      const blk={id:uid(),type:'activity',title:item.name,
+                      const blk={id:uid(),type:'activity',title:item.customName||item.name,
                         startTime:sorted[sorted.length-1]?.endTime||day.startTime||'10:00',
                         endTime:addMins(sorted[sorted.length-1]?.endTime||day.startTime||'10:00',90),
                         note:'',address:item.address||'',lat:item.lat||null,lng:item.lng||null,
@@ -2559,9 +2559,9 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
                             </div>
                             {/* כפתורי פעולה */}
                             <div style={{display:'flex',flexDirection:'column',gap:4,flexShrink:0,alignItems:'flex-end'}}>
-                              {hasLoc&&<button onClick={()=>onShowOnMap&&onShowOnMap({lat:item.lat,lng:item.lng,placeId:item.placeId,name:item.name,address:item.address||''})}
+                              {hasLoc&&<button onClick={()=>onShowOnMap&&onShowOnMap({lat:item.lat,lng:item.lng,placeId:item.placeId,name:item.customName||item.name,address:item.address||''})}
                                 style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',fontSize:15,color:'var(--accent2)'}}>🗺️</button>}
-                              {hasLoc&&<GLink url={mkMapsUrl(item.placeId,item.lat,item.lng,item.name)} onClick={e=>e.stopPropagation()}/>}
+                              {hasLoc&&<GLink url={mkMapsUrl(item.placeId,item.lat,item.lng,item.customName||item.name)} onClick={e=>e.stopPropagation()}/>}
                               <button onClick={addToSchedule}
                                 style={{background:'rgba(79,142,247,.12)',color:'var(--accent2)',border:'1px solid rgba(79,142,247,.3)',
                                   borderRadius:7,padding:'4px 8px',fontSize:11,fontWeight:700,cursor:'pointer',
@@ -3012,7 +3012,7 @@ function BankScreen({trip,active,onShowOnMap,onUpdate}){
     const already=(day.dayBank||[]).some(i=>i.placeId&&i.placeId===dayBankSel.placeId&&dayBankSel.placeId);
     if(already){toast('כבר קיים בבנק היומי','w');setDayBankSel(null);return;}
     onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,dayBank:[...(d.dayBank||[]),{...dayBankSel,id:uid()}]}:d)});
-    toast(`"${dayBankSel.name}" נוסף לבנק יומי 📌`,'s');
+    toast(`"${dayBankSel.customName||dayBankSel.name}" נוסף לבנק יומי 📌`,'s');
     setDayBankSel(null);
   };
 
@@ -3074,7 +3074,7 @@ function BankScreen({trip,active,onShowOnMap,onUpdate}){
     const q=search.trim().toLowerCase();
     if(q)items=items.filter(i=>(i.customName||'').toLowerCase().includes(q)||(i.name||'').toLowerCase().includes(q)||(i.address||'').toLowerCase().includes(q));
     if(sortMode==='name'){
-      items.sort((a,b)=>(a.name||'').localeCompare(b.name||'','he'));
+      items.sort((a,b)=>(a.customName||a.name||'').localeCompare(b.customName||b.name||'','he'));
     } else if(sortMode==='distance'&&userPos){
       items=items.map(i=>({...i,_dist:i.lat&&i.lng?haversineKm(userPos.lat,userPos.lng,i.lat,i.lng):Infinity}));
       items.sort((a,b)=>a._dist-b._dist);
@@ -3090,7 +3090,7 @@ function BankScreen({trip,active,onShowOnMap,onUpdate}){
       const c=getCountry(i);if(!m[c])m[c]=[];m[c].push(i);
     }
     const entries=Object.entries(m).sort((a,b)=>a[0].localeCompare(b[0],'he'));
-    if(sortMode==='name')entries.forEach(([,items])=>items.sort((a,b)=>(a.name||'').localeCompare(b.name||'','he')));
+    if(sortMode==='name')entries.forEach(([,items])=>items.sort((a,b)=>(a.customName||a.name||'').localeCompare(b.customName||b.name||'','he')));
     return entries;
   },[bank,sortMode,filterSrc]);
 
@@ -3177,7 +3177,7 @@ function BankScreen({trip,active,onShowOnMap,onUpdate}){
               title="הוסף לבנק יומי">📌</button>
           </div>
         )}
-        {hasLoc&&<button className="map-btn" onClick={()=>onShowOnMap&&onShowOnMap({lat:item.lat,lng:item.lng,placeId:item.placeId,name:item.name,address:item.address||''})}>🗺️</button>}
+        {hasLoc&&<button className="map-btn" onClick={()=>onShowOnMap&&onShowOnMap({lat:item.lat,lng:item.lng,placeId:item.placeId,name:item.customName||item.name,address:item.address||''})}>🗺️</button>}
       </div>
     );
   };
@@ -3308,7 +3308,7 @@ function BankScreen({trip,active,onShowOnMap,onUpdate}){
           <div onClick={()=>setNoteEditItem(null)} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.5)'}}/>
           <div style={{position:'relative',width:'100%',background:'var(--bg2)',borderRadius:'16px 16px 0 0',
             padding:16,paddingBottom:'calc(16px + var(--safe-b))'}}>
-            <div style={{fontSize:14,fontWeight:700,marginBottom:10}}>📝 הערה על "{noteEditItem.name}"</div>
+            <div style={{fontSize:14,fontWeight:700,marginBottom:10}}>📝 הערה על "{noteEditItem.customName||noteEditItem.name}"</div>
             <textarea value={noteEditVal} onChange={e=>setNoteEditVal(e.target.value)} rows={3}
               autoFocus placeholder="הוסף הערה..."
               style={{width:'100%',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:8,

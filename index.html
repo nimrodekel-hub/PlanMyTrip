@@ -1464,7 +1464,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         position:{lat:endPin.lat,lng:endPin.lng},
         map:mapInst.current,
         icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:18,fillColor:'#dc2626',fillOpacity:1,strokeColor:'#fff',strokeWeight:3},
-        title:endPin.title||'יעד',
+        title:endPin.customName||endPin.title||'יעד',
         zIndex:102,
       });
       m.addListener('click',_mkClick(endPin,'נקודת יעד'));
@@ -1579,7 +1579,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
     const m=new window.google.maps.Marker({
       position:{lat:highlightItem.lat,lng:highlightItem.lng},
       map:mapInst.current,
-      title:highlightItem.name||'',
+      title:highlightItem.customName||highlightItem.name||'',
       // ללא icon מותאם = סיכה אדומה ברירת מחדל של גוגל מפות
       animation:window.google.maps.Animation.BOUNCE,
       zIndex:200,
@@ -2310,13 +2310,13 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     }
   };
   const moveBlockToDayBank=(block)=>{
-    const bankItem={id:uid(),name:block.title||'פעילות',customName:block.customName||undefined,address:block.location||'',
+    const bankItem={id:uid(),name:block.customName||block.title||'פעילות',customName:block.customName||undefined,address:block.location||'',
       lat:block.lat||null,lng:block.lng||null,placeId:block.placeId||'',
       rating:block.placeRating||null,placeType:block.placeType||'',
       openStatus:block.placeOpenStatus||'',todayHours:block.placeTodayHours||'',
       phone:block.placePhone||'',website:block.placeWebsite||''};
     onUpdate({...day,blocks:day.blocks.filter(b=>b.id!==block.id),dayBank:[...(day.dayBank||[]),bankItem]});
-    toast(`"${block.title||'פעילות'}" הועבר לבנק היומי 📌`,'success');
+    toast(`"${block.customName||block.title||'פעילות'}" הועבר לבנק היומי 📌`,'success');
   };
   const addSuggestedItems=items=>{
     const existKeys=new Set((day.dayBank||[]).map(i=>i.placeId?'p:'+i.placeId:'n:'+(i.name||'').trim().toLowerCase()));
@@ -2325,7 +2325,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
       .map(i=>({...i,id:uid()}));
     if(!toAdd.length)return;
     onUpdate({...day,dayBank:[...(day.dayBank||[]),...toAdd]});
-    toast(toAdd.length===1?`"${toAdd[0].name}" נוסף לבנק היומי ✨`:`${toAdd.length} מקומות נוספו לבנק היומי ✨`,'success');
+    toast(toAdd.length===1?`"${toAdd[0].customName||toAdd[0].name}" נוסף לבנק היומי ✨`:`${toAdd.length} מקומות נוספו לבנק היומי ✨`,'success');
   };
   const handleDrop=(toIdx)=>{
     const from=dragIdxRef.current;
@@ -2418,7 +2418,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     if(!swapSrc)return;
     const nb={
       id:uid(),type:'activity',
-      title:swapSrc.name,location:swapSrc.address||'',
+      title:swapSrc.customName||swapSrc.name,location:swapSrc.address||'',
       startTime:targetBlock.startTime,durationMins:bDur(targetBlock),
       lat:swapSrc.lat||null,lng:swapSrc.lng||null,
       placeId:swapSrc.placeId||'',
@@ -2441,7 +2441,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     const newDayBank=[...(day.dayBank||[]).filter(i=>i.id!==swapSrc.id),oldItem];
     onUpdate({...day,blocks:newBlocks,dayBank:newDayBank});
     setSwapSrc(null);
-    toast(`"${swapSrc.name}" הוחלף עם "${targetBlock.title||'פעילות'}" 🔄`,'success');
+    toast(`"${swapSrc.customName||swapSrc.name}" הוחלף עם "${targetBlock.customName||targetBlock.title||'פעילות'}" 🔄`,'success');
   };
 
   const cascadeBlocks=()=>{
@@ -2879,7 +2879,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
             borderRadius:8,padding:'7px 10px',marginBottom:6,display:'flex',alignItems:'center',gap:8}}>
             <span>🔄</span>
             <span style={{flex:1,fontSize:11,fontWeight:700,color:'#d97706'}}>
-              לחץ על פעילות בלו"ז להחלפה עם "{swapSrc.name}"
+              לחץ על פעילות בלו"ז להחלפה עם "{swapSrc.customName||swapSrc.name}"
             </span>
             <button onClick={()=>setSwapSrc(null)}
               style={{background:'none',border:'none',cursor:'pointer',fontSize:13,
@@ -3329,8 +3329,8 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
             place=>{
               onUpdate({...day,
                 ...(f==='start'
-                  ?{startLocation:place.name,startLat:place.lat,startLng:place.lng,startPending:false}
-                  :{endLocation:place.name,endLat:place.lat,endLng:place.lng})
+                  ?{startLocation:place.customName||place.name,startLat:place.lat,startLng:place.lng,startPending:false}
+                  :{endLocation:place.customName||place.name,endLat:place.lat,endLng:place.lng})
               });
               toast(`${f==='start'?'נקודת מוצא':'נקודת יעד'} עודכנה ✓`,'success');
             }
@@ -3392,7 +3392,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
         const last=sorted[sorted.length-1];
         const start=last?addMins(last.startTime,last.durationMins||60):(day.startTime||'09:00');
         const nb=defaultBlock('activity',start);
-        nb.title=item.name;nb.location=item.address||'';
+        nb.title=item.customName||item.name;nb.location=item.address||'';
         if(item.lat){nb.lat=item.lat;nb.lng=item.lng;}
         if(item.placeId)nb.placeId=item.placeId;
         if(item.rating)nb.placeRating=item.rating;
@@ -3463,7 +3463,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                           <div style={{display:'flex',flexDirection:'column',gap:3,flexShrink:0,alignItems:'flex-end'}}>
                             {hasLoc&&<button style={{...btnS,color:'#4f8ef7'}} title="הצג במפה הפנימית"
                               onClick={()=>window.__gmFocus?.(item.lat,item.lng,17)}>🗺️</button>}
-                            {hasLoc&&<GLink url={mkMapsUrl(item.placeId,item.lat,item.lng,item.name)}
+                            {hasLoc&&<GLink url={mkMapsUrl(item.placeId,item.lat,item.lng,item.customName||item.name)}
                               onClick={e=>e.stopPropagation()}/>}
                             <button className="btn btn-primary btn-sm" style={{fontSize:10,padding:'3px 8px'}}
                               onClick={()=>addDayBankItemToSchedule(item)}>➕ ללוז</button>
@@ -3507,13 +3507,13 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
   const[nameVal,setNameVal]=useState(item.customName||item.name||'');
   useEffect(()=>{setNoteVal(item.note||'');setShowNote(!!(item.note));},[item.id,item.note]);
   useEffect(()=>{setNameVal(item.customName||item.name||'');},[item.id,item.customName,item.name]);
-  const focusMap=()=>{if(item.lat){onLocate?.(item.lat,item.lng);onFocusItem?.(item.lat,item.lng,item.name);}};
+  const focusMap=()=>{if(item.lat){onLocate?.(item.lat,item.lng);onFocusItem?.(item.lat,item.lng,item.customName||item.name);}};
   const saveNote=(val)=>{if(onNoteChange&&val!==item.note)onNoteChange(item.id,val);};
   const doSaveNameWith=(val)=>{onSaveCustomName?.(item.placeId,item.id,val);};
   const doSaveName=()=>{doSaveNameWith(nameVal);setNameEdit(false);toast(`שם עודכן: "${nameVal}"`,nameVal?'success':'info');};
   const smallBtnStyle={fontSize:11,background:'var(--surface)',border:'1px solid var(--border)',borderRadius:4,padding:'2px 5px',cursor:'pointer',fontFamily:'Heebo,Arial,sans-serif',lineHeight:1.4};
   /* קישור גוגל מפות — מה-url שנשמר בייבוא, או בנה מ-placeId */
-  const mapsUrl=item.url||mkMapsUrl(item.placeId,item.lat,item.lng,item.name);
+  const mapsUrl=item.url||mkMapsUrl(item.placeId,item.lat,item.lng,item.customName||item.name);
   const srcInfo=BANK_SRC_PICKER[item._listSource]||null;
 
   return <div className="interest-item" style={{marginBottom:6,flexDirection:'column',alignItems:'stretch',gap:8,
@@ -3692,7 +3692,7 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,onFocusRoute
     setDayOffset(prev=>Math.max(0,Math.min(prev,trip.days.length-2-((trip.days.length-1)%DAYS_PER_PAGE))));
   };
   const moveBlockToBank=(block,dayId)=>{
-    const bankItem={id:uid(),name:block.title||'פעילות',address:block.location||'',
+    const bankItem={id:uid(),name:block.customName||block.title||'פעילות',customName:block.customName||undefined,address:block.location||'',
       lat:block.lat,lng:block.lng,placeId:block.placeId,
       rating:block.placeRating,userRatingsTotal:block.placeUserRatings,
       openStatus:block.placeOpenStatus,todayHours:block.placeTodayHours,
@@ -3702,7 +3702,7 @@ function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,onFocusRoute
       interestBank:[...trip.interestBank,bankItem],
       days:trip.days.map(d=>d.id===dayId?{...d,blocks:d.blocks.filter(b=>b.id!==block.id)}:d)
     });
-    toast(`"${bankItem.name}" הועבר לבנק האטרקציות`,'success');
+    toast(`"${block.customName||block.title||'פעילות'}" הועבר לבנק האטרקציות`,'success');
   };
 
   // במצב compact — תצוגה רגילה אנכית (עמודה צרה בתצוגת 3 עמודות)
@@ -4024,7 +4024,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     }
     const entries=Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0],'he'));
     if(sortMode==='name'){
-      entries.forEach(([,items])=>items.sort((a,b)=>(a.name||'').localeCompare(b.name||'','he')));
+      entries.forEach(([,items])=>items.sort((a,b)=>(a.customName||a.name||'').localeCompare(b.customName||b.name||'','he')));
     }
     return entries;
   },[trip.interestBank,sortMode,filterSrc]);
@@ -4046,7 +4046,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     if(q) items=items.filter(i=>(i.customName||'').toLowerCase().includes(q)||(i.name||'').toLowerCase().includes(q)||(i.address||'').toLowerCase().includes(q)||(i.placeType||'').toLowerCase().includes(q));
     // מיון
     if(sortMode==='name'){
-      items.sort((a,b)=>(a.name||'').localeCompare(b.name||'','he'));
+      items.sort((a,b)=>(a.customName||a.name||'').localeCompare(b.customName||b.name||'','he'));
     } else if(sortMode==='distance'&&mapCenter){
       items=items.map(i=>({...i,_dist:i.lat&&i.lng?haversineKm(mapCenter.lat,mapCenter.lng,i.lat,i.lng):Infinity}));
       items.sort((a,b)=>a._dist-b._dist);
@@ -4081,9 +4081,9 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
   const addItemToDayBank=(dayId,item)=>{
     const day=trip.days.find(d=>d.id===dayId);if(!day)return;
     const already=(day.dayBank||[]).some(i=>i.placeId&&i.placeId===item.placeId);
-    if(already){toast(`"${item.name}" כבר בבנק היומי`,'info');return;}
+    if(already){toast(`"${item.customName||item.name}" כבר בבנק היומי`,'info');return;}
     onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,dayBank:[...(d.dayBank||[]),{...item,id:uid()}]}:d)});
-    toast(`"${item.name}" נוסף לבנק היומי 📌`,'success');
+    toast(`"${item.customName||item.name}" נוסף לבנק היומי 📌`,'success');
   };
 
   const setItemAsStart=(dayId,item)=>{
@@ -4114,7 +4114,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     if(item.photoUrl)nb.placePhotoUrl=item.photoUrl;
     if(item.placeType)nb.placeType=item.placeType;
     onUpdate({...trip,days:trip.days.map(d=>d.id===dayId?{...d,blocks:[...d.blocks,nb]}:d)});
-    toast(`"${item.name}" נוסף ליום`,'success');
+    toast(`"${item.customName||item.name}" נוסף ליום`,'success');
   };
 
   /* ── ליבת ה-enrichment — Promise-based, ללא תלות ב-state ── */
@@ -6097,7 +6097,7 @@ function ReportTab({trip}){
     if(trip.interestBank.length>0){
       lines.push(hr(),'🌟 בנק אטרקציות',hr());
       trip.interestBank.forEach(item=>{
-        lines.push(`• ${item.name}${item.placeType?' ['+item.placeType+']':''}${item.address?' — '+item.address:''}`);
+        lines.push(`• ${item.customName||item.name}${item.placeType?' ['+item.placeType+']':''}${item.address?' — '+item.address:''}`);
         if(item.rating) lines.push(`  ⭐ ${item.rating}`);
         if(item.phone) lines.push(`  📞 ${item.phone}`);
         if(item.website) lines.push(`  🌐 ${item.website}`);
@@ -6261,7 +6261,7 @@ function ReportTab({trip}){
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:8}}>
             {trip.interestBank.map(item=>(
               <div key={item.id} style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:8,padding:'10px 12px'}}>
-                <div style={{fontWeight:600,fontSize:13}}>{item.name}</div>
+                <div style={{fontWeight:600,fontSize:13}}>{item.customName||item.name}</div>
                 {item.placeType&&<div style={{fontSize:10,color:'var(--text3)',marginTop:1}}>{item.placeType}</div>}
                 {item.address&&<div style={{fontSize:11,color:'var(--text3)',marginTop:3,lineHeight:1.4}}>📍 {item.address}</div>}
                 <div style={{display:'flex',gap:8,marginTop:4,flexWrap:'wrap'}}>
@@ -6730,7 +6730,7 @@ function App(){
     const last=sorted[sorted.length-1];
     const start=last?addMins(last.startTime,last.durationMins):(day.currentTime||'09:00');
     const newBlock=defaultBlock('activity',start);
-    newBlock.title=item.name;
+    newBlock.title=item.customName||item.name;
     if(item.customName) newBlock.customName=item.customName;
     newBlock.location=item.address||'';
     if(item.lat){newBlock.lat=item.lat; newBlock.lng=item.lng;}
@@ -6748,7 +6748,7 @@ function App(){
     const bankAlready=item.placeId&&(trip.interestBank||[]).some(i=>i.placeId===item.placeId);
     const newBank=bankAlready
       ?(trip.interestBank||[])
-      :[...(trip.interestBank||[]),{id:uid(),name:item.name,address:item.address||'',
+      :[...(trip.interestBank||[]),{id:uid(),name:item.customName||item.name,customName:item.customName||undefined,address:item.address||'',
           placeId:item.placeId||'',lat:item.lat,lng:item.lng,
           types:item.types||[],placeType:item.placeType||'',
           rating:item.rating,website:item.website||'',
@@ -6760,7 +6760,7 @@ function App(){
     if(!trip)return;
     const day=trip.days.find(d=>d.id===dayId);if(!day)return;
     const already=(day.dayBank||[]).some(i=>i.placeId&&i.placeId===item.placeId&&item.placeId);
-    if(already){toast(`"${item.name}" כבר בבנק היומי`,'info');return;}
+    if(already){toast(`"${item.customName||item.name}" כבר בבנק היומי`,'info');return;}
     updTrip({...trip,days:trip.days.map(d=>d.id===dayId?{...d,dayBank:[...(d.dayBank||[]),{...item,id:uid()}]}:d)});
   },[trip,updTrip]);
 
