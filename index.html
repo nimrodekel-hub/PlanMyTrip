@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v159';
+const APP_VERSION = 'v160';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -641,6 +641,22 @@ function Toasts(){
       <span>{t.type==='success'?'✅':t.type==='error'?'❌':'ℹ️'}</span><span>{t.msg}</span>
     </div>
   ))}</div>;
+}
+
+/* ══════════════════════════════════
+   קישור גוגל מפות — אייקון G אחיד
+══════════════════════════════════ */
+function GLink({lat,lng,url,title='פתח בגוגל מפות',style={}}){
+  const href=url||(lat!=null&&lng!=null?`https://www.google.com/maps?q=${lat},${lng}`:'#');
+  return(
+    <a href={href} target="_blank" rel="noreferrer" title={title}
+      style={{display:'inline-flex',alignItems:'center',justifyContent:'center',
+        width:24,height:24,borderRadius:6,textDecoration:'none',flexShrink:0,
+        border:'1px solid rgba(66,133,244,.35)',background:'rgba(66,133,244,.08)',
+        ...style}}>
+      <span style={{fontWeight:900,fontSize:12,color:'#4285f4',fontFamily:'Arial,sans-serif',lineHeight:1}}>G</span>
+    </a>
+  );
 }
 
 /* ══════════════════════════════════
@@ -1893,15 +1909,12 @@ function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onFocusItem,
                 onClick={e=>{e.stopPropagation();onFocusRoute(block);}}>🗺️</button>
             )}
             {block.lat&&onFocusItem&&(
-              <button style={{...btnStyle,color:'#6b7280'}} title="הצג במפה"
-                onClick={e=>{e.stopPropagation();onFocusItem(block.lat,block.lng,block.title);}}>📍</button>
+              <button style={{...btnStyle,color:'#4f8ef7'}} title="הצג במפה הפנימית"
+                onClick={e=>{e.stopPropagation();onFocusItem(block.lat,block.lng,block.title);}}>🗺️</button>
             )}
             {(block.lat||block.placeId)&&(
-              <a href={mkMapsUrl(block.placeId,block.lat,block.lng,block.title)}
-                target="_blank" rel="noreferrer"
-                style={{...btnStyle,color:'#4285F4',textDecoration:'none',display:'inline-flex',alignItems:'center'}}
-                title="פתח בגוגל מפות"
-                onClick={e=>e.stopPropagation()}>🗺️</a>
+              <GLink url={mkMapsUrl(block.placeId,block.lat,block.lng,block.title)}
+                style={{marginRight:0}} onClick={e=>e.stopPropagation()}/>
             )}
             {onMoveToBank&&(
               <button style={{...btnStyle,color:'#f59e0b'}} title="העבר לבנק האטרקציות"
@@ -2559,13 +2572,10 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                     fontFamily:'Heebo,sans-serif'}}/>
                 <button title="בחר מהבנק או מהמפה" onClick={()=>setLocationPicking({field:'start'})}
                   className="btn btn-secondary btn-icon btn-sm" style={{fontSize:12,padding:'3px 5px'}}>📍</button>
-                {day.startLat&&day.startLng&&<button title="הצג במפה"
+                {day.startLat&&day.startLng&&<button title="הצג במפה הפנימית"
                   style={{background:'none',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',padding:'3px 5px',fontSize:12}}
-                  onClick={()=>window.__gmFocus?.(day.startLat,day.startLng,16)}>🔍</button>}
-                {day.startLat&&day.startLng&&<a href={`https://www.google.com/maps?q=${day.startLat},${day.startLng}`}
-                  target="_blank" rel="noreferrer"
-                  style={{background:'none',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',padding:'3px 5px',fontSize:12,textDecoration:'none',display:'inline-flex',alignItems:'center'}}
-                  title="פתח בגוגל מפות">🗺️</a>}
+                  onClick={()=>window.__gmFocus?.(day.startLat,day.startLng,16)}>🗺️</button>}
+                {day.startLat&&day.startLng&&<GLink lat={day.startLat} lng={day.startLng}/>}
               </div>
             </div>
             {cascadeNeeded&&(
@@ -2602,13 +2612,10 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                     fontFamily:'Heebo,sans-serif'}}/>
                 <button title="בחר מהבנק או מהמפה" onClick={()=>setLocationPicking({field:'end'})}
                   className="btn btn-secondary btn-icon btn-sm" style={{fontSize:12,padding:'3px 5px'}}>📍</button>
-                {day.endLat&&day.endLng&&<button title="הצג במפה"
+                {day.endLat&&day.endLng&&<button title="הצג במפה הפנימית"
                   style={{background:'none',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',padding:'3px 5px',fontSize:12}}
-                  onClick={()=>window.__gmFocus?.(day.endLat,day.endLng,16)}>🔍</button>}
-                {day.endLat&&day.endLng&&<a href={`https://www.google.com/maps?q=${day.endLat},${day.endLng}`}
-                  target="_blank" rel="noreferrer"
-                  style={{background:'none',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',padding:'3px 5px',fontSize:12,textDecoration:'none',display:'inline-flex',alignItems:'center'}}
-                  title="פתח בגוגל מפות">🗺️</a>}
+                  onClick={()=>window.__gmFocus?.(day.endLat,day.endLng,16)}>🗺️</button>}
+                {day.endLat&&day.endLng&&<GLink lat={day.endLat} lng={day.endLng}/>}
               </div>
             </div>
             {overrunMins>0&&(
@@ -2955,9 +2962,9 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                   {transitSearch.fromLat&&<a href={`https://www.google.com/maps/dir/?api=1&origin=${transitSearch.fromLat},${transitSearch.fromLng}&destination=${transitSearch.toLat},${transitSearch.toLng}&travelmode=${transitSearch.isWalking?'walking':'transit'}`}
                     target="_blank" rel="noreferrer"
                     style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12,padding:'7px 14px',
-                      borderRadius:8,background:'rgba(79,142,247,.12)',color:'var(--accent)',
-                      border:'1px solid rgba(79,142,247,.3)',textDecoration:'none',fontWeight:700}}>
-                    🗺️ פתח ב-Google Maps
+                      borderRadius:8,background:'rgba(66,133,244,.1)',color:'#4285f4',
+                      border:'1px solid rgba(66,133,244,.35)',textDecoration:'none',fontWeight:700}}>
+                    <span style={{fontWeight:900,fontSize:13,fontFamily:'Arial,sans-serif'}}>G</span> פתח ב-Google Maps
                   </a>}
                 </div>
               )}
@@ -3194,13 +3201,10 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
                             {item.note&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,fontStyle:'italic',lineHeight:1.4}}>📝 {item.note}</div>}
                           </div>
                           <div style={{display:'flex',flexDirection:'column',gap:3,flexShrink:0,alignItems:'flex-end'}}>
-                            {hasLoc&&<button style={{...btnS,color:'#6b7280'}} title="הצג במפה"
-                              onClick={()=>window.__gmFocus?.(item.lat,item.lng,17)}>📍</button>}
-                            {hasLoc&&<a href={mkMapsUrl(item.placeId,item.lat,item.lng,item.name)}
-                              target="_blank" rel="noreferrer"
-                              style={{...btnS,color:'#4285F4',textDecoration:'none',display:'inline-flex',alignItems:'center'}}
-                              title="פתח בגוגל מפות"
-                              onClick={e=>e.stopPropagation()}>🗺️</a>}
+                            {hasLoc&&<button style={{...btnS,color:'#4f8ef7'}} title="הצג במפה הפנימית"
+                              onClick={()=>window.__gmFocus?.(item.lat,item.lng,17)}>🗺️</button>}
+                            {hasLoc&&<GLink url={mkMapsUrl(item.placeId,item.lat,item.lng,item.name)}
+                              onClick={e=>e.stopPropagation()}/>}
                             <button className="btn btn-primary btn-sm" style={{fontSize:10,padding:'3px 8px'}}
                               onClick={()=>addDayBankItemToSchedule(item)}>➕ ללוז</button>
                             <button className="btn btn-sm"
@@ -3265,15 +3269,11 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
         {item.phone&&<div style={{fontSize:11,color:'var(--accent)',marginTop:1}}>📞 {item.phone}</div>}
         {item.website&&<a href={item.website} target="_blank" rel="noreferrer" style={{fontSize:11,color:'var(--accent)',display:'block',marginTop:1,wordBreak:'break-all'}} onClick={e=>e.stopPropagation()}>🌐 {item.website.replace(/^https?:\/\//,'').split('/')[0]}</a>}
         {/* קישור גוגל מפות — אוטומטי מהייבוא או מ-placeId, ללא צורך ב-🔍 */}
-        {mapsUrl&&<a href={mapsUrl} target="_blank" rel="noreferrer"
-          style={{fontSize:11,color:'#4285F4',display:'inline-flex',alignItems:'center',gap:3,marginTop:3,textDecoration:'none',fontWeight:600}}
-          onClick={e=>e.stopPropagation()}>
-          <span style={{fontSize:13}}>🗺️</span> פתח בגוגל מפות
-        </a>}
+        {mapsUrl&&<GLink url={mapsUrl} style={{marginTop:3}} onClick={e=>e.stopPropagation()}/>}
       </div>
       <div style={{display:'flex',flexDirection:'column',gap:4,flexShrink:0}}>
         {item.lat&&(onLocate||onFocusItem)&&(
-          <button className="btn btn-secondary btn-icon btn-sm" title="הצג במפה" onClick={focusMap}>📍</button>
+          <button className="btn btn-secondary btn-icon btn-sm" title="הצג במפה הפנימית" onClick={focusMap}>🗺️</button>
         )}
         {onEnrich&&<button className="btn btn-secondary btn-icon btn-sm"
           title={item._notFound?'נסה שוב לחפש בגוגל':item.placeId?'רענן דירוג/שעות/תמונה מגוגל':'חפש וקשר לגוגל מפות'}
