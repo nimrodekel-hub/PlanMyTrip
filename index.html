@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v163';
+const APP_VERSION = 'v164';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -1511,7 +1511,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         });
       }
     }
-  },[highlightDay]);
+  },[highlightDay,ready]);
 
   // הצגת מסלול נסיעה ספציפי (לחיצה על חלונית נסיעה בלוז)
   useEffect(()=>{
@@ -1554,7 +1554,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         }
       }
     });
-  },[routeHighlight]);
+  },[routeHighlight,ready]);
 
   // הדגשת פריט בודד — סיכה אדומה רגילה מנפנפת
   useEffect(()=>{
@@ -1572,7 +1572,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
     mapInst.current.panTo({lat:highlightItem.lat,lng:highlightItem.lng});
     if (mapInst.current.getZoom()<15) mapInst.current.setZoom(15);
     hlItemMarker.current=m;
-  },[highlightItem]);
+  },[highlightItem,ready]);
 
   if (!mapsKey) return (
     <div className="empty-state" style={{height:'100%',background:'var(--bg)'}}>
@@ -6149,7 +6149,7 @@ function App(){
     if(shownDayIds===null){
       // כל הימים גלויים → בחר יום זה בלבד + מרכז מפה
       setShownDayIds(new Set([dayId]));
-      if(day){setHlDay({dayId,dayIndex:dayIdx,blocks:mkBlocks(day)});setHlRoute(null);}
+      if(day){setHlDay({dayId,dayIndex:dayIdx,blocks:mkBlocks(day)});setHlRoute(null);setTab('map');}
       return;
     }
     const next=new Set(shownDayIds);
@@ -6164,7 +6164,7 @@ function App(){
       if(next.size===days.length){setShownDayIds(null);setHlDay(null);}
       else{
         setShownDayIds(next);
-        if(day){setHlDay({dayId,dayIndex:dayIdx,blocks:mkBlocks(day)});setHlRoute(null);}
+        if(day){setHlDay({dayId,dayIndex:dayIdx,blocks:mkBlocks(day)});setHlRoute(null);setTab('map');}
       }
     }
   },[trip,shownDayIds]);
@@ -6535,7 +6535,7 @@ function App(){
           </div>
         </div>
       );
-      case 'timeline': return <TimelineTab trip={trip} onUpdate={updTrip} onPickFromMap={pickLocationFromMap} settings={settings} shownDayIds={shownDayIds} onToggleDayVisibility={toggleDayVisibility}/>;
+      case 'timeline': return <TimelineTab trip={trip} onUpdate={updTrip} onPickFromMap={pickLocationFromMap} settings={settings} shownDayIds={shownDayIds} onToggleDayVisibility={toggleDayVisibility} onFocusItem={(lat,lng,name)=>{setHlItem({lat,lng,name});setHlDay(null);setHlRoute(null);setTab('map');}} onFocusRoute={r=>{setHlRoute(r);setHlDay(null);setTab('map');}}/>;
       case 'expenses': return <ExpensesTab trip={trip} onUpdate={updTrip}/>;
       case 'documents': return <DocsTab trip={trip} onUpdate={updTrip} settings={settings}/>;
       case 'packing': return <Checklist title="רשימת ציוד" emoji="🎒" items={trip.packingList} onUpdate={items=>updTrip({...trip,packingList:items})}/>;
