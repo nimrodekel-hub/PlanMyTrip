@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v166';
+const APP_VERSION = 'v167';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -889,6 +889,124 @@ const makeSearchMarkerIcon=types=>{
 };
 
 /* ══════════════════════════════════
+   פאנל מידע מקום (תחתון) — מחליף את InfoWindow
+══════════════════════════════════ */
+function MapBottomSheet({place,trip,onClose,onAddToBank,onAddToDay,onAddToDayBank,onSetDayLocation}){
+  const [editName,setEditName]=useState(place.name||'');
+  const [selDay,setSelDay]=useState('');
+  const [selDayBank,setSelDayBank]=useState('');
+  const [selLoc,setSelLoc]=useState('');
+  useEffect(()=>{setEditName(place.name||'');},[place.name]);
+  const days=trip?.days||[];
+  const daysOpts=days.map((d,i)=><option key={d.id} value={d.id}>יום {i+1}{d.location?' — '+d.location:''}{d.date?' ('+d.date+')':''}</option>);
+  const mapsUrl=mkMapsUrl(place.placeId,place.lat,place.lng,place.name);
+  const shortSite=place.website?place.website.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]:'';
+  const price=place.priceLevel?'₪'.repeat(place.priceLevel):'';
+  const isOpen=place.openStatus==='פתוח עכשיו';
+  const openColor=isOpen?'#22c55e':'#ef4444';
+  const handleBank=()=>{
+    onAddToBank({...place,name:editName});
+    onClose();
+    toast(`"${editName}" נוסף לבנק האטרקציות`,'success');
+  };
+  const handleDay=()=>{
+    if(!selDay)return;
+    onAddToDay(selDay,{...place,name:editName});
+    setSelDay('');onClose();
+    toast(`"${editName}" נוסף ללוז היומי ✓`,'success');
+  };
+  const handleDayBank=()=>{
+    if(!selDayBank)return;
+    onAddToDayBank(selDayBank,{id:uid(),name:editName,address:place.address||'',lat:place.lat,lng:place.lng,
+      placeId:place.placeId||'',rating:place.rating,placeType:place.placeType||'',
+      openStatus:place.openStatus||'',todayHours:place.todayHours||'',phone:place.phone||'',website:place.website||''});
+    setSelDayBank('');onClose();
+    toast(`"${editName}" נוסף לבנק היומי 📌`,'success');
+  };
+  const handleSetLoc=(type)=>{
+    if(!selLoc)return;
+    onSetDayLocation(selLoc,type,editName,place.lat,place.lng,place);
+    setSelLoc('');onClose();
+    toast(`"${editName}" הוגדר כנקודת ${type==='start'?'מוצא':'יעד'} ✓`,'success');
+  };
+  const selStyle={flex:1,border:'1px solid var(--border)',borderRadius:6,padding:'6px 8px',fontSize:11,
+    fontFamily:'Heebo,Arial,sans-serif',direction:'rtl',minWidth:0,background:'var(--bg)',color:'var(--text)'};
+  const addBtnStyle=(bg)=>({background:bg,color:'#fff',border:'none',borderRadius:6,padding:'6px 12px',
+    fontSize:12,cursor:'pointer',fontFamily:'Heebo,Arial,sans-serif',fontWeight:600,flexShrink:0,whiteSpace:'nowrap'});
+  return(
+    <div style={{position:'absolute',bottom:0,left:0,right:0,zIndex:300,
+      background:'var(--bg)',borderTop:'2px solid var(--accent)',
+      borderRadius:'14px 14px 0 0',padding:'12px 16px 20px',
+      boxShadow:'0 -4px 24px rgba(0,0,0,0.25)',
+      animation:'slideUp 0.22s ease-out',
+      fontFamily:'Heebo,Arial,sans-serif',direction:'rtl',
+      maxHeight:'65%',overflowY:'auto'}}>
+      {/* ידית + סגירה */}
+      <div style={{display:'flex',alignItems:'center',marginBottom:10}}>
+        <div style={{flex:1,display:'flex',justifyContent:'center'}}>
+          <div style={{width:38,height:4,background:'var(--border)',borderRadius:2,opacity:0.6}}/>
+        </div>
+        <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',fontSize:20,
+          color:'var(--text2)',padding:'0 0 0 4px',lineHeight:1}}>✕</button>
+      </div>
+      {/* שם */}
+      <input value={editName} onChange={e=>setEditName(e.target.value)}
+        style={{width:'100%',border:'none',borderBottom:'2px solid var(--border)',
+          padding:'2px 0 6px',fontSize:16,fontWeight:700,
+          fontFamily:'Heebo,Arial,sans-serif',direction:'rtl',
+          color:'var(--text)',background:'none',outline:'none',
+          boxSizing:'border-box',marginBottom:8}}/>
+      {/* סוג + דירוג + מחיר */}
+      <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:place.address?4:8}}>
+        {place.placeType&&<span style={{fontSize:11,color:'#fff',background:'#888',borderRadius:10,padding:'1px 7px'}}>{place.placeType}</span>}
+        {place.rating&&<span style={{fontSize:12,color:'#f59e0b',fontWeight:700}}>★ {place.rating}</span>}
+        {place.userRatingsTotal&&<span style={{fontSize:11,color:'#aaa'}}>({place.userRatingsTotal.toLocaleString()})</span>}
+        {price&&<span style={{fontSize:12,color:'#22c55e',fontWeight:700}}>{price}</span>}
+      </div>
+      {/* כתובת */}
+      {place.address&&<div style={{fontSize:12,color:'var(--text2)',marginBottom:6,lineHeight:1.4}}>{place.address}</div>}
+      {/* שעות */}
+      {(place.openStatus||place.todayHours)&&<div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+        {place.openStatus&&<span style={{fontSize:12,fontWeight:600,color:openColor}}>{isOpen?'✅':'🔴'} {place.openStatus}</span>}
+        {place.todayHours&&<span style={{fontSize:11,color:'var(--text2)'}}>🕐 {place.todayHours}</span>}
+      </div>}
+      {/* קישורים */}
+      <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:14,flexWrap:'wrap'}}>
+        {shortSite&&<a href={place.website} target="_blank" rel="noreferrer" style={{fontSize:12,color:'#1a73e8',textDecoration:'none'}}>🌐 {shortSite}</a>}
+        {place.phone&&<span style={{fontSize:12,color:'var(--text2)'}}>📞 {place.phone}</span>}
+        {mapsUrl&&<a href={mapsUrl} target="_blank" rel="noreferrer" style={{fontSize:12,color:'#1a73e8',textDecoration:'none'}}>↗ גוגל מפות</a>}
+        {place.placeId&&!place.rating&&!place._loading&&<button onClick={()=>window.__gmShowPlace?.(place.placeId,place.lat,place.lng)} style={{fontSize:11,color:'#1a73e8',background:'none',border:'none',cursor:'pointer',padding:0,fontFamily:'Heebo,Arial,sans-serif'}}>🔄 טען פרטים</button>}
+      </div>
+      {/* טעינה */}
+      {place._loading&&<div style={{textAlign:'center',padding:'12px 0',color:'var(--text2)',fontSize:14}}>⏳ טוען פרטי מקום...</div>}
+      {/* כפתורי פעולה */}
+      {!place._loading&&<div style={{display:'flex',flexDirection:'column',gap:7}}>
+        <button onClick={handleBank} style={{width:'100%',background:'#f59e0b',color:'#fff',border:'none',borderRadius:8,padding:'9px 0',fontSize:13,cursor:'pointer',fontFamily:'Heebo,Arial,sans-serif',fontWeight:600}}>🌟 שמור לבנק</button>
+        <div style={{display:'flex',gap:6}}>
+          <select value={selDayBank} onChange={e=>setSelDayBank(e.target.value)} style={selStyle}>
+            <option value="">📌 בנק יומי...</option>{daysOpts}
+          </select>
+          <button onClick={handleDayBank} style={addBtnStyle('#8b5cf6')}>הוסף</button>
+        </div>
+        <div style={{display:'flex',gap:6}}>
+          <select value={selDay} onChange={e=>setSelDay(e.target.value)} style={selStyle}>
+            <option value="">➕ הוסף ליום...</option>{daysOpts}
+          </select>
+          <button onClick={handleDay} style={addBtnStyle('#4f8ef7')}>הוסף</button>
+        </div>
+        <div style={{display:'flex',gap:6}}>
+          <select value={selLoc} onChange={e=>setSelLoc(e.target.value)} style={selStyle}>
+            <option value="">📍 קבע מוצא/יעד...</option>{daysOpts}
+          </select>
+          <button onClick={()=>handleSetLoc('start')} style={addBtnStyle('#22c55e')} title="קבע כנקודת מוצא">🟢</button>
+          <button onClick={()=>handleSetLoc('end')} style={addBtnStyle('#ef4444')} title="קבע כנקודת יעד">🔴</button>
+        </div>
+      </div>}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════
    מפת גוגל
 ══════════════════════════════════ */
 function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateBankItem,highlightDay,highlightItem,routeHighlight,mapPickCallbackRef,mapPickLabel,onCancelMapPick,onAddToDayBank,shownDayIds}){
@@ -901,6 +1019,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
   const [wxData,setWxData]=useState(null);
   const [wxLabel,setWxLabel]=useState('');
   const [wxLoading,setWxLoading]=useState(false);
+  const [mapSheet,setMapSheet]=useState(null);
   const searchBoxRef=useRef(null);
   // refs כדי שהפונקציות הגלובליות תמיד יקבלו את הנתונים העדכניים
   const tripRef=useRef(trip);
@@ -1065,115 +1184,27 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       window.__gmSearch=doSearch;
     }
 
-    // InfoWindow גלובלי
-    const iwPlace={};
-    const iw=new window.google.maps.InfoWindow({maxWidth:230,disableAutoPan:false});
+    // גלובל לפתיחת פאנל מידע מקום (מחליף InfoWindow)
+    window.__gmShowSheet=(p)=>setMapSheet(p);
 
-    const buildIwContent=(p)=>{
-      const days=tripRef.current?.days||[];
-      const daysHtml=days.length>0
-        ? days.map((d,i)=>`<option value="${d.id}">יום ${i+1}${d.location?' — '+d.location:''}${d.date?' ('+d.date+')':''}</option>`).join('')
-        : '<option disabled>אין ימים בלוח הזמנים</option>';
-      const price=p.priceLevel?'₪'.repeat(p.priceLevel):'';
-      const openColor=p.openStatus==='פתוח עכשיו'?'#22c55e':'#ef4444';
-      const shortSite=p.website?p.website.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]:'';
-      const mapsUrl=mkMapsUrl(p.placeId,p.lat,p.lng,p.name);
-      return `<div style="font-family:Heebo,Arial,sans-serif;direction:rtl;text-align:right;width:210px;padding:2px 0 0">
-        <!-- שם + סוג + דירוג בשורה אחת -->
-        <div style="padding:8px 10px 0">
-          <input id="gm-name-edit" value="${(p.name||'').replace(/"/g,'&quot;')}"
-            style="width:100%;border:none;border-bottom:1px solid #e0e0e0;padding:2px 0 4px;font-size:14px;font-weight:700;font-family:Heebo,Arial,sans-serif;direction:rtl;color:#111;background:none;outline:none;box-sizing:border-box;margin-bottom:3px"/>
-          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:4px">
-            ${p.placeType?`<span style="font-size:10px;color:#fff;background:#888;border-radius:10px;padding:1px 6px">${p.placeType}</span>`:''}
-            ${p.rating?`<span style="font-size:11px;color:#f59e0b;font-weight:700">★ ${p.rating}</span>`:''}
-            ${p.userRatingsTotal?`<span style="font-size:10px;color:#aaa">(${p.userRatingsTotal.toLocaleString()})</span>`:''}
-            ${price?`<span style="font-size:11px;color:#22c55e;font-weight:700">${price}</span>`:''}
-          </div>
-          ${p.address?`<div style="font-size:10px;color:#888;line-height:1.35;margin-bottom:4px;max-height:28px;overflow:hidden">${p.address}</div>`:''}
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-            ${p.openStatus?`<span style="font-size:11px;font-weight:600;color:${openColor}">${p.openStatus==='פתוח עכשיו'?'✅':'🔴'} ${p.openStatus}</span>`:''}
-            ${p.todayHours?`<span style="font-size:10px;color:#777">🕐 ${p.todayHours}</span>`:''}
-          </div>
-          <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
-            ${shortSite?`<a href="${p.website}" target="_blank" rel="noreferrer" style="font-size:11px;color:#1a73e8;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px">🌐 ${shortSite}</a>`:''}
-            ${p.phone?`<span style="font-size:11px;color:#555">📞 ${p.phone}</span>`:''}
-            ${mapsUrl?`<a href="${mapsUrl}" target="_blank" rel="noreferrer" style="font-size:10px;color:#1a73e8;text-decoration:none;margin-right:auto">↗ גוגל מפות</a>`:''}
-            ${p.placeId&&!p.rating?`<button onclick="window.__gmShowPlace('${p.placeId}',${p.lat},${p.lng})" style="font-size:10px;color:#1a73e8;background:none;border:none;cursor:pointer;padding:0;font-family:Heebo,Arial,sans-serif" title="טען נתונים עדכניים מגוגל">🔄 טען פרטים</button>`:''}
-          </div>
-        </div>
-        <!-- כפתורי פעולה -->
-        <div style="border-top:1px solid #f0f0f0;padding:6px 8px;display:flex;flex-direction:column;gap:5px">
-          <button onclick="window.__gmBank()"
-            style="background:#f59e0b;color:#fff;border:none;border-radius:6px;padding:7px 0;font-size:12px;cursor:pointer;width:100%;font-family:Heebo,Arial,sans-serif;font-weight:600">
-            🌟 שמור לבנק
-          </button>
-          <div style="display:flex;gap:5px;align-items:center">
-            <select id="gm-daybank-sel" style="flex:1;border:1px solid #ddd;border-radius:6px;padding:5px 6px;font-size:11px;font-family:Heebo,Arial,sans-serif;direction:rtl;min-width:0">
-              <option value="">📌 בנק יומי...</option>
-              ${daysHtml}
-            </select>
-            <button onclick="window.__gmDayBank()"
-              style="background:#8b5cf6;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:Heebo,Arial,sans-serif;font-weight:600;white-space:nowrap;flex-shrink:0">
-              הוסף
-            </button>
-          </div>
-          <div style="display:flex;gap:5px;align-items:center">
-            <select id="gm-day-sel" style="flex:1;border:1px solid #ddd;border-radius:6px;padding:5px 6px;font-size:11px;font-family:Heebo,Arial,sans-serif;direction:rtl;min-width:0">
-              <option value="">➕ הוסף ליום...</option>
-              ${daysHtml}
-            </select>
-            <button onclick="window.__gmDay()"
-              style="background:#4f8ef7;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:Heebo,Arial,sans-serif;font-weight:600;white-space:nowrap;flex-shrink:0">
-              הוסף
-            </button>
-          </div>
-          <div style="display:flex;gap:5px;align-items:center">
-            <select id="gm-loc-sel" style="flex:1;border:1px solid #ddd;border-radius:6px;padding:5px 6px;font-size:11px;font-family:Heebo,Arial,sans-serif;direction:rtl;min-width:0">
-              <option value="">📍 קבע מוצא/יעד ליום...</option>
-              ${daysHtml}
-            </select>
-            <button onclick="window.__gmSetStart()" title="קבע כנקודת מוצא"
-              style="background:#22c55e;color:#fff;border:none;border-radius:6px;padding:6px 8px;font-size:13px;cursor:pointer;font-family:Heebo,Arial,sans-serif;font-weight:700;flex-shrink:0">
-              🟢
-            </button>
-            <button onclick="window.__gmSetEnd()" title="קבע כנקודת יעד"
-              style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 8px;font-size:13px;cursor:pointer;font-family:Heebo,Arial,sans-serif;font-weight:700;flex-shrink:0">
-              🔴
-            </button>
-          </div>
-        </div>
-      </div>`;
-    };
-
-    // חשיפת globals לשימוש ב-markers effect
-    window.__gmIw=iw;
-    window.__gmIwPlace=iwPlace;
-    window.__gmBuild=buildIwContent;
     window.__gmGetCenter=()=>{ const c=map.getCenter(); return c?{lat:c.lat(),lng:c.lng()}:null; };
 
     // ── מרקרי תוצאות חיפוש — מנוהלים בנפרד מסמני הטיול ──
     const searchMarkersArr=[];
     window.__gmSearchMarkers=searchMarkersArr;
-    window.__gmClearSearch=()=>{ searchMarkersArr.forEach(m=>m.setMap(null)); searchMarkersArr.length=0; iw.close(); };
+    window.__gmClearSearch=()=>{ searchMarkersArr.forEach(m=>m.setMap(null)); searchMarkersArr.length=0; window.__gmShowSheet?.(null); };
 
     // cache לסשן — מונע קריאות כפולות לאותו placeId
     if(!window.__placeCache) window.__placeCache={};
 
-    // ── Helper: טוען פרטי מקום מגוגל ומציג InfoWindow ──
+    // ── Helper: טוען פרטי מקום מגוגל ומציג פאנל מידע ──
     const showPlaceById=async(placeId,lat0,lng0)=>{
       // אם כבר טענו מקום זה בסשן הנוכחי — השתמש בcache
       if(window.__placeCache[placeId]){
-        const cached=window.__placeCache[placeId];
-        iwPlace.data=cached;
-        iw.setContent(buildIwContent(cached));
-        iw.setPosition({lat:cached.lat,lng:cached.lng});
-        iw.open(map);
+        window.__gmShowSheet?.(window.__placeCache[placeId]);
         return;
       }
-      iwPlace.data={name:'טוען...',address:'',lat:lat0,lng:lng0,placeId};
-      iw.setContent('<div style="padding:16px;font-family:Heebo,sans-serif;direction:rtl;font-size:13px;color:#555">⏳ טוען פרטי מקום...</div>');
-      iw.setPosition({lat:lat0,lng:lng0});
-      iw.open(map);
+      window.__gmShowSheet?.({name:'טוען...',address:'',lat:lat0,lng:lng0,placeId,_loading:true});
       const svc=new window.google.maps.places.PlacesService(map);
       const OK_ST=window.google.maps.places.PlacesServiceStatus.OK;
       const dow=new Date().getDay(),wdIdx=dow===0?6:dow-1;
@@ -1200,10 +1231,9 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         const _noGoogle=!v1&&!basic&&!geo;
         const placeType=getPlaceTypeLabel(v1?.types||basic?.types||[]);
         const placeData={name,address,lat,lng,placeId,photoUrl,placeType,rating:details.rating||null,userRatingsTotal:details.userRatingsTotal||null,openStatus:details.openStatus||'',todayHours:details.todayHours||'',allHours:details.allHours||'',phone:details.phone||'',website:details.website||'',reviews:details.reviews||[]};
-        iwPlace.data=placeData;
         // שמור בcache לסשן — מניעת קריאות כפולות
         if(placeId) window.__placeCache[placeId]=placeData;
-        iw.setContent(buildIwContent({name,address,lat,lng,placeId,photoUrl,...details,_noGoogle}));
+        window.__gmShowSheet?.(placeData);
         // persist fresh data back to any matching bank item — so data survives future stale placeId
         if(placeId&&onUpdateBankRef.current&&tripRef.current){
           const bank=tripRef.current.interestBank||[];
@@ -1221,68 +1251,11 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
           }
         }
       }catch(err){
-        iwPlace.data={name:'מקום',address:'',lat:lat0,lng:lng0,placeId};
-        iw.setContent(buildIwContent({name:'מקום',address:'',lat:lat0,lng:lng0,placeId}));
+        window.__gmShowSheet?.({name:'מקום',address:'',lat:lat0,lng:lng0,placeId});
       }
     };
 
     window.__gmShowPlace=showPlaceById;
-
-    window.__gmBank=()=>{
-      if (!iwPlace.data) return;
-      const p=iwPlace.data;
-      const nameEl=document.getElementById('gm-name-edit');
-      const name=nameEl?.value?.trim()||p.name;
-      onAddToBankRef.current({name,address:p.address,lat:p.lat,lng:p.lng,placeId:p.placeId,
-        rating:p.rating,userRatingsTotal:p.userRatingsTotal,openStatus:p.openStatus,
-        todayHours:p.todayHours,allHours:p.allHours,phone:p.phone,website:p.website,photoUrl:p.photoUrl,placeType:p.placeType||''});
-      iw.close();
-      toast(`"${name}" נוסף לבנק האטרקציות`,'success');
-    };
-    window.__gmDay=()=>{
-      const sel=document.getElementById('gm-day-sel');
-      if (!sel||!sel.value||!iwPlace.data) return;
-      const p=iwPlace.data;
-      const nameEl=document.getElementById('gm-name-edit');
-      const name=nameEl?.value?.trim()||p.name;
-      onAddToDayRef.current(sel.value,{name,address:p.address,lat:p.lat,lng:p.lng,placeId:p.placeId,
-        rating:p.rating,userRatingsTotal:p.userRatingsTotal,openStatus:p.openStatus,
-        todayHours:p.todayHours,allHours:p.allHours,phone:p.phone,website:p.website,photoUrl:p.photoUrl,placeType:p.placeType||''});
-      iw.close();
-      toast(`"${name}" נוסף ללוז היומי ולבנק האטרקציות ✓`,'success');
-    };
-    window.__gmSetStart=()=>{
-      const sel=document.getElementById('gm-loc-sel');
-      if(!sel||!sel.value||!iwPlace.data)return;
-      const p=iwPlace.data;
-      const nameEl=document.getElementById('gm-name-edit');
-      const name=nameEl?.value?.trim()||p.name;
-      onSetDayLocationRef.current(sel.value,'start',name,p.lat,p.lng,p);
-      iw.close();
-      toast(`"${name}" הוגדר כנקודת מוצא ונוסף לבנק ✓`,'success');
-    };
-    window.__gmSetEnd=()=>{
-      const sel=document.getElementById('gm-loc-sel');
-      if(!sel||!sel.value||!iwPlace.data)return;
-      const p=iwPlace.data;
-      const nameEl=document.getElementById('gm-name-edit');
-      const name=nameEl?.value?.trim()||p.name;
-      onSetDayLocationRef.current(sel.value,'end',name,p.lat,p.lng,p);
-      iw.close();
-      toast(`"${name}" הוגדר כנקודת יעד ונוסף לבנק ✓`,'success');
-    };
-
-    window.__gmDayBank=()=>{
-      const sel=document.getElementById('gm-daybank-sel');
-      if(!sel||!sel.value||!iwPlace.data)return;
-      const p=iwPlace.data;
-      const nameEl=document.getElementById('gm-name-edit');
-      const name=nameEl?.value?.trim()||p.name;
-      onAddToDayBankRef.current(sel.value,{id:uid(),name,address:p.address||'',lat:p.lat,lng:p.lng,placeId:p.placeId||'',
-        rating:p.rating,placeType:p.placeType||'',openStatus:p.openStatus||'',todayHours:p.todayHours||'',phone:p.phone||'',website:p.website||''});
-      iw.close();
-      toast(`"${name}" נוסף לבנק היומי 📌`,'success');
-    };
 
     map.addListener('click',async e=>{
       // pick mode — intercept for start/end location selection
@@ -1312,7 +1285,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       e.stop();
       showPlaceById(e.placeId,e.latLng.lat(),e.latLng.lng());
     });
-    return()=>{window.__gmHighlightItem=null;window.__gmFocus=null;};
+    return()=>{window.__gmHighlightItem=null;window.__gmFocus=null;window.__gmShowSheet=null;};
   },[ready]);
 
   // סמנים על המפה
@@ -1353,12 +1326,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         });
         bm.addListener('click',()=>{
           if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:block.title||'פעילות',lat:block.lat,lng:block.lng,address:block.location||''});return;}
-          const iw=window.__gmIw,build=window.__gmBuild,iwPlace=window.__gmIwPlace;
-          if(!iw||!build||!iwPlace)return;
-          iwPlace.data={name:block.title||'פעילות',address:block.location||'',lat:block.lat,lng:block.lng,placeId:null};
-          iw.setContent(build({name:block.title||'פעילות',address:block.location||'',lat:block.lat,lng:block.lng}));
-          iw.setPosition({lat:block.lat,lng:block.lng});
-          iw.open(mapInst.current);
+          window.__gmShowSheet?.({name:block.title||'פעילות',address:block.location||'',lat:block.lat,lng:block.lng,placeId:block.placeId||null,rating:block.rating||null,placeType:block.placeType||''});
         });
         markers.current.push(bm);
       });
@@ -1392,18 +1360,13 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       });
       m.addListener('click',()=>{
         if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:item.name||'',lat:item.lat,lng:item.lng,address:item.address||''});return;}
-        const iw=window.__gmIw,build=window.__gmBuild,iwPlace=window.__gmIwPlace;
-        if(!iw||!build||!iwPlace)return;
-        // always show stored bank data immediately
+        // הצג נתונים שמורים מיידית
         const cached=item.placeId?window.__placeCache?.[item.placeId]:null;
         const p=cached||{name:item.name,address:item.address||'',lat:item.lat,lng:item.lng,
           placeId:item.placeId||null,rating:item.rating??null,
           openStatus:item.openStatus||'',todayHours:item.todayHours||'',
           phone:item.phone||'',website:item.website||'',placeType:item.placeType||''};
-        iwPlace.data=p;
-        iw.setContent(build(p));
-        iw.setPosition({lat:item.lat,lng:item.lng});
-        iw.open(mapInst.current);
+        window.__gmShowSheet?.(p);
         // שלח ל-Google רק אם: לא בcache סשן AND הנתונים ישנים (יותר מ-7 ימים)
         const _staleSec=7*24*3600;
         const _nowSec=Math.floor(Date.now()/1000);
@@ -1682,6 +1645,15 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         </div>;
       })()}
     </div>}
+    {mapSheet&&<MapBottomSheet
+      place={mapSheet}
+      trip={trip}
+      onClose={()=>setMapSheet(null)}
+      onAddToBank={p=>onAddToBankRef.current?.(p)}
+      onAddToDay={(dayId,p)=>onAddToDayRef.current?.(dayId,p)}
+      onAddToDayBank={(dayId,p)=>onAddToDayBankRef.current?.(dayId,p)}
+      onSetDayLocation={(dayId,type,name,lat,lng,p)=>onSetDayLocationRef.current?.(dayId,type,name,lat,lng,p)}
+    />}
     <div ref={mapRef} style={{flex:1,width:'100%'}}/>
   </div>;
 }
