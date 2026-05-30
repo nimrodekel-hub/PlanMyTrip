@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m90';
+const MOB_VER='m91';
 
 const genSyncKey=()=>{
   const c='abcdefghjkmnpqrstuvwxyz23456789';
@@ -1402,6 +1402,7 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
   const[dayWx,setDayWx]=useState(null); // מזג אוויר לכרטיס הנוכחי
   const[transitSearch,setTransitSearch]=useState(null); // {loading,fromBlockId,toBlockId,results,error}
   const[showDayBank,setShowDayBank]=useState(false);
+  const[showSuggestions,setShowSuggestions]=useState(false);
   const[swapSrc,setSwapSrc]=useState(null); // פריט בנק יומי הממתין להחלפה עם בלוק
   // drag-and-drop state
   const dragIdxRef=useRef(null);
@@ -1515,6 +1516,18 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
   const updDay=upd=>{
     if(!onUpdate||!trip||!day)return;
     onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,...upd}:d)});
+  };
+
+  // הוסף פריטים מ-DayBankSuggestions לבנק היומי
+  const addSuggestedItems=items=>{
+    if(!day||!onUpdate||!trip)return;
+    const existKeys=new Set((day.dayBank||[]).map(i=>i.placeId?'p:'+i.placeId:'n:'+(i.name||'').trim().toLowerCase()));
+    const toAdd=items
+      .filter(i=>i.placeId?!existKeys.has('p:'+i.placeId):!existKeys.has('n:'+(i.name||'').trim().toLowerCase()))
+      .map(i=>({...i,id:uid()}));
+    if(!toAdd.length)return;
+    onUpdate({...trip,days:trip.days.map(d=>d.id===day.id?{...d,dayBank:[...(d.dayBank||[]),...toAdd]}:d)});
+    toast(toAdd.length===1?`"${toAdd[0].name}" נוסף לבנק היומי ✨`:`${toAdd.length} מקומות נוספו לבנק היומי ✨`,'s');
   };
 
   // drag-and-drop reorder — מחשב מחדש startTime/endTime אחרי הזזה
@@ -2451,6 +2464,25 @@ function ScheduleScreen({trip,active,onShowOnMap,onUpdate,settings,onPickFromMap
             })()}
           </div>
           <div style={{height:20}}/>
+          {/* ── המלצות מבנק האטרקציות ── */}
+          <div style={{margin:'0 0 8px'}}>
+            <button
+              onClick={()=>setShowSuggestions(o=>!o)}
+              style={{
+                width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8,
+                padding:'9px 14px',borderRadius:10,cursor:'pointer',fontSize:13,fontWeight:600,
+                background:showSuggestions?'rgba(16,185,129,.18)':'rgba(16,185,129,.07)',
+                border:`1px solid rgba(16,185,129,${showSuggestions?.5:.25})`,
+                color:'#059669',transition:'all .15s',fontFamily:'Heebo,sans-serif',
+              }}>
+              <span>✨</span>
+              <span>מצא מבנק האטרקציות</span>
+              <span style={{fontSize:10,color:'var(--text3)',fontWeight:400}}>⭐ בנק → 📌 בנק יומי</span>
+              <span style={{marginRight:'auto',fontSize:11}}>{showSuggestions?'▲':'▼'}</span>
+            </button>
+            {showSuggestions&&<DayBankSuggestions day={day} tripBank={trip?.interestBank||[]} onAddItems={addSuggestedItems}/>}
+          </div>
+
           {/* ── בנק יומי ── */}
           <div style={{margin:'0 0 8px',borderRadius:12,border:'1px solid var(--border)',overflow:'hidden',background:'var(--surface)'}}>
             <div onClick={()=>setShowDayBank(o=>!o)}
@@ -2754,6 +2786,169 @@ const haversineKm=(lat1,lng1,lat2,lng2)=>{
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 };
 const fmtDist=km=>km===Infinity?'':km<1?`${Math.round(km*1000)}מ׳`:`${km<10?km.toFixed(1):Math.round(km)}ק"מ`;
+// מרחק מנקודה P לקטע S→E (קואורדינטות, תוצאה בק"מ)
+const distToSegKm=(pLat,pLng,sLat,sLng,eLat,eLng)=>{
+  const cosLat=Math.cos(((sLat+eLat)/2)*Math.PI/180);
+  const px=(pLng-sLng)*cosLat*111.32,py=(pLat-sLat)*111.32;
+  const ex=(eLng-sLng)*cosLat*111.32,ey=(eLat-sLat)*111.32;
+  const len2=ex*ex+ey*ey;
+  if(len2===0)return Math.sqrt(px*px+py*py);
+  const t=Math.max(0,Math.min(1,(px*ex+py*ey)/len2));
+  return Math.sqrt((px-t*ex)**2+(py-t*ey)**2);
+};
+
+/* ════════════════════════════════════════════════════════════
+   DayBankSuggestions — מציג פריטי בנק כללי הקרובים למסלול/נקודת היום
+════════════════════════════════════════════════════════════ */
+function DayBankSuggestions({day,tripBank,onAddItems}){
+  const PLACE_EMOJI={
+    tourist_attraction:'🎯',museum:'🏛️',park:'🌿',natural_feature:'🏔️',
+    restaurant:'🍽️',cafe:'☕',bar:'🍺',food:'🍽️',bakery:'🥐',
+    lodging:'🏨',shopping_mall:'🛍️',store:'🛒',beach:'🏖️',
+    amusement_park:'🎡',zoo:'🦁',aquarium:'🐠',art_gallery:'🎨',
+    movie_theater:'🎬',night_club:'🎵',spa:'💆',stadium:'🏟️',
+    church:'⛪',synagogue:'🕍',mosque:'🕌',point_of_interest:'📍',
+  };
+  const peEmoji=t=>PLACE_EMOJI[t]||'📍';
+  const bank=tripBank||[];
+  const hasBoth=!!(day.startLat&&day.startLng&&day.endLat&&day.endLng);
+  const hasRoute=hasBoth&&haversineKm(day.startLat,day.startLng,day.endLat,day.endLng)>0.1;
+  const refLat=day.startLat||day.endLat,refLng=day.startLng||day.endLng;
+  const hasLocation=!!(refLat&&refLng);
+  const bankWithCoords=useMemo(()=>bank.filter(i=>i.lat&&i.lng),[bank]);
+  const[radius,setRadius]=useState(hasRoute?10:5);
+
+  const usedKeys=useMemo(()=>{
+    const s=new Set();
+    (day.blocks||[]).forEach(b=>{
+      if(b.placeId)s.add('p:'+b.placeId);
+      else if(b.title)s.add('n:'+b.title.trim().toLowerCase());
+    });
+    (day.dayBank||[]).forEach(b=>{
+      if(b.placeId)s.add('p:'+b.placeId);
+      else if(b.name)s.add('n:'+b.name.trim().toLowerCase());
+    });
+    return s;
+  },[day.blocks,day.dayBank]);
+
+  const results=useMemo(()=>{
+    if(!hasLocation)return[];
+    return bankWithCoords
+      .filter(item=>{
+        if(item.placeId&&usedKeys.has('p:'+item.placeId))return false;
+        if(!item.placeId&&item.name&&usedKeys.has('n:'+item.name.trim().toLowerCase()))return false;
+        return true;
+      })
+      .map(item=>{
+        const dist=hasRoute
+          ?distToSegKm(item.lat,item.lng,day.startLat,day.startLng,day.endLat,day.endLng)
+          :haversineKm(item.lat,item.lng,refLat,refLng);
+        return{...item,_dist:dist};
+      })
+      .filter(i=>i._dist<=radius)
+      .sort((a,b)=>a._dist-b._dist);
+  },[bankWithCoords,radius,usedKeys,hasLocation,hasRoute,
+     day.startLat,day.startLng,day.endLat,day.endLng,refLat,refLng]);
+
+  const fmtD=d=>d<1?(d*1000).toFixed(0)+' מ׳':d.toFixed(1)+' ק"מ';
+  const addOne=item=>onAddItems([item]);
+  const addAll=()=>{if(results.length)onAddItems(results);};
+  const chip=active=>({
+    fontSize:11,padding:'4px 12px',borderRadius:20,cursor:'pointer',transition:'all .15s',
+    background:active?'rgba(16,185,129,.22)':'var(--bg2)',
+    border:active?'1px solid #059669':'1px solid var(--border)',
+    color:active?'#059669':'var(--text2)',fontWeight:active?700:400,
+  });
+
+  return(
+    <div style={{background:'rgba(16,185,129,.04)',border:'1px solid rgba(16,185,129,.22)',
+      borderRadius:10,padding:'10px 12px',marginBottom:10}}>
+      {/* כותרת */}
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8,flexWrap:'wrap'}}>
+        <span style={{fontSize:13,fontWeight:700,color:'#059669'}}>✨ המלצות מהבנק הכללי</span>
+        <span style={{fontSize:11,color:'var(--text3)',flex:1,minWidth:100}}>
+          {!hasLocation?'הגדר נקודת התחלה/סיום ליום'
+            :hasRoute
+              ?`לאורך: ${day.startLocation||'מוצא'} ← ${day.endLocation||'יעד'}`
+              :`סביב ${day.startLocation||day.endLocation||'נקודת הבסיס'}`}
+        </span>
+      </div>
+
+      {!hasLocation?(
+        <div style={{fontSize:12,color:'var(--text3)',textAlign:'center',padding:'10px 0',lineHeight:1.7}}>
+          🗺️ הגדר נקודת התחלה או סיום ליום<br/>כדי לקבל המלצות בקרבת המסלול
+        </div>
+      ):bankWithCoords.length===0?(
+        <div style={{fontSize:12,color:'var(--text3)',textAlign:'center',padding:'10px 0',lineHeight:1.7}}>
+          📚 בנק האטרקציות ריק<br/>
+          <span style={{fontSize:11}}>הוסף מקומות לבנק ⭐ כדי לקבל המלצות</span>
+        </div>
+      ):(
+        <>
+          {/* בחירת טווח */}
+          <div style={{display:'flex',alignItems:'center',gap:5,marginBottom:10,flexWrap:'wrap'}}>
+            <span style={{fontSize:11,color:'var(--text3)',flexShrink:0}}>טווח:</span>
+            {[2,5,10,20,50].map(r=>(
+              <button key={r} onClick={()=>setRadius(r)} style={chip(radius===r)}>{r} ק"מ</button>
+            ))}
+          </div>
+
+          {results.length===0?(
+            <div style={{fontSize:12,color:'var(--text3)',textAlign:'center',padding:'10px 0'}}>
+              🔍 לא נמצאו מקומות בטווח {radius} ק"מ — נסה טווח גדול יותר
+            </div>
+          ):(
+            <>
+              <div style={{fontSize:11,color:'var(--text3)',marginBottom:6}}>
+                נמצאו <strong style={{color:'var(--text)'}}>{results.length}</strong> מקומות
+                {hasRoute?` לאורך המסלול בטווח ${radius} ק"מ`:`בטווח ${radius} ק"מ`}:
+              </div>
+              <div style={{display:'flex',flexDirection:'column',gap:6,maxHeight:280,overflowY:'auto'}}>
+                {results.map(item=>(
+                  <div key={item.id} style={{display:'flex',alignItems:'center',gap:8,
+                    background:'var(--surface)',border:'1px solid var(--border)',
+                    borderRadius:8,padding:'8px 10px'}}>
+                    <span style={{fontSize:20,flexShrink:0,lineHeight:1}}>{peEmoji(item.placeType)}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.customName||item.name}</div>
+                      <div style={{display:'flex',alignItems:'center',gap:5,marginTop:1,flexWrap:'wrap'}}>
+                        {item.rating&&<span style={{fontSize:10,color:'var(--amber)'}}>⭐ {item.rating}</span>}
+                        {item.placeType&&<span style={{fontSize:10,color:'var(--text3)'}}>{item.placeType}</span>}
+                        {item.openStatus&&<span style={{fontSize:10,fontWeight:600,
+                          color:item.openStatus==='פתוח עכשיו'?'#22c55e':'#ef4444'}}>
+                          {item.openStatus==='פתוח עכשיו'?'✅ פתוח':'🔴 סגור'}</span>}
+                      </div>
+                    </div>
+                    <span style={{fontSize:10,color:'#059669',fontWeight:700,flexShrink:0,
+                      background:'rgba(16,185,129,.1)',padding:'2px 7px',borderRadius:10,
+                      whiteSpace:'nowrap',minWidth:38,textAlign:'center'}}>
+                      {fmtD(item._dist)}
+                    </span>
+                    <button onClick={()=>addOne(item)} title="הוסף לבנק היומי"
+                      style={{fontSize:22,width:34,height:34,borderRadius:8,cursor:'pointer',flexShrink:0,
+                        display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,
+                        background:'rgba(16,185,129,.12)',border:'1px solid rgba(16,185,129,.35)',
+                        color:'#059669',fontWeight:700,padding:0}}>
+                      +
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {results.length>1&&(
+                <div style={{marginTop:10,display:'flex',justifyContent:'flex-end'}}>
+                  <button onClick={addAll} style={{
+                    fontSize:12,padding:'6px 16px',borderRadius:7,cursor:'pointer',fontWeight:600,
+                    background:'rgba(16,185,129,.15)',border:'1px solid rgba(16,185,129,.4)',color:'#059669',
+                  }}>➕ הוסף הכל לבנק היומי ({results.length})</button>
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 function BankScreen({trip,active,onShowOnMap,onUpdate}){
   const[search,setSearch]=useState('');
