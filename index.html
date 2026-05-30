@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v181';
+const APP_VERSION = 'v182';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -1173,11 +1173,8 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
           searchSvc.textSearch(opts,(r,st)=>res(st===PS.OK&&r?.length?r:[]));
         });
         if(placeResults.length){
-          // סנן רק תוצאות בתוך ה-viewport הנוכחי
-          const inView=vpBounds
-            ?placeResults.filter(r=>r.geometry?.location&&vpBounds.contains(r.geometry.location))
-            :placeResults;
-          const toShow=inView.length?inView:placeResults;
+          const toShow=placeResults.slice(0,8); // עד 8 תוצאות
+          const bounds=new window.google.maps.LatLngBounds();
           let placed=0;
           toShow.forEach(r=>{
             const loc=r.geometry?.location; if(!loc) return;
@@ -1193,18 +1190,17 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
               showPlaceById(r.place_id,lat,lng);
             });
             window.__gmSearchMarkers?.push(m);
+            bounds.extend({lat,lng});
             placed++;
           });
-          // אם תוצאה בודדת — פתח InfoWindow בלבד (אין שינוי zoom/מרכז)
-          if(toShow.length===1&&toShow[0].place_id){
+          // מרכז המפה לתוצאות
+          if(toShow.length===1){
             const loc=toShow[0].geometry.location;
-            showPlaceById(toShow[0].place_id,loc.lat(),loc.lng());
+            map.panTo(loc); map.setZoom(15);
+            if(toShow[0].place_id) showPlaceById(toShow[0].place_id,loc.lat(),loc.lng());
+          } else if(placed>1){
+            map.fitBounds(bounds,{top:60,right:60,bottom:60,left:60});
           }
-          const outside=placeResults.length-inView.length;
-          if(outside>0&&inView.length===0)
-            toast(`נמצאו ${outside} תוצאות מחוץ לתצוגה — גרור את המפה לאזור הרצוי`,'info');
-          else if(outside>0)
-            toast(`${placed} תוצאות בתצוגה (${outside} נוספות מחוץ לטווח)`,'info');
           return;
         }
         // אין תוצאות כלל
