@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v161';
+const APP_VERSION = 'v162';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -484,7 +484,7 @@ const normTrip = t => {
     expenses:[],interestBank:[],packingList:[],shoppingList:[],documents:[],quickNotes:[],days:[],generalNotes:'',
     ...t,
     days:(t.days||[]).map(d=>({blocks:[],...d,
-      blocks:(d.blocks||[]).map(b=>b.durationMins!=null?{...b,endTime:addMins(b.startTime||'09:00',b.durationMins)}:b),
+      blocks:(d.blocks||[]).map(b=>{const st=b.startTime||'09:00';return b.durationMins!=null?{...b,startTime:st,endTime:addMins(st,b.durationMins)}:{...b,startTime:st};}),
       startLocation:d.startLocation||'',startTime:d.startTime||'08:00',
       endLocation:d.endLocation||'',endTime:d.endTime||'20:00',startPending:d.startPending||false})),
     interestBank:t.interestBank||[],
@@ -1325,7 +1325,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         markers.current.push(m);
       }
       // סמני פעילויות — עיגול ממוספר בצבע היום
-      const sortedBlocks=[...(day.blocks||[])].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+      const sortedBlocks=[...(day.blocks||[])].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
       sortedBlocks.forEach((block,blockIdx)=>{
         if (!block.lat||!block.lng) return;
         const bm=new window.google.maps.Marker({
@@ -2070,7 +2070,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
   const[dragOver,setDragOver]=useState(null);
   const updBlock=upd=>onUpdate({...day,blocks:day.blocks.map(b=>b.id===upd.id?upd:b)});
   const delBlock=id=>{
-    const blks=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+    const blks=[...day.blocks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
     const idx=blks.findIndex(b=>b.id===id);
     if(idx<0)return;
     const toRemove=new Set([id]);
@@ -2109,14 +2109,14 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
   };
   const addEmptyBlock=type=>{
     setBankPickForBlock(null);
-    const s=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+    const s=[...day.blocks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
     const last=s[s.length-1];
     const start=last?addMins(last.startTime,bDur(last)):(day.currentTime||'09:00');
     onUpdate({...day,blocks:[...day.blocks,defaultBlock(type,start)]});
   };
   const bankPickedForBlock=(item,type)=>{
     setBankPickForBlock(null);
-    const s=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+    const s=[...day.blocks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
     const last=s[s.length-1];
     const start=last?addMins(last.startTime,bDur(last)):(day.currentTime||'09:00');
     const block={
@@ -2133,7 +2133,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
   };
   const total=day.blocks.reduce((s,b)=>s+(b.cost||0),0);
   const done=day.blocks.filter(b=>b.isCompleted).length;
-  const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+  const sorted=[...day.blocks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
   const dayColor=DAY_COLORS[idx%DAY_COLORS.length];
   // מציאת נקודות מוצא/יעד של בלוק נסיעה והעברתן למפה
   const focusRoute=React.useCallback((block)=>{
@@ -2228,7 +2228,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     const si=sorted.findIndex(b=>b.id===updBlock.id);
     const blocksUpd=day.blocks.map(b=>b.id===updBlock.id?updBlock:b);
     if(si<0){onUpdate({...day,blocks:blocksUpd});return;}
-    const sortedUpd=[...blocksUpd].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+    const sortedUpd=[...blocksUpd].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
     const siNew=sortedUpd.findIndex(b=>b.id===updBlock.id);
     let t=addMins(updBlock.startTime,bDur(updBlock));
     const tail=sortedUpd.slice(siNew+1).map(b=>{const d=bDur(b);const nb={...b,startTime:t,endTime:addMins(t,d)};t=addMins(t,d);return nb;});
@@ -2241,7 +2241,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     const si=sorted.findIndex(b=>b.id===updBlock.id);
     let blocksUpd=day.blocks.map(b=>b.id===updBlock.id?updBlock:b);
     if(si>0&&sorted[si-1].isAutoTravel)blocksUpd=blocksUpd.filter(b=>b.id!==sorted[si-1].id);
-    const sortedUpd=[...blocksUpd].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+    const sortedUpd=[...blocksUpd].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
     const siNew=sortedUpd.findIndex(b=>b.id===updBlock.id);
     let t=addMins(updBlock.startTime,bDur(updBlock));
     const tail=sortedUpd.slice(siNew+1).map(b=>{const d=bDur(b);const nb={...b,startTime:t,endTime:addMins(t,d)};t=addMins(t,d);return nb;});
@@ -3111,7 +3111,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
           onPickFromMap(
             `${BLOCK_EMOJI[t]} בחר מקום על המפה`,
             place=>{
-              const s=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+              const s=[...day.blocks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
               const last=s[s.length-1];
               const start=last?addMins(last.startTime,bDur(last)):(day.currentTime||'09:00');
               const block={...defaultBlock(t,start),
@@ -3129,7 +3129,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     {/* ── בנק יומי ── */}
     {(()=>{
       const addDayBankItemToSchedule=(item)=>{
-        const sorted=[...(day.blocks||[])].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+        const sorted=[...(day.blocks||[])].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
         const last=sorted[sorted.length-1];
         const start=last?addMins(last.startTime,last.durationMins||60):(day.startTime||'09:00');
         const nb=defaultBlock('activity',start);
@@ -3355,7 +3355,7 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
 
 const DAYS_PER_PAGE=4;
 
-function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,onFocusRoute,compact=false,settings,onPickFromMap,shownDayIds,onToggleDayVisibility}){
+function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,onFocusRoute,compact=false,settings,onPickFromMap,shownDayIds=null,onToggleDayVisibility}){
   const[showBank,setShowBank]=useState(!compact);
   const[dayOffset,setDayOffset]=useState(0);
 
@@ -3800,7 +3800,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
   /* הוספה ליום */
   const addItemToDay=(dayId,item)=>{
     const day=trip.days.find(d=>d.id===dayId); if(!day) return;
-    const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+    const sorted=[...day.blocks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
     const last=sorted[sorted.length-1];
     const start=last?addMins(last.startTime,last.durationMins):(day.currentTime||'09:00');
     const nb=defaultBlock('activity',start);
@@ -5739,7 +5739,7 @@ function ReportTab({trip}){
     if(trip.days.length>0){
       lines.push(hr(),'📅 לוח זמנים יומי',hr());
       trip.days.forEach((day,i)=>{
-        const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+        const sorted=[...day.blocks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
         lines.push('',`יום ${i+1}${day.date?` — ${new Date(day.date).toLocaleDateString('he-IL',{weekday:'long',day:'2-digit',month:'long'})}`:''}`+(day.location?` | 📍 ${day.location}`:''));
         if(day.startLocation||day.endLocation) lines.push(`  🟢 ${day.startLocation||'—'}${day.startTime?' '+day.startTime:''} → 🔴 ${day.endLocation||'—'}${day.endTime?' '+day.endTime:''}`);
         if(!sorted.length){lines.push('  (אין פעילויות)');return;}
@@ -5869,7 +5869,7 @@ function ReportTab({trip}){
         {/* לוח זמנים */}
         {trip.days.length>0&&<ReportSection title="📅 לוח זמנים יומי">
           {trip.days.map((day,i)=>{
-            const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+            const sorted=[...day.blocks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
             const dayColor=DAY_COLORS[i%DAY_COLORS.length];
             return <div key={day.id} style={{marginBottom:18,borderRight:`3px solid ${dayColor}`,paddingRight:14}}>
               <div style={{fontWeight:700,fontSize:13,color:dayColor,marginBottom:8,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
@@ -6082,7 +6082,7 @@ class ErrorBoundary extends React.Component {
           <div style={{fontSize:11,color:'var(--text3)',fontFamily:'monospace',maxWidth:460,wordBreak:'break-word',textAlign:'center',opacity:.7}}>{msg}</div>
           <div style={{display:'flex',gap:12,flexWrap:'wrap',justifyContent:'center'}}>
             <button className="btn btn-primary" onClick={()=>location.reload()}>🔄 רענן דף</button>
-            <button className="btn btn-danger" onClick={()=>{try{localStorage.removeItem('caravanCtrl_he');}catch(e){}location.reload();}}>🗑️ אפס ונסה שוב</button>
+            <button className="btn btn-danger" onClick={()=>{try{const raw=localStorage.getItem('caravanCtrl_he');const parsed=raw?JSON.parse(raw):null;const s=parsed?.settings;localStorage.removeItem('caravanCtrl_he');if(s)localStorage.setItem('caravanCtrl_he',JSON.stringify({settings:s}));}catch(e){}location.reload();}}>🗑️ אפס ונסה שוב</button>
           </div>
           <div style={{fontSize:11,color:'var(--text3)',textAlign:'center',lineHeight:1.7}}>
             ⚠️ <strong>אפס ונסה שוב</strong> ימחק את הנתונים המקומיים בדפדפן זה בלבד.<br/>
@@ -6355,7 +6355,7 @@ function App(){
     if (!trip) return;
     const day=trip.days.find(d=>d.id===dayId);
     if (!day) return;
-    const sorted=[...day.blocks].sort((a,b)=>a.startTime.localeCompare(b.startTime));
+    const sorted=[...day.blocks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
     const last=sorted[sorted.length-1];
     const start=last?addMins(last.startTime,last.durationMins):(day.currentTime||'09:00');
     const newBlock=defaultBlock('activity',start);
@@ -6535,7 +6535,7 @@ function App(){
           </div>
         </div>
       );
-      case 'timeline': return <TimelineTab trip={trip} onUpdate={updTrip} onPickFromMap={pickLocationFromMap} settings={settings}/>;
+      case 'timeline': return <TimelineTab trip={trip} onUpdate={updTrip} onPickFromMap={pickLocationFromMap} settings={settings} shownDayIds={shownDayIds} onToggleDayVisibility={toggleDayVisibility}/>;
       case 'expenses': return <ExpensesTab trip={trip} onUpdate={updTrip}/>;
       case 'documents': return <DocsTab trip={trip} onUpdate={updTrip} settings={settings}/>;
       case 'packing': return <Checklist title="רשימת ציוד" emoji="🎒" items={trip.packingList} onUpdate={items=>updTrip({...trip,packingList:items})}/>;
