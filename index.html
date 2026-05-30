@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v182';
+const APP_VERSION = 'v183';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -1347,7 +1347,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
           map:mapInst.current,
           title:block.customName||block.title||'',
           label:{text:String(blockIdx+1),color:'#fff',fontSize:'10px',fontWeight:'bold'},
-          icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:10,fillColor:block.markerColor||color,fillOpacity:0.9,strokeColor:'#fff',strokeWeight:1.5},
+          icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:10,fillColor:color,fillOpacity:0.9,strokeColor:'#fff',strokeWeight:1.5},
           zIndex:5,
         });
         bm.addListener('click',()=>{
@@ -1373,10 +1373,9 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
     trip.interestBank.forEach(item=>{
       if (!item.lat) return;
       const ic=BANK_ICON[item._listSource]||BANK_ICON.saved;
-      const _mc=item.markerColor||ic.color; // צבע מותאם > צבע קטגוריה
       const iconSpec=ic.svgPath
-        ? {path:ic.svgPath,fillColor:_mc,fillOpacity:0.95,strokeColor:'#fff',strokeWeight:1.5,scale:ic.scale}
-        : {path:window.google.maps.SymbolPath.CIRCLE,scale:ic.scale,fillColor:_mc,fillOpacity:0.95,strokeColor:'#fff',strokeWeight:1.5};
+        ? {path:ic.svgPath,fillColor:ic.color,fillOpacity:0.95,strokeColor:'#fff',strokeWeight:1.5,scale:ic.scale}
+        : {path:window.google.maps.SymbolPath.CIRCLE,scale:ic.scale,fillColor:ic.color,fillOpacity:0.95,strokeColor:'#fff',strokeWeight:1.5};
       const m=new window.google.maps.Marker({
         position:{lat:item.lat,lng:item.lng},
         map:mapInst.current,
@@ -1449,7 +1448,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         position:{lat:block.lat,lng:block.lng},
         map:mapInst.current,
         label:{text:String(i+1),color:'#fff',fontSize:'13px',fontWeight:'bold'},
-        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:18,fillColor:block.markerColor||color,fillOpacity:1,strokeColor:'#fff',strokeWeight:3},
+        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:18,fillColor:color,fillOpacity:1,strokeColor:'#fff',strokeWeight:3},
         title:`${i+1}. ${block.customName||block.title||''}`,
         zIndex:100,
       });
@@ -3495,8 +3494,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
 /* ══════════════════════════════════
    פריט בנק אטרקציות
 ══════════════════════════════════ */
-const MARKER_COLORS=['#ef4444','#f97316','#eab308','#22c55e','#4f8ef7','#8b5cf6','#ec4899','#14b8a6'];
-function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,onSelect,onEnrich,enriching,onNoteChange,onAddToDayBank,onSetDayStart,onSetDayEnd,onSaveCustomName,onSaveMarkerColor}){
+function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,onSelect,onEnrich,enriching,onNoteChange,onAddToDayBank,onSetDayStart,onSetDayEnd,onSaveCustomName,onChangeListSource}){
   const[selDay,setSelDay]=useState('');
   const[selDayBank,setSelDayBank]=useState('');
   const[selDayStart,setSelDayStart]=useState('');
@@ -3517,8 +3515,7 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
   const srcInfo=BANK_SRC_PICKER[item._listSource]||null;
 
   return <div className="interest-item" style={{marginBottom:6,flexDirection:'column',alignItems:'stretch',gap:8,
-    outline:selected?'2px solid var(--accent)':'2px solid transparent',borderRadius:8,transition:'outline 0.15s',
-    borderRight:item.markerColor?`4px solid ${item.markerColor}`:'1px solid var(--border)'}}>
+    outline:selected?'2px solid var(--accent)':'2px solid transparent',borderRadius:8,transition:'outline 0.15s'}}>
     <div style={{display:'flex',alignItems:'flex-start',gap:6}}>
       {onSelect&&<input type="checkbox" checked={!!selected} onChange={e=>onSelect(item.id,e.target.checked)}
         style={{marginTop:3,flexShrink:0,cursor:'pointer',width:14,height:14}} onClick={e=>e.stopPropagation()}/>}
@@ -3553,21 +3550,25 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
         {item.website&&<a href={item.website} target="_blank" rel="noreferrer" style={{fontSize:11,color:'var(--accent)',display:'block',marginTop:1,wordBreak:'break-all'}} onClick={e=>e.stopPropagation()}>🌐 {item.website.replace(/^https?:\/\//,'').split('/')[0]}</a>}
         {/* קישור גוגל מפות — אוטומטי מהייבוא או מ-placeId, ללא צורך ב-🔍 */}
         {mapsUrl&&<GLink url={mapsUrl} style={{marginTop:3}} onClick={e=>e.stopPropagation()}/>}
-        {/* בחירת צבע סמן במפה */}
-        {onSaveMarkerColor&&(
+        {/* בחירת סוג רשימה */}
+        {onChangeListSource&&(
           <div style={{display:'flex',alignItems:'center',gap:4,marginTop:5,flexWrap:'wrap'}} onClick={e=>e.stopPropagation()}>
-            <span style={{fontSize:10,color:'var(--text3)',flexShrink:0}}>📍</span>
-            <button onClick={()=>onSaveMarkerColor(item.placeId,item.id,undefined)}
-              title="ברירת מחדל"
-              style={{width:14,height:14,borderRadius:'50%',border:!item.markerColor?'2px solid var(--accent)':'1px solid var(--border)',
-                background:'var(--bg3)',cursor:'pointer',padding:0,flexShrink:0}}/>
-            {MARKER_COLORS.map(c=>(
-              <button key={c} onClick={()=>onSaveMarkerColor(item.placeId,item.id,c)}
-                title={c}
-                style={{width:14,height:14,borderRadius:'50%',
-                  border:item.markerColor===c?'2px solid var(--text)':'1px solid rgba(0,0,0,.15)',
-                  background:c,cursor:'pointer',padding:0,flexShrink:0}}/>
-            ))}
+            {[
+              {key:'liked',   symbol:'♥', color:'#ec4899', label:'מועדפים'},
+              {key:'wantToGo',symbol:'⚑', color:'#22c55e', label:'רוצה להגיע'},
+              {key:'saved',   symbol:'★', color:'#f59e0b', label:'שמור'},
+              {key:'list',    symbol:'♦', color:'#6366f1', label:'רשימה'},
+              {key:'itinerary',symbol:'🧳',color:'#2563eb', label:'תוכנית נסיעה'},
+            ].map(t=>{
+              const active=(item._listSource||'saved')===t.key;
+              return <button key={t.key} onClick={()=>onChangeListSource(item.id,t.key)}
+                title={t.label}
+                style={{width:20,height:20,borderRadius:'50%',border:active?`2px solid ${t.color}`:'1px solid var(--border)',
+                  background:active?t.color:'var(--bg3)',color:active?'#fff':t.color,
+                  cursor:'pointer',padding:0,flexShrink:0,fontSize:10,display:'inline-flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>
+                {t.symbol}
+              </button>;
+            })}
           </div>
         )}
       </div>
@@ -3899,18 +3900,10 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       })):prev.days
     }));
   };
-  const saveMarkerColorLocal=(placeId,bankItemId,markerColor)=>{
-    const mc=markerColor||undefined;
+  const saveListSource=(itemId,listSource)=>{
     onUpdate(prev=>({
       ...prev,
-      interestBank:(prev.interestBank||[]).map(i=>
-        (placeId&&i.placeId===placeId)||(bankItemId&&!placeId&&i.id===bankItemId)?{...i,markerColor:mc}:i
-      ),
-      days:placeId?prev.days.map(d=>({
-        ...d,
-        blocks:d.blocks.map(b=>b.placeId===placeId?{...b,markerColor:mc}:b),
-        dayBank:(d.dayBank||[]).map(i=>i.placeId===placeId?{...i,markerColor:mc}:i)
-      })):prev.days
+      interestBank:(prev.interestBank||[]).map(i=>i.id===itemId?{...i,_listSource:listSource}:i)
     }));
   };
 
@@ -4644,7 +4637,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
                   onAddToDayBank={addItemToDayBank}
                   onSetDayStart={setItemAsStart} onSetDayEnd={setItemAsEnd}
                   onSaveCustomName={saveCustomNameLocal}
-                  onSaveMarkerColor={saveMarkerColorLocal}
+                  onChangeListSource={saveListSource}
                   onNoteChange={(id,note)=>{onUpdate({...tripRef.current,interestBank:tripRef.current.interestBank.map(i=>i.id===id?{...i,note}:i)});}}/>
               </div>
             ))}
@@ -4686,7 +4679,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
                 onEnrich={enrichItem} enriching={enrichingId===item.id}
                 onAddToDayBank={addItemToDayBank}
                 onSaveCustomName={saveCustomNameLocal}
-                onSaveMarkerColor={saveMarkerColorLocal}
+                onChangeListSource={saveListSource}
                 onNoteChange={(id,note)=>{onUpdate({...tripRef.current,interestBank:tripRef.current.interestBank.map(i=>i.id===id?{...i,note}:i)});}}/>
             ))}
           </div>;
@@ -6708,22 +6701,6 @@ function App(){
     }));
   },[trip,updTrip]);
 
-  const saveMarkerColor=useCallback((placeId,bankItemId,markerColor)=>{
-    if(!trip)return;
-    const mc=markerColor||undefined;
-    updTrip(prev=>({
-      ...prev,
-      interestBank:(prev.interestBank||[]).map(i=>
-        (placeId&&i.placeId===placeId)||(bankItemId&&!placeId&&i.id===bankItemId)
-          ?{...i,markerColor:mc}:i
-      ),
-      days:placeId?prev.days.map(d=>({
-        ...d,
-        blocks:d.blocks.map(b=>b.placeId===placeId?{...b,markerColor:mc}:b),
-        dayBank:(d.dayBank||[]).map(i=>i.placeId===placeId?{...i,markerColor:mc}:i)
-      })):prev.days
-    }));
-  },[trip,updTrip]);
 
   const setDayLocation=useCallback((dayId,field,name,lat,lng,placeData=null)=>{
     if(!trip)return;
@@ -6900,7 +6877,7 @@ function App(){
               onSetDayLocation={setDayLocation} onUpdateBankItem={updateBankItem}
               highlightDay={hlDay} highlightItem={hlItem} routeHighlight={hlRoute}
               mapPickCallbackRef={mapPickCallbackRef} mapPickLabel={mapPickLabel} onCancelMapPick={cancelMapPick}
-              onAddToDayBank={addToDayBank} shownDayIds={shownDayIds} onSaveCustomName={saveCustomName} onSaveMarkerColor={saveMarkerColor}/>
+              onAddToDayBank={addToDayBank} shownDayIds={shownDayIds} onSaveCustomName={saveCustomName}/>
           </div>
           {/* backdrop בסלולר */}
           <div className={`mob-panel-backdrop${mobilePanel!=='map'?' show':''}`}

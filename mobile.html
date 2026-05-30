@@ -229,7 +229,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m93';
+const MOB_VER='m94';
 
 const genSyncKey=()=>{
   const c='abcdefghjkmnpqrstuvwxyz23456789';
@@ -649,7 +649,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
             position:{lat:block.lat,lng:block.lng},
             map:mapRef.current,
             ...(lbl?{label:{text:lbl,color:'#fff',fontSize:'11px',fontWeight:'bold'}}:{}),
-            icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:16,fillColor:(!isStart&&!isEnd&&block.markerColor)||fc,fillOpacity:1,strokeColor:'#fff',strokeWeight:2},
+            icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:16,fillColor:fc,fillOpacity:1,strokeColor:'#fff',strokeWeight:2},
             title:block.customName||block.title||'',
             zIndex:110,
           });
@@ -743,9 +743,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
     (trip?.interestBank||[]).forEach(item=>{
       if(!item.lat||!item.lng)return;
       const src=getBankSrc(item);
-      // אם יש markerColor מותאם — עקוף צבע מקור
-      const iconSrc=item.markerColor?{...(src||{color:item.markerColor,emoji:'📍'}),color:item.markerColor}:src;
-      const icon=makeBankIcon(iconSrc); // null → default red pin
+      const icon=makeBankIcon(src); // null → default red pin
       const mk=new window.google.maps.Marker({
         position:{lat:item.lat,lng:item.lng},map:mapRef.current,
         title:src?`${src.emoji} ${item.customName||item.name||''}`:item.customName||item.name||'',
@@ -774,7 +772,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
         if(!lat||!lng)return;
         const mk=new window.google.maps.Marker({
           position:{lat,lng},map:mapRef.current,title:`יום ${di+1}: ${b.customName||b.title||''}`,zIndex:8,
-          icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:10,fillColor:b.markerColor||color,fillOpacity:.92,strokeColor:'#fff',strokeWeight:2},
+          icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:10,fillColor:color,fillOpacity:.92,strokeColor:'#fff',strokeWeight:2},
           label:{text:String(di+1),color:'#fff',fontSize:'10px',fontWeight:'bold'},
         });
         mk.addListener('click',()=>{
@@ -2988,7 +2986,6 @@ function BankScreen({trip,active,onShowOnMap,onUpdate}){
   const[dayActionSel,setDayActionSel]=useState(null); // {item, mode:'sched'|'start'|'end'}
   const[noteEditItem,setNoteEditItem]=useState(null); // פריט שעורכים הערה שלו
   const[noteEditVal,setNoteEditVal]=useState('');
-  const[colorPickerId,setColorPickerId]=useState(null); // id של פריט שפתוח בו בורר צבע
   const openNoteEdit=(item)=>{setNoteEditItem(item);setNoteEditVal(item.note||'');};
   const saveNoteEdit=()=>{
     if(!noteEditItem||!trip)return;
@@ -2996,19 +2993,9 @@ function BankScreen({trip,active,onShowOnMap,onUpdate}){
     onUpdate({...trip,interestBank:(trip.interestBank||[]).map(i=>i.id===noteEditItem.id?{...i,note}:i)});
     setNoteEditItem(null);
   };
-  const MARKER_COLORS_MOB=['#ef4444','#f97316','#eab308','#22c55e','#4f8ef7','#8b5cf6','#ec4899','#14b8a6'];
-  const saveMarkerColorMob=(item,mc)=>{
+  const saveListSourceMob=(item,newSrc)=>{
     if(!trip)return;
-    const markerColor=mc||undefined;
-    onUpdate({...trip,
-      interestBank:(trip.interestBank||[]).map(i=>i.id===item.id?{...i,markerColor}:i),
-      days:item.placeId?trip.days.map(d=>({
-        ...d,
-        blocks:d.blocks.map(b=>b.placeId===item.placeId?{...b,markerColor}:b),
-        dayBank:(d.dayBank||[]).map(x=>x.placeId===item.placeId?{...x,markerColor}:x)
-      })):trip.days
-    });
-    setColorPickerId(null);
+    onUpdate({...trip,interestBank:(trip.interestBank||[]).map(i=>i.id===item.id?{...i,_listSource:newSrc}:i)});
   };
   const bank=trip?.interestBank||[];
   const days=trip?.days||[];
@@ -3110,18 +3097,16 @@ function BankScreen({trip,active,onShowOnMap,onUpdate}){
     const catEmoji=getTypeEmoji(types);
     const lbl=getTypeLabel(types);
     const hasLoc=!!(item.lat&&item.lng);
-    const circleColor=item.markerColor||(src?src.color:'#e53935');
     return(
       <div className="bitem" style={{flexWrap:'wrap'}}>
-        {/* status circle — matches map marker; tap to change color */}
-        <div onClick={e=>{e.stopPropagation();setColorPickerId(colorPickerId===item.id?null:item.id);}}
-          style={{
+        {/* status circle — matches map marker color */}
+        <div style={{
           width:36,height:36,borderRadius:'50%',flexShrink:0,
-          background:circleColor,
-          border:item.markerColor?`3px solid ${item.markerColor}`:'2.5px solid #fff',
+          background:src?src.color:'#e53935',
+          border:'2.5px solid #fff',
           boxShadow:'0 1px 4px rgba(0,0,0,.25)',
           display:'flex',alignItems:'center',justifyContent:'center',
-          fontSize:src?17:14,cursor:'pointer',
+          fontSize:src?17:14,
         }}>
           {src?src.emoji:'📍'}
         </div>
@@ -3142,6 +3127,27 @@ function BankScreen({trip,active,onShowOnMap,onUpdate}){
                 style={{background:'none',border:'none',cursor:'pointer',padding:'1px 3px',fontSize:12,
                   color:item.note?'var(--accent2)':'var(--text3)',flexShrink:0}}
                 title={item.note?'ערוך הערה':'הוסף הערה'}>✏️</button>}
+            </div>
+          )}
+          {/* בחירת סוג רשימה */}
+          {onUpdate&&(
+            <div style={{display:'flex',alignItems:'center',gap:4,marginTop:5,flexWrap:'wrap'}} onClick={e=>e.stopPropagation()}>
+              {[
+                {key:'liked',   symbol:'♥', color:'#ec4899', label:'מועדפים'},
+                {key:'wantToGo',symbol:'⚑', color:'#22c55e', label:'רוצה להגיע'},
+                {key:'saved',   symbol:'★', color:'#f59e0b', label:'שמור'},
+                {key:'list',    symbol:'♦', color:'#6366f1', label:'רשימה'},
+                {key:'itinerary',symbol:'🧳',color:'#2563eb', label:'תוכנית נסיעה'},
+              ].map(t=>{
+                const active=(item._listSource||'saved')===t.key;
+                return <button key={t.key} onClick={()=>saveListSourceMob(item,t.key)}
+                  title={t.label}
+                  style={{width:22,height:22,borderRadius:'50%',border:active?`2px solid ${t.color}`:'1px solid var(--border)',
+                    background:active?t.color:'var(--bg3)',color:active?'#fff':t.color,
+                    cursor:'pointer',padding:0,flexShrink:0,fontSize:11,display:'inline-flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>
+                  {t.symbol}
+                </button>;
+              })}
             </div>
           )}
         </div>
@@ -3167,23 +3173,6 @@ function BankScreen({trip,active,onShowOnMap,onUpdate}){
           </div>
         )}
         {hasLoc&&<button className="map-btn" onClick={()=>onShowOnMap&&onShowOnMap({lat:item.lat,lng:item.lng,placeId:item.placeId,name:item.name,address:item.address||''})}>🗺️</button>}
-        {/* בורר צבע סמן — מוצג בלחיצה על עיגול הצבע */}
-        {colorPickerId===item.id&&(
-          <div style={{width:'100%',display:'flex',alignItems:'center',gap:5,padding:'6px 4px 2px',flexWrap:'wrap'}}
-            onClick={e=>e.stopPropagation()}>
-            <span style={{fontSize:10,color:'var(--text3)',flexShrink:0}}>צבע סמן:</span>
-            <button onClick={()=>saveMarkerColorMob(item,null)}
-              style={{width:20,height:20,borderRadius:'50%',
-                border:!item.markerColor?'2.5px solid var(--accent)':'1px solid var(--border)',
-                background:'var(--bg3)',cursor:'pointer',padding:0,flexShrink:0}}/>
-            {MARKER_COLORS_MOB.map(c=>(
-              <button key={c} onClick={()=>saveMarkerColorMob(item,c)}
-                style={{width:20,height:20,borderRadius:'50%',
-                  border:item.markerColor===c?'2.5px solid var(--text)':'1px solid rgba(0,0,0,.15)',
-                  background:c,cursor:'pointer',padding:0,flexShrink:0}}/>
-            ))}
-          </div>
-        )}
       </div>
     );
   };
