@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v168';
+const APP_VERSION = 'v169';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -2131,7 +2131,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     if(!fromLat&&day.startLat&&day.startLng){fromLat=day.startLat;fromLng=day.startLng;}
     for(let i=bi+1;i<sorted.length;i++){if(!sorted[i].isAutoTravel&&sorted[i].lat&&sorted[i].lng){toLat=sorted[i].lat;toLng=sorted[i].lng;break;}}
     if(!toLat&&day.endLat&&day.endLng){toLat=day.endLat;toLng=day.endLng;}
-    if(fromLat&&toLat)onFocusRoute({fromLat,fromLng,toLat,toLng,isTransit:!!block.isTransit,isWalking:!!block.isWalking});
+    if(fromLat&&toLat)onFocusRoute({fromLat,fromLng,toLat,toLng,isTransit:!!block.isTransit,isWalking:!!block.isWalking,dayId:day.id});
   },[sorted,day,onFocusRoute]);
   const hasMapBlocks=day.blocks.some(b=>b.lat&&b.lng)||(day.startLat&&day.startLng)||(day.endLat&&day.endLng);
 
@@ -2474,7 +2474,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     toast(`${transitFirstIcon(route.steps)} קו תחבורה נוסף לסיום הלוז`,'success');
   };
 
-  return <div className="card" style={{marginBottom:12,animation:'fadeIn .3s ease'}}>
+  return <div className="card" data-day-id={day.id} style={{marginBottom:12,animation:'fadeIn .3s ease'}}>
     <div className="day-header" onClick={()=>setOpen(o=>!o)}>
       <span style={{fontSize:20,color:dayColor}}>📅</span>
       <div style={{flex:1,minWidth:0}}>
@@ -2809,7 +2809,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
           })();
           return [startConn,...sorted.map((bl,si)=>[
             nowInsert===si&&nowLine,
-            <BlockItem key={bl.id} block={bl} interestBank={day._tripBank||[]} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onFocusItem={onFocusItem} onFocusRoute={focusRoute}
+            <BlockItem key={bl.id} block={bl} interestBank={day._tripBank||[]} onEdit={setEd} onDelete={delBlock} onMoveToBank={onMoveToBank} onFocusItem={(lat,lng,name)=>onFocusItem?.(lat,lng,name,day.id)} onFocusRoute={focusRoute}
               onSwap={swapSrc?executeSwap:null}
               onNoteChange={(id,note)=>{const b=day.blocks.find(x=>x.id===id);if(b){updBlock({...b,notes:note});if(b.placeId)onBankNoteUpdate?.(b.placeId,note);}}}
               dragging={dragOver!==null&&dragIdxRef.current===si} dragOver={dragOver===si}
@@ -3342,9 +3342,16 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
 
 const DAYS_PER_PAGE=3;
 
-function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,onFocusRoute,compact=false,settings,onPickFromMap,shownDayIds=null,onToggleDayVisibility}){
+function TimelineTab({trip,onUpdate,onLocate,onFocusDay,onFocusItem,onFocusRoute,compact=false,settings,onPickFromMap,shownDayIds=null,onToggleDayVisibility,scrollToDayId=null}){
   const[showBank,setShowBank]=useState(!compact);
   const[dayOffset,setDayOffset]=useState(0);
+
+  // גלילה אוטומטית לכרטיסיית יום כשמגיעים מלוח הזמנים המלא
+  useEffect(()=>{
+    if(!scrollToDayId) return;
+    const el=document.querySelector(`[data-day-id="${scrollToDayId}"]`);
+    if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+  },[scrollToDayId]);
 
   const updDay=upd=>onUpdate(prev=>({...prev,days:prev.days.map(d=>d.id===upd.id?upd:d)}));
   const updateBankNote=(placeId,note)=>onUpdate(prev=>({...prev,interestBank:(prev.interestBank||[]).map(i=>i.placeId===placeId?{...i,note}:i)}));
@@ -6115,6 +6122,7 @@ function App(){
   const[hlDay,setHlDay]=useState(null);
   const[hlItem,setHlItem]=useState(null);
   const[hlRoute,setHlRoute]=useState(null);
+  const[scrollToDayId,setScrollToDayId]=useState(null); // גלילה לכרטיסיית יום בסרגל הצד
   const[shownDayIds,setShownDayIds]=useState(null); // null=הכל, Set=ימים נבחרים
   const ghSha=useRef(null);
   const autoSyncTimer=useRef(null);
@@ -6511,6 +6519,7 @@ function App(){
               onFocusRoute={r=>setHlRoute(r)}
               settings={settings} onPickFromMap={pickLocationFromMap}
               shownDayIds={shownDayIds} onToggleDayVisibility={toggleDayVisibility}
+              scrollToDayId={scrollToDayId}
             />:noTrip}
           </div>
           {/* עמודה 3: בנק אטרקציות */}
@@ -6525,8 +6534,8 @@ function App(){
         </div>
       );
       case 'timeline': return <TimelineTab trip={trip} onUpdate={updTrip} onPickFromMap={pickLocationFromMap} settings={settings} shownDayIds={shownDayIds} onToggleDayVisibility={toggleDayVisibility}
-          onFocusItem={(lat,lng,name)=>{setHlDay(null);setHlRoute(null);setTab('map');if(window.__gmHighlightItem)window.__gmHighlightItem(lat,lng,name);else window.__gmPendingItem={lat,lng,name};}}
-          onFocusRoute={r=>{setHlRoute(r);setHlDay(null);setTab('map');}}/>;
+          onFocusItem={(lat,lng,name,dayId)=>{setHlItem({lat,lng,name});setHlDay(null);setHlRoute(null);if(dayId)setScrollToDayId(dayId);setTab('map');}}
+          onFocusRoute={r=>{setHlRoute(r);setHlDay(null);if(r?.dayId)setScrollToDayId(r.dayId);setTab('map');}}/>;
       case 'expenses': return <ExpensesTab trip={trip} onUpdate={updTrip}/>;
       case 'documents': return <DocsTab trip={trip} onUpdate={updTrip} settings={settings}/>;
       case 'packing': return <Checklist title="רשימת ציוד" emoji="🎒" items={trip.packingList} onUpdate={items=>updTrip({...trip,packingList:items})}/>;
