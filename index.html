@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v170';
+const APP_VERSION = 'v171';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -1087,7 +1087,8 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         ()=>{ onDone?.(); } // גם אם נדחה — נשאר בברירת מחדל
       );
     };
-    goToCurrentLoc();
+    // אם יש פריט ממתין להדגשה — לא ממרכז על המיקום הנוכחי, כדי שה-panTo של ה-highlight לא יידחה
+    if(!highlightItem) goToCurrentLoc();
     window.__gmCurrentLoc=()=>goToCurrentLoc(()=>toast('מרכז על מיקומך הנוכחי','success'));
 
     // ResizeObserver — מפעיל resize כשהמיכל חוזר להיות גלוי (סלולר: מעבר בין תצוגות)
