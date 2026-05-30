@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v180';
+const APP_VERSION = 'v181';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -1349,14 +1349,14 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         const bm=new window.google.maps.Marker({
           position:{lat:block.lat,lng:block.lng},
           map:mapInst.current,
-          title:block.title||'',
+          title:block.customName||block.title||'',
           label:{text:String(blockIdx+1),color:'#fff',fontSize:'10px',fontWeight:'bold'},
-          icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:10,fillColor:color,fillOpacity:0.9,strokeColor:'#fff',strokeWeight:1.5},
+          icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:10,fillColor:block.markerColor||color,fillOpacity:0.9,strokeColor:'#fff',strokeWeight:1.5},
           zIndex:5,
         });
         bm.addListener('click',()=>{
-          if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:block.title||'פעילות',lat:block.lat,lng:block.lng,address:block.location||''});return;}
-          window.__gmShowSheet?.({name:block.title||'פעילות',address:block.location||'',lat:block.lat,lng:block.lng,placeId:block.placeId||null,rating:block.rating||null,placeType:block.placeType||''});
+          if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:block.customName||block.title||'פעילות',lat:block.lat,lng:block.lng,address:block.location||''});return;}
+          window.__gmShowSheet?.({name:block.customName||block.title||'פעילות',address:block.location||'',lat:block.lat,lng:block.lng,placeId:block.placeId||null,rating:block.rating||null,placeType:block.placeType||''});
         });
         markers.current.push(bm);
       });
@@ -1377,23 +1377,24 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
     trip.interestBank.forEach(item=>{
       if (!item.lat) return;
       const ic=BANK_ICON[item._listSource]||BANK_ICON.saved;
+      const _mc=item.markerColor||ic.color; // צבע מותאם > צבע קטגוריה
       const iconSpec=ic.svgPath
-        ? {path:ic.svgPath,fillColor:ic.color,fillOpacity:0.95,strokeColor:'#fff',strokeWeight:1.5,scale:ic.scale}
-        : {path:window.google.maps.SymbolPath.CIRCLE,scale:ic.scale,fillColor:ic.color,fillOpacity:0.95,strokeColor:'#fff',strokeWeight:1.5};
+        ? {path:ic.svgPath,fillColor:_mc,fillOpacity:0.95,strokeColor:'#fff',strokeWeight:1.5,scale:ic.scale}
+        : {path:window.google.maps.SymbolPath.CIRCLE,scale:ic.scale,fillColor:_mc,fillOpacity:0.95,strokeColor:'#fff',strokeWeight:1.5};
       const m=new window.google.maps.Marker({
         position:{lat:item.lat,lng:item.lng},
         map:mapInst.current,
-        title:`${TITLE_EMOJI[item._listSource]||'📍'} ${item.name}`,
+        title:`${TITLE_EMOJI[item._listSource]||'📍'} ${item.customName||item.name}`,
         ...(ic.label?{label:{text:ic.label,color:'#fff',fontSize:'9px',fontWeight:'bold'}}:{}),
         icon:iconSpec,
         zIndex:3,
       });
       m.addListener('click',()=>{
-        if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:item.name||'',lat:item.lat,lng:item.lng,address:item.address||''});return;}
+        if(mapPickCallbackRef?.current){const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;cb({name:item.customName||item.name||'',lat:item.lat,lng:item.lng,address:item.address||''});return;}
         // הצג נתונים שמורים מיידית
         const cached=item.placeId?window.__placeCache?.[item.placeId]:null;
-        const p=cached||{name:item.name,address:item.address||'',lat:item.lat,lng:item.lng,
-          placeId:item.placeId||null,rating:item.rating??null,
+        const p=cached||{name:item.customName||item.name,address:item.address||'',lat:item.lat,lng:item.lng,
+          placeId:item.placeId||null,rating:item.rating??null,customName:item.customName||null,
           openStatus:item.openStatus||'',todayHours:item.todayHours||'',
           phone:item.phone||'',website:item.website||'',placeType:item.placeType||''};
         window.__gmShowSheet?.(p);
@@ -1428,9 +1429,9 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
     const _mkClick=(pin,fallbackName)=>()=>{
       if(mapPickCallbackRef?.current){
         const cb=mapPickCallbackRef.current;mapPickCallbackRef.current=null;
-        cb({name:pin.title||fallbackName,lat:pin.lat,lng:pin.lng,address:pin.location||pin.title||''});return;
+        cb({name:pin.customName||pin.title||fallbackName,lat:pin.lat,lng:pin.lng,address:pin.location||pin.customName||pin.title||''});return;
       }
-      window.__gmShowSheet?.({name:pin.title||fallbackName,address:pin.location||pin.title||'',
+      window.__gmShowSheet?.({name:pin.customName||pin.title||fallbackName,address:pin.location||pin.customName||pin.title||'',
         lat:pin.lat,lng:pin.lng,placeId:pin.placeId||null,
         rating:pin.placeRating||null,placeType:pin.placeType||'',notes:pin.notes||''});
     };
@@ -1439,7 +1440,7 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         position:{lat:startPin.lat,lng:startPin.lng},
         map:mapInst.current,
         icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:18,fillColor:'#16a34a',fillOpacity:1,strokeColor:'#fff',strokeWeight:3},
-        title:startPin.title||'מוצא',
+        title:startPin.customName||startPin.title||'מוצא',
         zIndex:102,
       });
       m.addListener('click',_mkClick(startPin,'נקודת מוצא'));
@@ -1452,8 +1453,8 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         position:{lat:block.lat,lng:block.lng},
         map:mapInst.current,
         label:{text:String(i+1),color:'#fff',fontSize:'13px',fontWeight:'bold'},
-        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:18,fillColor:color,fillOpacity:1,strokeColor:'#fff',strokeWeight:3},
-        title:`${i+1}. ${block.title||''}`,
+        icon:{path:window.google.maps.SymbolPath.CIRCLE,scale:18,fillColor:block.markerColor||color,fillOpacity:1,strokeColor:'#fff',strokeWeight:3},
+        title:`${i+1}. ${block.customName||block.title||''}`,
         zIndex:100,
       });
       m.addListener('click',_mkClick(block,'פעילות'));
@@ -1938,10 +1939,10 @@ function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onMoveToDayB
             )}
             {block.lat&&onFocusItem&&(
               <button style={{...btnStyle,color:'#4f8ef7'}} title="הצג במפה הפנימית"
-                onClick={e=>{e.stopPropagation();onFocusItem(block.lat,block.lng,block.title);}}>🗺️</button>
+                onClick={e=>{e.stopPropagation();onFocusItem(block.lat,block.lng,block.customName||block.title);}}>🗺️</button>
             )}
             {(block.lat||block.placeId)&&(
-              <GLink url={mkMapsUrl(block.placeId,block.lat,block.lng,block.title)}
+              <GLink url={mkMapsUrl(block.placeId,block.lat,block.lng,block.customName||block.title)}
                 style={{marginRight:0}} onClick={e=>e.stopPropagation()}/>
             )}
             {onMoveToBank&&(
@@ -1964,7 +1965,7 @@ function BlockItem({block,interestBank,onEdit,onDelete,onMoveToBank,onMoveToDayB
             )}
             {onDelete&&(
               <button style={{...btnStyle,color:'#ef4444',fontWeight:700,fontSize:13}} title="הסר מהיום"
-                onClick={e=>{e.stopPropagation();if(window.confirm(`להסיר "${block.title||'פעילות'}" מהיום?`))onDelete(block.id);}}>✕</button>
+                onClick={e=>{e.stopPropagation();if(window.confirm(`להסיר "${block.customName||block.title||'פעילות'}" מהיום?`))onDelete(block.id);}}>✕</button>
             )}
           </div>
         </div>
@@ -2040,7 +2041,7 @@ const BANK_SRC_PICKER={liked:{emoji:'❤️',color:'#ec4899'},wantToGo:{emoji:'�
 function LocationPickerModal({bank,title,onPick,onPickFromMap,onClose,onCreateEmpty}){
   const[search,setSearch]=useState('');
   const q=search.trim().toLowerCase();
-  const filtered=bank.filter(i=>!q||(i.name||'').toLowerCase().includes(q)||(i.address||'').toLowerCase().includes(q));
+  const filtered=bank.filter(i=>!q||(i.customName||'').toLowerCase().includes(q)||(i.name||'').toLowerCase().includes(q)||(i.address||'').toLowerCase().includes(q));
   return(
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal" style={{maxWidth:460,width:'95vw',maxHeight:'80vh',display:'flex',flexDirection:'column'}}>
@@ -2312,7 +2313,7 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
     }
   };
   const moveBlockToDayBank=(block)=>{
-    const bankItem={id:uid(),name:block.title||'פעילות',address:block.location||'',
+    const bankItem={id:uid(),name:block.title||'פעילות',customName:block.customName||undefined,address:block.location||'',
       lat:block.lat||null,lng:block.lng||null,placeId:block.placeId||'',
       rating:block.placeRating||null,placeType:block.placeType||'',
       openStatus:block.placeOpenStatus||'',todayHours:block.placeTodayHours||'',
@@ -3498,7 +3499,8 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
 /* ══════════════════════════════════
    פריט בנק אטרקציות
 ══════════════════════════════════ */
-function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,onSelect,onEnrich,enriching,onNoteChange,onAddToDayBank,onSetDayStart,onSetDayEnd,onSaveCustomName}){
+const MARKER_COLORS=['#ef4444','#f97316','#eab308','#22c55e','#4f8ef7','#8b5cf6','#ec4899','#14b8a6'];
+function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,onSelect,onEnrich,enriching,onNoteChange,onAddToDayBank,onSetDayStart,onSetDayEnd,onSaveCustomName,onSaveMarkerColor}){
   const[selDay,setSelDay]=useState('');
   const[selDayBank,setSelDayBank]=useState('');
   const[selDayStart,setSelDayStart]=useState('');
@@ -3519,7 +3521,8 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
   const srcInfo=BANK_SRC_PICKER[item._listSource]||null;
 
   return <div className="interest-item" style={{marginBottom:6,flexDirection:'column',alignItems:'stretch',gap:8,
-    outline:selected?'2px solid var(--accent)':'2px solid transparent',borderRadius:8,transition:'outline 0.15s'}}>
+    outline:selected?'2px solid var(--accent)':'2px solid transparent',borderRadius:8,transition:'outline 0.15s',
+    borderRight:item.markerColor?`4px solid ${item.markerColor}`:'1px solid var(--border)'}}>
     <div style={{display:'flex',alignItems:'flex-start',gap:6}}>
       {onSelect&&<input type="checkbox" checked={!!selected} onChange={e=>onSelect(item.id,e.target.checked)}
         style={{marginTop:3,flexShrink:0,cursor:'pointer',width:14,height:14}} onClick={e=>e.stopPropagation()}/>}
@@ -3554,6 +3557,23 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
         {item.website&&<a href={item.website} target="_blank" rel="noreferrer" style={{fontSize:11,color:'var(--accent)',display:'block',marginTop:1,wordBreak:'break-all'}} onClick={e=>e.stopPropagation()}>🌐 {item.website.replace(/^https?:\/\//,'').split('/')[0]}</a>}
         {/* קישור גוגל מפות — אוטומטי מהייבוא או מ-placeId, ללא צורך ב-🔍 */}
         {mapsUrl&&<GLink url={mapsUrl} style={{marginTop:3}} onClick={e=>e.stopPropagation()}/>}
+        {/* בחירת צבע סמן במפה */}
+        {onSaveMarkerColor&&(
+          <div style={{display:'flex',alignItems:'center',gap:4,marginTop:5,flexWrap:'wrap'}} onClick={e=>e.stopPropagation()}>
+            <span style={{fontSize:10,color:'var(--text3)',flexShrink:0}}>📍</span>
+            <button onClick={()=>onSaveMarkerColor(item.placeId,item.id,undefined)}
+              title="ברירת מחדל"
+              style={{width:14,height:14,borderRadius:'50%',border:!item.markerColor?'2px solid var(--accent)':'1px solid var(--border)',
+                background:'var(--bg3)',cursor:'pointer',padding:0,flexShrink:0}}/>
+            {MARKER_COLORS.map(c=>(
+              <button key={c} onClick={()=>onSaveMarkerColor(item.placeId,item.id,c)}
+                title={c}
+                style={{width:14,height:14,borderRadius:'50%',
+                  border:item.markerColor===c?'2px solid var(--text)':'1px solid rgba(0,0,0,.15)',
+                  background:c,cursor:'pointer',padding:0,flexShrink:0}}/>
+            ))}
+          </div>
+        )}
       </div>
       <div style={{display:'flex',flexDirection:'column',gap:4,flexShrink:0}}>
         {item.lat&&(onLocate||onFocusItem)&&(
@@ -3883,6 +3903,20 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       })):prev.days
     }));
   };
+  const saveMarkerColorLocal=(placeId,bankItemId,markerColor)=>{
+    const mc=markerColor||undefined;
+    onUpdate(prev=>({
+      ...prev,
+      interestBank:(prev.interestBank||[]).map(i=>
+        (placeId&&i.placeId===placeId)||(bankItemId&&!placeId&&i.id===bankItemId)?{...i,markerColor:mc}:i
+      ),
+      days:placeId?prev.days.map(d=>({
+        ...d,
+        blocks:d.blocks.map(b=>b.placeId===placeId?{...b,markerColor:mc}:b),
+        dayBank:(d.dayBank||[]).map(i=>i.placeId===placeId?{...i,markerColor:mc}:i)
+      })):prev.days
+    }));
+  };
 
   // ── ה-auto-enrich האוטומטי הוסר — גרם לחיובים מיותרים ב-Places API ──
   // כעת: המשתמש מחליט מתי לקשר לגוגל (כפתור מפורש בלבד)
@@ -4018,7 +4052,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     let items=trip.interestBank.filter(i=>matchesSrc(i,filterSrc));
     // סינון לפי חיפוש
     const q=bankSearch.trim().toLowerCase();
-    if(q) items=items.filter(i=>(i.name||'').toLowerCase().includes(q)||(i.address||'').toLowerCase().includes(q)||(i.placeType||'').toLowerCase().includes(q));
+    if(q) items=items.filter(i=>(i.customName||'').toLowerCase().includes(q)||(i.name||'').toLowerCase().includes(q)||(i.address||'').toLowerCase().includes(q)||(i.placeType||'').toLowerCase().includes(q));
     // מיון
     if(sortMode==='name'){
       items.sort((a,b)=>(a.name||'').localeCompare(b.name||'','he'));
@@ -4614,6 +4648,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
                   onAddToDayBank={addItemToDayBank}
                   onSetDayStart={setItemAsStart} onSetDayEnd={setItemAsEnd}
                   onSaveCustomName={saveCustomNameLocal}
+                  onSaveMarkerColor={saveMarkerColorLocal}
                   onNoteChange={(id,note)=>{onUpdate({...tripRef.current,interestBank:tripRef.current.interestBank.map(i=>i.id===id?{...i,note}:i)});}}/>
               </div>
             ))}
@@ -4655,6 +4690,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
                 onEnrich={enrichItem} enriching={enrichingId===item.id}
                 onAddToDayBank={addItemToDayBank}
                 onSaveCustomName={saveCustomNameLocal}
+                onSaveMarkerColor={saveMarkerColorLocal}
                 onNoteChange={(id,note)=>{onUpdate({...tripRef.current,interestBank:tripRef.current.interestBank.map(i=>i.id===id?{...i,note}:i)});}}/>
             ))}
           </div>;
@@ -6053,7 +6089,7 @@ function ReportTab({trip}){
         if(!sorted.length){lines.push('  (אין פעילויות)');return;}
         sorted.forEach(b=>{
           const end=addMins(b.startTime,b.durationMins);
-          lines.push(`  ${b.isCompleted?'✅':'⬜'} ${b.startTime}–${end}  ${BLOCK_EMOJI[b.type]} ${b.title||BLOCK_HE[b.type]}${b.placeType?' ['+b.placeType+']':''}`);
+          lines.push(`  ${b.isCompleted?'✅':'⬜'} ${b.startTime}–${end}  ${BLOCK_EMOJI[b.type]} ${b.customName||b.title||BLOCK_HE[b.type]}${b.placeType?' ['+b.placeType+']':''}`);
           if(b.location) lines.push(`       📍 ${b.location}`);
           if(b.notes) lines.push(`       📝 ${b.notes}`);
           if(b.rating>0) lines.push(`       ${'★'.repeat(b.rating)}${'☆'.repeat(5-b.rating)} דירוג אישי`);
@@ -6203,7 +6239,7 @@ function ReportTab({trip}){
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:13,fontWeight:600,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
                         {b.isCompleted&&<span style={{color:'var(--green)'}}>✅</span>}
-                        {BLOCK_EMOJI[b.type]} {b.title||BLOCK_HE[b.type]}
+                        {BLOCK_EMOJI[b.type]} {b.customName||b.title||BLOCK_HE[b.type]}
                         {b.placeType&&<span style={{fontSize:10,color:'var(--text3)',fontWeight:400,background:'var(--bg3)',padding:'1px 6px',borderRadius:4}}>{b.placeType}</span>}
                       </div>
                       {b.location&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>📍 {b.location}</div>}
@@ -6676,6 +6712,23 @@ function App(){
     }));
   },[trip,updTrip]);
 
+  const saveMarkerColor=useCallback((placeId,bankItemId,markerColor)=>{
+    if(!trip)return;
+    const mc=markerColor||undefined;
+    updTrip(prev=>({
+      ...prev,
+      interestBank:(prev.interestBank||[]).map(i=>
+        (placeId&&i.placeId===placeId)||(bankItemId&&!placeId&&i.id===bankItemId)
+          ?{...i,markerColor:mc}:i
+      ),
+      days:placeId?prev.days.map(d=>({
+        ...d,
+        blocks:d.blocks.map(b=>b.placeId===placeId?{...b,markerColor:mc}:b),
+        dayBank:(d.dayBank||[]).map(i=>i.placeId===placeId?{...i,markerColor:mc}:i)
+      })):prev.days
+    }));
+  },[trip,updTrip]);
+
   const setDayLocation=useCallback((dayId,field,name,lat,lng,placeData=null)=>{
     if(!trip)return;
     const patch=field==='start'
@@ -6851,7 +6904,7 @@ function App(){
               onSetDayLocation={setDayLocation} onUpdateBankItem={updateBankItem}
               highlightDay={hlDay} highlightItem={hlItem} routeHighlight={hlRoute}
               mapPickCallbackRef={mapPickCallbackRef} mapPickLabel={mapPickLabel} onCancelMapPick={cancelMapPick}
-              onAddToDayBank={addToDayBank} shownDayIds={shownDayIds} onSaveCustomName={saveCustomName}/>
+              onAddToDayBank={addToDayBank} shownDayIds={shownDayIds} onSaveCustomName={saveCustomName} onSaveMarkerColor={saveMarkerColor}/>
           </div>
           {/* backdrop בסלולר */}
           <div className={`mob-panel-backdrop${mobilePanel!=='map'?' show':''}`}
