@@ -1162,24 +1162,27 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
    BLOCK EDIT SHEET (mobile)
 ════════════════════════════════ */
 function BlockEditSheet({block,onSave,onDelete,onClose,isNew,prevEndTime,onCascadeSave,onCascadeSaveUnlink}){
-  const[b,setB]=useState({...block});
+  const initDur=block.durationMins!=null
+    ?block.durationMins
+    :(block.endTime&&block.startTime?Math.max(15,toMinsStr(block.endTime)-toMinsStr(block.startTime)):60);
+  const[b,setB]=useState({...block,durationMins:initDur,endTime:addMins(block.startTime||'09:00',initDur)});
   const[timeError,setTimeError]=useState(false);
   const[unlinkPrompt,setUnlinkPrompt]=useState(false);
   const origStartTime=useRef(block.startTime);
-  const origEndTime=useRef(block.endTime);
+  const origDurMins=useRef(initDur);
   const upd=(k,v)=>{
     if(k==='startTime'){
-      setB(p=>{
-        const durMins=p.endTime&&p.startTime?Math.max(15,toMinsStr(p.endTime)-toMinsStr(p.startTime)):60;
-        return{...p,startTime:v,endTime:addMins(v,durMins)};
-      });
+      setB(p=>({...p,startTime:v,endTime:addMins(v,p.durationMins||60)}));
       setTimeError(false);setUnlinkPrompt(false);
+    }else if(k==='durationMins'){
+      const dur=Math.max(5,parseInt(v)||5);
+      setB(p=>({...p,durationMins:dur,endTime:addMins(p.startTime||'09:00',dur)}));
     }else{
       setB(p=>({...p,[k]:v}));
     }
   };
   const doSave=(unlink=false)=>{
-    const timeChanged=b.startTime!==origStartTime.current||b.endTime!==origEndTime.current;
+    const timeChanged=b.startTime!==origStartTime.current||b.durationMins!==origDurMins.current;
     if(unlink&&onCascadeSaveUnlink){onCascadeSaveUnlink(b);}
     else if(!isNew&&timeChanged&&onCascadeSave){onCascadeSave(b);}
     else{onSave(b);}
@@ -1238,9 +1241,11 @@ function BlockEditSheet({block,onSave,onDelete,onClose,isNew,prevEndTime,onCasca
               </div>}
             </div>
             <div style={{flex:1}}>
-              <label style={lbl}>שעת סיום</label>
-              <input type="time" value={b.endTime||''} onChange={e=>upd('endTime',e.target.value)}
+              <label style={lbl}>משך (דקות)</label>
+              <input type="number" min="5" step="5" value={b.durationMins||60}
+                onChange={e=>upd('durationMins',e.target.value)}
                 style={{...inp,direction:'ltr',width:'100%'}}/>
+              {b.endTime&&<div style={{fontSize:10,color:'var(--text3)',marginTop:3}}>סיום: {b.endTime}</div>}
             </div>
           </div>
           {/* notes */}
