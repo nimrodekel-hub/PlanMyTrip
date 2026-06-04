@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v185';
+const APP_VERSION = 'v186';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4349,11 +4349,11 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     return{listName,places,totalInList};
   };
 
-  /* ─── שליחת בקשה דרך פרוקסי: סדרתי, timeout קצר ─── */
+  /* ─── שליחת בקשה דרך פרוקסי: מקביל — הראשון שמצליח מנצח ─── */
   const fetchListViaProxy=async(apiUrl)=>{
     const tryOne=async(url,isJson)=>{
       const ctrl=new AbortController();
-      const t=setTimeout(()=>ctrl.abort(),6000); /* 6 שניות — נכשל מהר, עובר לבא */
+      const t=setTimeout(()=>ctrl.abort(),12000); /* 12 שניות timeout לכל פרוקסי */
       try{
         const r=await fetch(url,{signal:ctrl.signal});
         if(!r.ok) throw new Error('HTTP '+r.status);
@@ -4368,13 +4368,18 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       {u:`https://api.allorigins.win/raw?url=${enc}`,j:false},
       {u:`https://api.allorigins.win/get?url=${enc}`,j:true},
       {u:`https://corsproxy.io/?${enc}`,j:false},
+      {u:`https://corsproxy.io/?url=${enc}`,j:false},
+      {u:`https://proxy.cors.sh/${apiUrl}`,j:false},
       {u:`https://test.cors.workers.dev/?${apiUrl}`,j:false},
       {u:`https://api.codetabs.com/v1/proxy?quest=${enc}`,j:false},
+      {u:`https://thingproxy.freeboard.io/fetch/${apiUrl}`,j:false},
     ];
-    for(const{u,j} of list){
-      try{return await tryOne(u,j);}catch{}
+    /* הרץ את כולם במקביל — הראשון שמחזיר תוצאה תקפה מנצח */
+    try{
+      return await Promise.any(list.map(({u,j})=>tryOne(u,j)));
+    }catch{
+      throw new Error('all proxies failed');
     }
-    throw new Error('all proxies failed');
   };
 
   /* ─── ייבוא רשימה: פרוקסי ציבורי (מהיר) → GitHub Action (אמין) ─── */
