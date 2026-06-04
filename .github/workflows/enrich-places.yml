@@ -1,0 +1,243 @@
+name: Enrich Places Data
+on:
+  repository_dispatch:
+    types: [enrich-places]
+
+permissions:
+  contents: write
+
+jobs:
+  enrich:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Enrich place details from Google Maps + Nominatim
+        env:
+          PLACES_B64: ${{ github.event.client_payload.places_b64 }}
+          REQ_ID: ${{ github.event.client_payload.req_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "$PLACES_B64" | base64 -d > /tmp/places.json
+          COUNT=$(python3 -c 'import json; print(len(json.load(open("/tmp/places.json"))))')
+          echo "Enriching $COUNT places..."
+
+          python3 << 'PYEOF'
+import json, re, urllib.request, urllib.parse, time, sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+GMAPS_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+}
+
+def fetch_url(url, timeout=15):
+    req = urllib.request.Request(url, headers=GMAPS_HEADERS)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read().decode('utf-8', errors='replace')
+    except Exception:
+        return ''
+
+def nominatim_reverse(lat, lng):
+    url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json&zoom=18&accept-language=en"
+    req = urllib.request.Request(url, headers={'User-Agent': 'PlanMyTrip/1.0 (travel-planning)'})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        addr = data.get('address', {})
+        parts = []
+        road = addr.get('road') or addr.get('pedestrian') or addr.get('path') or addr.get('footway') or ''
+        num  = addr.get('house_number', '')
+        if road:
+            parts.append((num + ' ' + road).strip() if num else road)
+        elif num:
+            parts.append(num)
+        suburb = addr.get('neighbourhood') or addr.get('suburb') or ''
+        city   = addr.get('city') or addr.get('town') or addr.get('village') or addr.get('municipality') or ''
+        state  = addr.get('state', '')
+        country = addr.get('country', '')
+        if suburb and suburb != city:
+            parts.append(suburb)
+        if city:
+            parts.append(city)
+        if state and state != city:
+            parts.append(state)
+        if country:
+            parts.append(country)
+        return ', '.join(parts[:5]) if parts else data.get('display_name', '').split(',')[0]
+    except Exception as e:
+        return ''
+
+def parse_gmaps_html(html):
+    result = {}
+    if not html or len(html) < 500:
+        return result
+
+    # ── JSON-LD (most structured, parse first) ──
+    for m in re.finditer(
+        r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+        html, re.DOTALL | re.IGNORECASE
+    ):
+        try:
+            d = json.loads(m.group(1))
+            if isinstance(d, list):
+                d = d[0] if d else {}
+            if not isinstance(d, dict):
+                continue
+            t = str(d.get('@type', ''))
+            if not any(x in t for x in [
+                'Business', 'Restaurant', 'Hotel', 'Museum', 'Store',
+                'Park', 'Tourist', 'Food', 'Lodging', 'Attraction', 'Place'
+            ]):
+                continue
+            addr = d.get('address', {})
+            if isinstance(addr, dict):
+                parts = [
+                    addr.get('streetAddress', ''),
+                    addr.get('addressLocality', ''),
+                    addr.get('addressRegion', ''),
+                    addr.get('addressCountry', ''),
+                ]
+                a = ', '.join(p for p in parts if p)
+                if a:
+                    result['address'] = a
+            elif isinstance(addr, str) and addr:
+                result['address'] = addr
+            if d.get('telephone'):
+                result['phone'] = str(d['telephone'])
+            url = d.get('url', '')
+            if url and 'google.com' not in url and 'goo.gl' not in url:
+                result['website'] = url
+            ag = d.get('aggregateRating', {})
+            if isinstance(ag, dict):
+                rv = ag.get('ratingValue')
+                if rv:
+                    result['rating'] = round(float(rv), 1)
+                rc = ag.get('ratingCount') or ag.get('reviewCount')
+                if rc:
+                    result['userRatingsTotal'] = int(rc)
+            if t and not result.get('placeType'):
+                result['placeType'] = t
+            break
+        except Exception:
+            pass
+
+    # ── Phone from tel: links ──
+    if not result.get('phone'):
+        m = re.search(r'href=["\']tel:([+\d\s\-\(\)\.]{7,25})["\']', html)
+        if m:
+            result['phone'] = m.group(1).strip()
+
+    # ── Website: look for non-Google URLs ──
+    if not result.get('website'):
+        SKIP = r'(?:google|goo\.gl|schema\.org|w3\.org|apple\.com|facebook|twitter|instagram|yelp|tripadvisor|wikimedia|wikipedia)'
+        m = re.search(
+            r'"(https?://(?!' + SKIP + r')[\w\-]+\.[\w\-]{2,10}[^\s"\'\\<>]{0,120})"',
+            html
+        )
+        if m:
+            url = m.group(1)
+            if len(url) > 8 and '\\' not in url and url.count('"') == 0:
+                result['website'] = url
+
+    # ── Rating: look for "X.X" near review context ──
+    if not result.get('rating'):
+        m = re.search(r'([1-4]\.[0-9])\s*(?:stars?|★|out of 5|\([\d,]+ review)', html, re.IGNORECASE)
+        if m:
+            v = float(m.group(1))
+            if 1.0 <= v <= 5.0:
+                result['rating'] = v
+
+    # ── og:description — sometimes has "4.5 stars · Category · Address" ──
+    m = re.search(
+        r'<meta[^>]+(?:property=["\']og:description["\'][^>]+content=["\']([^"\'<>]+)["\']'
+        r'|content=["\']([^"\'<>]+)["\'][^>]+property=["\']og:description["\'])',
+        html, re.IGNORECASE
+    )
+    if m:
+        desc = (m.group(1) or m.group(2) or '').strip()
+        if not result.get('rating'):
+            rm = re.search(r'(\d+(?:\.\d+)?)\s*(?:stars?|★)', desc, re.IGNORECASE)
+            if rm:
+                v = float(rm.group(1))
+                if 1.0 <= v <= 5.0:
+                    result['rating'] = v
+
+    return result
+
+def enrich_one(place):
+    pid  = place.get('id', '')
+    cid  = str(place.get('_cid', '')).strip()
+    lat  = place.get('lat')
+    lng  = place.get('lng')
+
+    enriched = {'id': pid}
+
+    if cid:
+        html = fetch_url(f"https://www.google.com/maps?cid={cid}&hl=en")
+        if html and len(html) > 1000:
+            parsed = parse_gmaps_html(html)
+            enriched.update(parsed)
+
+    return enriched, lat, lng
+
+
+places = json.load(open('/tmp/places.json'))
+results_raw = []
+
+# Parallel Google Maps fetching (3 workers, polite)
+with ThreadPoolExecutor(max_workers=3) as executor:
+    future_map = {executor.submit(enrich_one, p): p for p in places}
+    done = 0
+    for future in as_completed(future_map):
+        done += 1
+        try:
+            enriched, lat, lng = future.result()
+        except Exception:
+            p = future_map[future]
+            enriched, lat, lng = {'id': p.get('id', '')}, p.get('lat'), p.get('lng')
+        results_raw.append((enriched, lat, lng))
+        if done % 10 == 0:
+            print(f"  Google Maps: {done}/{len(places)} done")
+        time.sleep(0.3)  # be polite
+
+# Nominatim fallback for missing addresses (strict 1 req/s)
+nom_done = 0
+for enriched, lat, lng in results_raw:
+    if not enriched.get('address') and lat and lng:
+        if nom_done > 0:
+            time.sleep(1.1)
+        addr = nominatim_reverse(lat, lng)
+        if addr:
+            enriched['address'] = addr
+        nom_done += 1
+
+final = [r[0] for r in results_raw]
+json.dump(final, open('/tmp/enriched.json', 'w'), ensure_ascii=False)
+
+addr_count   = sum(1 for r in final if r.get('address'))
+rating_count = sum(1 for r in final if r.get('rating'))
+phone_count  = sum(1 for r in final if r.get('phone'))
+print(f"Done: {len(final)} places | address:{addr_count} | rating:{rating_count} | phone:{phone_count}")
+PYEOF
+
+          # Upload results via GitHub API (no checkout needed)
+          gh_upload() {
+            local API_PATH="$1" CONTENT="$2"
+            local SHA BODY
+            SHA=$(gh api "repos/$REPO/contents/$API_PATH" --jq '.sha' 2>/dev/null || true)
+            BODY="{\"message\":\"enrich [skip ci]\",\"content\":\"$CONTENT\""
+            [ -n "$SHA" ] && BODY="$BODY,\"sha\":\"$SHA\""
+            BODY="$BODY}"
+            gh api "repos/$REPO/contents/$API_PATH" -X PUT --input - <<< "$BODY"
+          }
+
+          RESULT_B64=$(base64 -w0 /tmp/enriched.json)
+          ID_B64=$(printf '%s' "$REQ_ID" | base64 -w0)
+
+          # Write response first, id last (id signals completion to the app)
+          gh_upload "_cache/enrich_response.txt" "$RESULT_B64"
+          gh_upload "_cache/enrich_id.txt" "$ID_B64"
+          echo "Uploaded results — reqId: $REQ_ID"

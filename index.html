@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v191';
+const APP_VERSION = 'v192';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -3880,6 +3880,60 @@ const fetchViaGitHubAction=async(apiUrl,settings,onStatus)=>{
 };
 
 /* ══════════════════════════════════
+   העשרת פרטי מקומות דרך GitHub Action
+   שולף כתובת / דירוג / טלפון / אתר מגוגל מפות + Nominatim
+   ── אין שימוש ב-Places API ──
+══════════════════════════════════ */
+const enrichPlacesBatch=async(places,settings,onStatus,onResult)=>{
+  const tok=settings?.githubToken||'';
+  const user=settings?.githubUsername||'nimrodekel-hub';
+  const repo=settings?.githubRepo||'PlanMyTrip';
+  if(!tok||!user||!repo) return; // ללא token — דילוג שקט
+
+  const hdr={'Authorization':'token '+tok,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'};
+  const repoBase=`https://api.github.com/repos/${user}/${repo}`;
+
+  /* קידוד בטוח ל-Base64 (תמיכה מלאה ב-Unicode) */
+  const jsonStr=JSON.stringify(places.map(p=>({id:p.id,name:p.name,lat:p.lat,lng:p.lng,_cid:p._cid||''})));
+  const bytes=new TextEncoder().encode(jsonStr);
+  let b64raw='';
+  const CHUNK=8192;
+  for(let i=0;i<bytes.length;i+=CHUNK) b64raw+=String.fromCharCode(...bytes.subarray(i,i+CHUNK));
+  const placesB64=btoa(b64raw);
+
+  const reqId='enrich_'+Date.now();
+  const dispR=await fetch(`${repoBase}/dispatches`,{
+    method:'POST',headers:hdr,
+    body:JSON.stringify({event_type:'enrich-places',client_payload:{places_b64:placesB64,req_id:reqId}})
+  });
+  if(!dispR.ok) return; // שגיאה — דילוג שקט
+
+  onStatus?.('⏳ מעשיר פרטי '+places.length+' מקומות...');
+
+  const idUrl  =`${repoBase}/contents/_cache/enrich_id.txt`;
+  const respUrl=`${repoBase}/contents/_cache/enrich_response.txt`;
+
+  /* סקור כל 6 שניות, עד 9 דקות */
+  for(let i=0;i<90;i++){
+    await new Promise(r=>setTimeout(r,6000));
+    try{
+      const idR=await fetch(idUrl+'?t='+Date.now(),{headers:hdr});
+      if(!idR.ok) continue;
+      const savedId=b64ToUtf8((await idR.json()).content).trim();
+      if(savedId!==reqId) continue;
+      const rR=await fetch(respUrl+'?t='+Date.now(),{headers:hdr});
+      if(!rR.ok) continue;
+      const text=b64ToUtf8((await rR.json()).content);
+      const enriched=JSON.parse(text);
+      onStatus?.('');
+      onResult?.(enriched);
+      return;
+    }catch{}
+  }
+  onStatus?.(''); // timeout
+};
+
+/* ══════════════════════════════════
    פאנל בנק אטרקציות (עמודה עצמאית)
    תכונות: קיבוץ לפי מדינה, בחירה קבוצתית, העשרת פרטים מגוגל מפות
 ══════════════════════════════════ */
@@ -3893,6 +3947,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
   const[selected,setSelected]=useState(()=>new Set());
   const[enrichingId,setEnrichingId]=useState(null);
   const[batchProgress,setBatchProgress]=useState(null); // null | {done,total,name}
+  const[enrichStatus,setEnrichStatus]=useState(''); // סטטוס העשרה דרך GitHub Action
   const[bankSearch,setBankSearch]=useState('');
   const[sortMode,setSortMode]=useState('default'); // 'default'|'name'|'distance'
   const[mapCenter,setMapCenter]=useState(null); // {lat,lng} לשימוש במיון לפי מרחק
@@ -4359,6 +4414,10 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
                           ||scanStr(loc,v=>v.startsWith('ChIJ')&&v.length>10);
         const placeId=placeIdDirect||extractPlaceId(googlePath);
 
+        /* CID פנימי מגוגל — loc[6]=[id1_decimal, id2_decimal] */
+        const cidArr=sf(()=>loc[6]);
+        const _cid=Array.isArray(cidArr)&&cidArr[0]?String(cidArr[0]):'';
+
         const note=typeof p[3]==='string'?p[3].trim():'';
 
         /* debug: לוג מבנה הרשומה הראשונה בלבד */
@@ -4372,6 +4431,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
         const hasMeaningfulData=!!(rating||phone||website||address||placeId);
         places.push({
           id:uid(),name,address,lat,lng,
+          _cid,       // מזהה CID פנימי (עשרוני) לשימוש בהעשרה
           _noCoords:!lat,
           url:googlePath?`https://www.google.com${googlePath}`:'',
           placeId:placeId||'',
@@ -4466,6 +4526,40 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       +(dupCount?` (${dupCount} כפילויות דולגו)`:'')
       +(partial?` ⚠️ הרשימה מכילה ${totalInList} — ייתכן שחלק לא יובא, נסה שוב`:'');
     toast(msg,partial?'error':'success');
+
+    /* ── העשרת פרטים ברקע: כתובת / דירוג / טלפון / אתר ── */
+    /* רץ ברקע — לא חוסם את ממשק המשתמש */
+    const toEnrich=newPlaces.filter(p=>p._cid||p.lat);
+    if(toEnrich.length>0&&settings?.githubToken){
+      enrichPlacesBatch(
+        toEnrich, settings,
+        msg=>setEnrichStatus(msg),
+        enriched=>{
+          if(!Array.isArray(enriched)||!enriched.length) return;
+          const map=Object.fromEntries(enriched.map(e=>[e.id,e]));
+          onUpdate(prev=>{
+            const bank=(prev.interestBank||[]).map(item=>{
+              const e=map[item.id];
+              if(!e) return item;
+              return{
+                ...item,
+                ...(e.address  &&!item.address  ?{address:e.address}:{}),
+                ...(e.rating   &&!item.rating   ?{rating:e.rating}:{}),
+                ...(e.phone    &&!item.phone    ?{phone:e.phone}:{}),
+                ...(e.website  &&!item.website  ?{website:e.website}:{}),
+                ...(e.placeType&&!item.placeType?{placeType:e.placeType}:{}),
+                ...(e.userRatingsTotal&&!item.userRatingsTotal?{userRatingsTotal:e.userRatingsTotal}:{}),
+                lastFetched:Math.floor(Date.now()/1000),
+              };
+            });
+            return{...prev,interestBank:bank};
+          });
+          const addrCount=enriched.filter(e=>e.address).length;
+          const rateCount=enriched.filter(e=>e.rating).length;
+          toast(`✅ פרטים עודכנו: ${addrCount} כתובות, ${rateCount} דירוגים`,'success');
+        }
+      ).catch(()=>{setEnrichStatus('');});
+    }
   };
 
   /* ─── כניסה ראשית: מקום בודד או רשימה ─── */
@@ -4628,6 +4722,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       </button>}
       <div style={{flex:1}}/>
       {(enrichingId||batchProgress)&&<span style={{fontSize:10,color:'var(--amber)'}}>⏳{batchProgress?` ${batchProgress.done}/${batchProgress.total}`:' מעשיר...'}</span>}
+      {enrichStatus&&<span style={{fontSize:10,color:'var(--amber)',maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{enrichStatus}</span>}
       {onClose&&<button onClick={onClose} style={{background:'none',border:'none',color:'var(--text3)',fontSize:20,cursor:'pointer',lineHeight:1,padding:'0 2px'}}>✕</button>}
     </div>
 
@@ -4796,8 +4891,13 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
           ⏳ {batchProgress.name}
         </div>}
       </div>}
+      {/* סטטוס העשרה דרך GitHub Action */}
+      {enrichStatus&&!batchProgress&&<div style={{background:'rgba(234,179,8,.08)',border:'1px solid rgba(234,179,8,.3)',borderRadius:8,padding:'7px 10px',display:'flex',alignItems:'center',gap:6}}>
+        <span style={{fontSize:13}}>⏳</span>
+        <span style={{fontSize:11,color:'var(--amber)',flex:1}}>{enrichStatus}</span>
+      </div>}
       {/* כפתור השלמת כתובות קבוצתית — מופיע רק כשיש פריטים ללא כתובת */}
-      {!batchProgress&&trip.interestBank.some(i=>!i.placeId&&!i._notFound)&&(
+      {!batchProgress&&!enrichStatus&&trip.interestBank.some(i=>!i.placeId&&!i._notFound)&&(
         <div style={{background:'rgba(234,179,8,.1)',border:'1px solid rgba(234,179,8,.35)',borderRadius:8,padding:'8px 10px',marginBottom:2}}>
           <div style={{fontSize:11,fontWeight:700,color:'var(--amber)',marginBottom:5}}>
             🔍 {trip.interestBank.filter(i=>!i.placeId&&!i._notFound).length} אטרקציות ממתינות לקישור לגוגל מפות
