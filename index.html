@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v190';
+const APP_VERSION = 'v191';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -3512,10 +3512,8 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
    פריט בנק אטרקציות
 ══════════════════════════════════ */
 function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,onSelect,onEnrich,enriching,onNoteChange,onAddToDayBank,onSetDayStart,onSetDayEnd,onSaveCustomName,onChangeListSource}){
-  const[selDay,setSelDay]=useState('');
-  const[selDayBank,setSelDayBank]=useState('');
-  const[selDayStart,setSelDayStart]=useState('');
-  const[selDayEnd,setSelDayEnd]=useState('');
+  const[actTab,setActTab]=useState('day');
+  const[actDay,setActDay]=useState('');
   const[noteVal,setNoteVal]=useState(item.note||'');
   const[showNote,setShowNote]=useState(!!(item.note));
   const[nameEdit,setNameEdit]=useState(false);
@@ -3630,19 +3628,17 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
     {/* ── הוספה לימים: טאבים קומפקטיים ── */}
     {(()=>{
       const ACTIONS=[
-        {key:'day',    label:'➕ ליום',   color:'var(--accent)',   show:true},
-        {key:'bank',   label:'📌 בנק',   color:'#8b5cf6',         show:!!onAddToDayBank},
-        {key:'start',  label:'🟢 התחלה', color:'#22c55e',         show:!!onSetDayStart},
-        {key:'end',    label:'🔴 סיום',  color:'#ef4444',         show:!!onSetDayEnd},
+        {key:'day',  label:'➕ ליום',   color:'var(--accent)', show:true},
+        {key:'bank', label:'📌 בנק',    color:'#8b5cf6',       show:!!onAddToDayBank},
+        {key:'start',label:'🟢 התחלה', color:'#22c55e',        show:!!onSetDayStart},
+        {key:'end',  label:'🔴 סיום',  color:'#ef4444',        show:!!onSetDayEnd},
       ].filter(a=>a.show);
-      const [actTab,setActTab]=React.useState('day');
-      const [actDay,setActDay]=React.useState('');
       const doAction=()=>{
         if(!actDay)return;
-        if(actTab==='day'){onAddToDay(actDay,item);}
-        else if(actTab==='bank'){onAddToDayBank(actDay,item);}
-        else if(actTab==='start'){onSetDayStart(actDay,item);}
-        else if(actTab==='end'){onSetDayEnd(actDay,item);}
+        if(actTab==='day')onAddToDay(actDay,item);
+        else if(actTab==='bank')onAddToDayBank(actDay,item);
+        else if(actTab==='start')onSetDayStart(actDay,item);
+        else if(actTab==='end')onSetDayEnd(actDay,item);
         setActDay('');
       };
       const cur=ACTIONS.find(a=>a.key===actTab)||ACTIONS[0];
