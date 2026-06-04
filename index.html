@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v192';
+const APP_VERSION = 'v193';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4543,11 +4543,13 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
               if(!e) return item;
               return{
                 ...item,
-                ...(e.address  &&!item.address  ?{address:e.address}:{}),
-                ...(e.rating   &&!item.rating   ?{rating:e.rating}:{}),
-                ...(e.phone    &&!item.phone    ?{phone:e.phone}:{}),
-                ...(e.website  &&!item.website  ?{website:e.website}:{}),
-                ...(e.placeType&&!item.placeType?{placeType:e.placeType}:{}),
+                ...(e.address       &&!item.address       ?{address:e.address}:{}),
+                ...(e.rating        &&!item.rating        ?{rating:e.rating}:{}),
+                ...(e.phone         &&!item.phone         ?{phone:e.phone}:{}),
+                ...(e.website       &&!item.website       ?{website:e.website}:{}),
+                ...(e.placeType     &&!item.placeType     ?{placeType:e.placeType}:{}),
+                ...(e.todayHours    &&!item.todayHours    ?{todayHours:e.todayHours}:{}),
+                ...(e.openStatus    &&!item.openStatus    ?{openStatus:e.openStatus}:{}),
                 ...(e.userRatingsTotal&&!item.userRatingsTotal?{userRatingsTotal:e.userRatingsTotal}:{}),
                 lastFetched:Math.floor(Date.now()/1000),
               };
