@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v189';
+const APP_VERSION = 'v190';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -1358,30 +1358,42 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
       });
     });
 
-    // סמני בנק אטרקציות — צבע וסמל לפי מקור הרשימה
-    // נתיב SVG של מזוודה:
-    //  גוף סגור (Z) = מלא בצבע + ידית פתוחה (ללא Z) = רק קו מתאר לבן + רצועת אמצע
-    const SUITCASE_PATH='M-8,0 L-8,12 L8,12 L8,0 Z M-6,6 L6,6 M-4,0 L-4,-5 L4,-5 L4,0';
-    const BANK_ICON={
-      liked:    {color:'#ec4899',label:'♥',scale:7},   // ❤️ מועדפים
-      wantToGo: {color:'#22c55e',label:'⚑',scale:7},   // 🏴 רוצה להגיע
-      saved:    {color:'#f59e0b',label:'★',scale:6},   // ⭐ מקומות שמורים
-      list:     {color:'#6366f1',label:'♦',scale:6},   // 📋 רשימה
-      itinerary:{color:'#2563eb',label:'',  scale:1.4, svgPath:SUITCASE_PATH}, // 🧳 תוכנית נסיעה — כחול + מזוודה
+    // סמני בנק אטרקציות — SVG data URI (אמין בכל גרסאות Maps API)
+    const mkBankSvgIcon=(color,label,isSuitcase)=>{
+      const S=26;
+      let inner;
+      if(isSuitcase){
+        inner=`<rect x="3" y="9" width="18" height="12" rx="2" fill="${color}" stroke="white" stroke-width="1.8"/>
+               <path d="M9 9V6.5C9 5.7 9.7 5 10.5 5h3C14.3 5 15 5.7 15 6.5V9" fill="none" stroke="white" stroke-width="1.5"/>
+               <line x1="3" y1="15" x2="21" y2="15" stroke="white" stroke-width="1"/>`;
+      }else{
+        inner=`<circle cx="${S/2}" cy="${S/2}" r="${S/2-2}" fill="${color}" stroke="white" stroke-width="2"/>
+               <text x="${S/2}" y="${S/2+4}" text-anchor="middle" fill="white" font-size="${Math.round(S/2.6)}" font-weight="bold" font-family="Arial,sans-serif">${label}</text>`;
+      }
+      const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${S}" height="${S}" viewBox="0 0 ${S} ${S}">${inner}</svg>`;
+      return{
+        url:'data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(svg),
+        scaledSize:new window.google.maps.Size(S,S),
+        anchor:new window.google.maps.Point(S/2,S/2),
+      };
+    };
+    const BANK_CONF={
+      liked:    {color:'#ec4899',label:'♥'},
+      wantToGo: {color:'#22c55e',label:'⚑'},
+      saved:    {color:'#f59e0b',label:'★'},
+      list:     {color:'#6366f1',label:'♦'},
+      itinerary:{color:'#2563eb',label:'', suitcase:true},
     };
     const TITLE_EMOJI={liked:'❤️',wantToGo:'🏴',saved:'⭐',list:'📋',itinerary:'🧳'};
     trip.interestBank.forEach(item=>{
       if (!item.lat) return;
-      const ic=BANK_ICON[item._listSource]||BANK_ICON.saved;
-      const iconSpec=ic.svgPath
-        ? {path:ic.svgPath,fillColor:ic.color,fillOpacity:0.95,strokeColor:'#fff',strokeWeight:1.5,scale:ic.scale}
-        : {path:window.google.maps.SymbolPath.CIRCLE,scale:ic.scale,fillColor:ic.color,fillOpacity:0.95,strokeColor:'#fff',strokeWeight:1.5};
+      const bc=BANK_CONF[item._listSource]||BANK_CONF.saved;
+      const iconObj=mkBankSvgIcon(bc.color,bc.label,bc.suitcase);
       const m=new window.google.maps.Marker({
         position:{lat:item.lat,lng:item.lng},
         map:mapInst.current,
         title:`${TITLE_EMOJI[item._listSource]||'📍'} ${item.customName||item.name}`,
-        ...(ic.label?{label:{text:ic.label,color:'#fff',fontSize:'9px',fontWeight:'bold'}}:{}),
-        icon:iconSpec,
+        icon:iconObj,
         zIndex:3,
       });
       m.addListener('click',()=>{
@@ -1392,8 +1404,11 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
           placeId:item.placeId||null,rating:item.rating??null,
           openStatus:item.openStatus||'',todayHours:item.todayHours||'',
           phone:item.phone||'',website:item.website||'',placeType:item.placeType||''};
-        // תמיד עקוף עם customName של הפריט (גם אם ה-cache מחזיר שם גוגל מקורי)
         const p={...base,name:item.customName||base.name,customName:item.customName||null};
+        /* אם חסרים פרטים — הוסף רמז */
+        if(!base.address&&!base.phone&&!base.rating){
+          p._enrichHint='לחץ 🔍 בבנק האטרקציות להשלמת כתובת / דירוג / שעות';
+        }
         window.__gmShowSheet?.(p);
         // שלח ל-Google רק אם: לא בcache סשן AND הנתונים ישנים (יותר מ-7 ימים)
         const _staleSec=7*24*3600;
@@ -3612,46 +3627,50 @@ function BankItem({item,days,onAddToDay,onDelete,onLocate,onFocusItem,selected,o
         onClick={()=>setShowNote(true)}>+ הוסף הערה</button>
     )}
 
-    <div style={{display:'flex',gap:5}}>
-      <select value={selDay} onChange={e=>setSelDay(e.target.value)}
-        style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border)',color:'var(--text)',borderRadius:7,padding:'5px 8px',fontSize:11,fontFamily:'Heebo,sans-serif',direction:'rtl'}}>
-        <option value="">➕ בחר יום להוסיף...</option>
-        {days.map((d,i)=><option key={d.id} value={d.id}>יום {i+1}{d.location?' — '+d.location:''}</option>)}
-      </select>
-      <button className="btn btn-primary btn-sm" disabled={!selDay}
-        onClick={()=>{if(selDay){onAddToDay(selDay,item);setSelDay('');}}}
-        style={{opacity:selDay?1:0.4,flexShrink:0}}>הוסף</button>
-    </div>
-    {onAddToDayBank&&<div style={{display:'flex',gap:5}}>
-      <select value={selDayBank} onChange={e=>setSelDayBank(e.target.value)}
-        style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border)',color:'var(--text)',borderRadius:7,padding:'5px 8px',fontSize:11,fontFamily:'Heebo,sans-serif',direction:'rtl'}}>
-        <option value="">📌 הוסף לבנק יומי...</option>
-        {days.map((d,i)=><option key={d.id} value={d.id}>יום {i+1}{d.location?' — '+d.location:''}</option>)}
-      </select>
-      <button className="btn btn-sm" disabled={!selDayBank}
-        onClick={()=>{if(selDayBank){onAddToDayBank(selDayBank,item);setSelDayBank('');}}}
-        style={{opacity:selDayBank?1:0.4,flexShrink:0,background:'#8b5cf6',color:'#fff',border:'none'}}>📌</button>
-    </div>}
-    {onSetDayStart&&<div style={{display:'flex',gap:5}}>
-      <select value={selDayStart} onChange={e=>setSelDayStart(e.target.value)}
-        style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border)',color:'var(--text)',borderRadius:7,padding:'5px 8px',fontSize:11,fontFamily:'Heebo,sans-serif',direction:'rtl'}}>
-        <option value="">🟢 קבע כנקודת מוצא...</option>
-        {days.map((d,i)=><option key={d.id} value={d.id}>יום {i+1}{d.location?' — '+d.location:''}</option>)}
-      </select>
-      <button className="btn btn-sm" disabled={!selDayStart}
-        onClick={()=>{if(selDayStart){onSetDayStart(selDayStart,item);setSelDayStart('');}}}
-        style={{opacity:selDayStart?1:0.4,flexShrink:0,background:'#22c55e',color:'#fff',border:'none'}}>🟢</button>
-    </div>}
-    {onSetDayEnd&&<div style={{display:'flex',gap:5}}>
-      <select value={selDayEnd} onChange={e=>setSelDayEnd(e.target.value)}
-        style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border)',color:'var(--text)',borderRadius:7,padding:'5px 8px',fontSize:11,fontFamily:'Heebo,sans-serif',direction:'rtl'}}>
-        <option value="">🔴 קבע כנקודת יעד...</option>
-        {days.map((d,i)=><option key={d.id} value={d.id}>יום {i+1}{d.location?' — '+d.location:''}</option>)}
-      </select>
-      <button className="btn btn-sm" disabled={!selDayEnd}
-        onClick={()=>{if(selDayEnd){onSetDayEnd(selDayEnd,item);setSelDayEnd('');}}}
-        style={{opacity:selDayEnd?1:0.4,flexShrink:0,background:'#ef4444',color:'#fff',border:'none'}}>🔴</button>
-    </div>}
+    {/* ── הוספה לימים: טאבים קומפקטיים ── */}
+    {(()=>{
+      const ACTIONS=[
+        {key:'day',    label:'➕ ליום',   color:'var(--accent)',   show:true},
+        {key:'bank',   label:'📌 בנק',   color:'#8b5cf6',         show:!!onAddToDayBank},
+        {key:'start',  label:'🟢 התחלה', color:'#22c55e',         show:!!onSetDayStart},
+        {key:'end',    label:'🔴 סיום',  color:'#ef4444',         show:!!onSetDayEnd},
+      ].filter(a=>a.show);
+      const [actTab,setActTab]=React.useState('day');
+      const [actDay,setActDay]=React.useState('');
+      const doAction=()=>{
+        if(!actDay)return;
+        if(actTab==='day'){onAddToDay(actDay,item);}
+        else if(actTab==='bank'){onAddToDayBank(actDay,item);}
+        else if(actTab==='start'){onSetDayStart(actDay,item);}
+        else if(actTab==='end'){onSetDayEnd(actDay,item);}
+        setActDay('');
+      };
+      const cur=ACTIONS.find(a=>a.key===actTab)||ACTIONS[0];
+      return <div style={{display:'flex',flexDirection:'column',gap:4}}>
+        <div style={{display:'flex',gap:3,flexWrap:'wrap'}}>
+          {ACTIONS.map(a=><button key={a.key} onClick={()=>{setActTab(a.key);setActDay('');}}
+            style={{fontSize:10,padding:'2px 7px',borderRadius:12,border:'none',cursor:'pointer',fontFamily:'Heebo,Arial,sans-serif',
+              background:actTab===a.key?a.color:'var(--bg3)',
+              color:actTab===a.key?'#fff':'var(--text2)',
+              fontWeight:actTab===a.key?700:400,transition:'all 0.12s'}}>
+            {a.label}
+          </button>)}
+        </div>
+        <div style={{display:'flex',gap:4}}>
+          <select value={actDay} onChange={e=>setActDay(e.target.value)}
+            style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border)',color:'var(--text)',borderRadius:7,padding:'4px 6px',fontSize:11,fontFamily:'Heebo,sans-serif',direction:'rtl'}}>
+            <option value="">— בחר יום —</option>
+            {days.map((d,i)=><option key={d.id} value={d.id}>יום {i+1}{d.location?' — '+d.location:''}</option>)}
+          </select>
+          <button onClick={doAction} disabled={!actDay}
+            style={{padding:'4px 10px',borderRadius:7,border:'none',cursor:'pointer',fontFamily:'Heebo,Arial,sans-serif',
+              background:cur.color,color:'#fff',fontSize:11,fontWeight:700,flexShrink:0,
+              opacity:actDay?1:0.4,transition:'opacity 0.1s'}}>
+            ✓
+          </button>
+        </div>
+      </div>;
+    })()}
   </div>;
 }
 
@@ -4284,23 +4303,37 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     const placeEntries=listData[8]||[];
     const totalInList=typeof listData[12]==='number'?listData[12]:placeEntries.length;
 
-    /* חילוץ בטוח — מחזיר null בכל שגיאה */
+    /* חילוץ בטוח */
     const sf=fn=>{try{const v=fn();return v??null;}catch{return null;}};
     const sStr=fn=>{const v=sf(fn);return typeof v==='string'&&v.trim()?v.trim():'';};
     const sNum=fn=>{const v=sf(fn);return typeof v==='number'&&isFinite(v)?v:null;};
 
-    /* חילוץ placeId בפורמט ChIJ מנתיב ה-URL */
     const extractPlaceId=path=>{
       if(!path)return'';
       const m=path.match(/!1s(ChIJ[A-Za-z0-9_\-]+)/);
       return m?decodeURIComponent(m[1]):'';
     };
 
-    /* חילוץ סוג מקום ממערך types */
     const extractType=raw=>{
       if(!raw||!Array.isArray(raw))return'';
       const types=raw.map(t=>typeof t==='string'?t:Array.isArray(t)?t[0]:null).filter(Boolean);
       return getPlaceTypeLabel(types)||'';
+    };
+
+    /* סריקה חכמה: מחפש ערכים לפי סוג/פורמט בכל מערך */
+    const scanStr=(arr,test)=>{
+      if(!Array.isArray(arr))return'';
+      for(const v of arr){
+        if(typeof v==='string'&&v.trim()&&test(v))return v.trim();
+      }
+      return'';
+    };
+    const scanNum=(arr,test)=>{
+      if(!Array.isArray(arr))return null;
+      for(const v of arr){
+        if(typeof v==='number'&&isFinite(v)&&test(v))return v;
+      }
+      return null;
     };
 
     const places=[];
@@ -4310,27 +4343,37 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
         if(!name)continue;
         const loc=p[1]||[];
 
-        const address  =sStr(()=>loc[2]);
-        const coords   =sf(()=>loc[5]);
-        const lat      =sNum(()=>coords?.[2]);
-        const lng      =sNum(()=>coords?.[3]);
-        const googlePath=sStr(()=>loc[7]);
-        const note     =typeof p[3]==='string'?p[3].trim():'';
+        /* קואורדינטות */
+        const coords=sf(()=>loc[5]);
+        const lat=sNum(()=>coords?.[2]);
+        const lng=sNum(()=>coords?.[3]);
 
-        /* שדות עשירים — מה שגוגל כבר שלח, ללא עלות נוספת */
-        const rating          =sNum(()=>loc[3]);
-        const userRatingsTotal=sNum(()=>loc[4]);
-        const phone           =sStr(()=>loc[6]);
-        const website         =sStr(()=>loc[9]);
-        const placeType       =extractType(sf(()=>loc[8]));
+        /* נסה אינדקסים ידועים קודם, אחר כך סריקה חכמה */
+        const address=sStr(()=>loc[2])||scanStr(loc,v=>/[,\d]/.test(v)&&v.length>5&&!/^https?:\/\//.test(v)&&!v.startsWith('ChIJ')&&!v.startsWith('/')||false);
+        const rating=sNum(()=>(typeof loc[3]==='number'&&loc[3]>=1&&loc[3]<=5)?loc[3]:null)
+                  ||scanNum(loc,v=>v>=1.0&&v<=5.0&&v!==Math.floor(v));
+        const userRatingsTotal=sNum(()=>(typeof loc[4]==='number'&&loc[4]>0)?loc[4]:null);
+        const phone=sStr(()=>loc[6])||scanStr(loc,v=>/^[+\d\s\-\(\)]{7,}$/.test(v));
+        const website=sStr(()=>loc[9])||scanStr(loc,v=>/^https?:\/\//.test(v));
+        const placeType=extractType(sf(()=>loc[8]));
+        const googlePath=sStr(()=>loc[7])||scanStr(loc,v=>v.startsWith('/maps/')&&v.includes('!'));
 
-        /* placeId — מתוך loc[12] (ישיר) או מתוך ה-URL */
-        const placeIdDirect=sStr(()=>typeof loc[12]==='string'&&loc[12].startsWith('ChIJ')?loc[12]:'');
+        /* placeId */
+        const placeIdDirect=sStr(()=>typeof loc[12]==='string'&&loc[12].startsWith('ChIJ')?loc[12]:'')
+                          ||scanStr(loc,v=>v.startsWith('ChIJ')&&v.length>10);
         const placeId=placeIdDirect||extractPlaceId(googlePath);
 
-        /* אם קיבלנו נתונים עשירים — הגדר lastFetched כדי שלא תיפתח קריאת API אוטומטית */
-        const hasMeaningfulData=!!(rating||phone||website||placeType||placeId);
+        const note=typeof p[3]==='string'?p[3].trim():'';
 
+        /* debug: לוג מבנה הרשומה הראשונה בלבד */
+        if(places.length===0){
+          console.log('[PlanMyTrip] 📍 מבנה רשומה ראשונה מ-Google Maps API — לאבחון שדות:');
+          console.log('  p[0]=',sf(()=>p[0]),'  p[1] (loc) =',loc,'  p[2] (name)=',name,'  p[3] (note)=',p[3]);
+          console.log('  loc indices:',Object.fromEntries((loc||[]).map((v,i)=>[i,v])));
+          console.log('  → address=',address,'rating=',rating,'phone=',phone,'website=',website,'placeType=',placeType,'placeId=',placeId);
+        }
+
+        const hasMeaningfulData=!!(rating||phone||website||address||placeId);
         places.push({
           id:uid(),name,address,lat,lng,
           _noCoords:!lat,
@@ -4344,7 +4387,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
           note:note||'',
           lastFetched:hasMeaningfulData?Math.floor(Date.now()/1000):undefined,
         });
-      }catch{}
+      }catch(e){console.warn('[PlanMyTrip] parse error for entry:',e);}
     }
     return{listName,places,totalInList};
   };
