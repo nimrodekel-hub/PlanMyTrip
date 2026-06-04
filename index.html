@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v188';
+const APP_VERSION = 'v189';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -5547,6 +5547,53 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
   const[gistUrl,setGistUrl]=useState(()=>localStorage.getItem('planmytrip-admin-gist-url')||'');
   const[loginInput,setLoginInput]=useState('');
   const[loginError,setLoginError]=useState(false);
+  const[savingToken,setSavingToken]=useState(false);
+  const[tokenSyncMsg,setTokenSyncMsg]=useState(''); // הודעת מצב שמירת Token
+
+  /* ── משיכת Token מ-Firebase בכניסה לחוצץ (אם אין Token מקומי) ── */
+  useEffect(()=>{
+    const fbUrl=settings.firebaseUrl;
+    const syncKey=settings.syncKey;
+    if(!fbUrl||!syncKey||settings.githubToken) return; // כבר יש Token — לא צריך לשלוף
+    fbRead(fbUrl,syncKey)
+      .then(data=>{
+        if(data?.githubToken){
+          const merged={...settings,githubToken:data.githubToken};
+          onSettings(merged);
+          setS(p=>({...p,githubToken:data.githubToken}));
+          setTokenSyncMsg('✅ GitHub Token נטען אוטומטית מהענן');
+          setTimeout(()=>setTokenSyncMsg(''),4000);
+        }
+      })
+      .catch(()=>{});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+
+  /* ── שמירת Token וסנכרון לענן ── */
+  const saveToken=async()=>{
+    const tok=(s.githubToken||'').trim();
+    const newS={...settings,...s,githubToken:tok};
+    onSettings(newS); // שמור ב-localStorage דרך App state
+    setS(p=>({...p,githubToken:tok}));
+    const fbUrl=newS.firebaseUrl;
+    const syncKey=newS.syncKey;
+    if(!fbUrl||!syncKey){
+      setTokenSyncMsg('✅ Token נשמר בדפדפן (אין Firebase — לא מסונכרן)');
+      setTimeout(()=>setTokenSyncMsg(''),3000);
+      return;
+    }
+    setSavingToken(true);
+    setTokenSyncMsg('⏳ מסנכרן ל-Firebase...');
+    try{
+      const current=await fbRead(fbUrl,syncKey).catch(()=>({}));
+      await fbWrite(fbUrl,syncKey,{...(current||{}),githubToken:tok});
+      setTokenSyncMsg('✅ Token נשמר ומסונכרן לכל המכשירים');
+      setTimeout(()=>setTokenSyncMsg(''),4000);
+    }catch(e){
+      setTokenSyncMsg('⚠️ נשמר מקומית, סנכרון Firebase נכשל: '+e.message);
+      setTimeout(()=>setTokenSyncMsg(''),5000);
+    }finally{setSavingToken(false);}
+  };
 
   const doAdminLogin=()=>{
     const stored=localStorage.getItem('planmytrip-admin-code')||'';
@@ -5841,28 +5888,28 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
       </details>
     </div>
 
-    {/* ══ GitHub Token — ייבוא מגוגל מפות (גלוי לכולם, נשמר אוטומטית) ══ */}
+    {/* ══ GitHub Token — ייבוא מגוגל מפות ══ */}
     <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',background:'var(--surface2)'}}>
-      <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-        <span style={{fontSize:13,fontWeight:700,flexShrink:0}}>🐙 GitHub Token</span>
-        <span style={{fontSize:11,color:'var(--text3)',flexShrink:0}}>— ייבוא רשימות ממועדפי גוגל מפות</span>
-        <div style={{display:'flex',gap:6,alignItems:'center',flex:1,minWidth:180}}>
-          <input className="input" type="password"
-            value={s.githubToken||''}
-            onChange={e=>upd('githubToken',e.target.value)}
-            onBlur={e=>{const v=e.target.value;if(v!==settings.githubToken)onSettings({...settings,...s,githubToken:v});}}
-            placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autoComplete="off"
-            style={{flex:1,minWidth:0,maxWidth:300,direction:'ltr'}}/>
-          {s.githubToken
-            ?<span style={{color:'var(--green)',fontSize:12,fontWeight:700,flexShrink:0}}>✓ מוגדר</span>
-            :<a href="https://github.com/settings/tokens/new?scopes=repo&description=PlanMyTrip" target="_blank" rel="noreferrer"
-                style={{fontSize:11,color:'var(--accent)',flexShrink:0,whiteSpace:'nowrap'}}>+ צור Token</a>}
-        </div>
+      <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>🐙 GitHub Token — ייבוא רשימות מגוגל מפות</div>
+      <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+        <input className="input" type="password"
+          value={s.githubToken||''}
+          onChange={e=>upd('githubToken',e.target.value)}
+          onKeyDown={e=>e.key==='Enter'&&saveToken()}
+          placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autoComplete="off"
+          style={{flex:1,minWidth:160,maxWidth:300,direction:'ltr'}}/>
+        <button className="btn btn-primary btn-sm" onClick={saveToken} disabled={savingToken}
+          style={{flexShrink:0,whiteSpace:'nowrap'}}>
+          {savingToken?'⏳ שומר...':'💾 שמור וסנכרן'}
+        </button>
+        {!s.githubToken&&<a href="https://github.com/settings/tokens/new?scopes=repo&description=PlanMyTrip"
+            target="_blank" rel="noreferrer"
+            style={{fontSize:11,color:'var(--accent)',flexShrink:0,whiteSpace:'nowrap'}}>+ צור Token</a>}
       </div>
-      <div style={{fontSize:10,color:'var(--text3)',marginTop:4}}>
-        {s.githubToken
-          ?'✅ Token מוגדר — ייבוא יפעל דרך GitHub Action אם הפרוקסים חסומים'
-          :'לא מוגדר — ייבוא יסתמך על פרוקסים בלבד (עלול להיכשל). Token נשמר בדפדפן בלבד ולא מועלה לשום שרת.'}
+      <div style={{fontSize:11,marginTop:6,minHeight:16,color:tokenSyncMsg?'var(--green)':s.githubToken?'var(--green)':'var(--text3)'}}>
+        {tokenSyncMsg||(s.githubToken
+          ?'✅ Token מוגדר — ייבוא רשימות מגוגל מפות דרך GitHub זמין'
+          :'לא מוגדר — ייבוא יסתמך על פרוקסים בלבד (עלול להיכשל)')}
       </div>
     </div>
 
