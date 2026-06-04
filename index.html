@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v184';
+const APP_VERSION = 'v185';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4220,14 +4220,17 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
 
   /* ─── חילוץ שם + קואורדינטות מ-URL מלא של מקום בודד ─── */
   const parseMapsUrl=urlStr=>{
-    let name='',lat=null,lng=null;
+    let name='',lat=null,lng=null,placeId='';
     const nameM=urlStr.match(/\/maps\/place\/([^/@?&#]+)/);
     if(nameM) name=decodeURIComponent(nameM[1].replace(/\+/g,' '));
     if(!name){const qM=urlStr.match(/[?&]q=([^&#]+)/);if(qM) name=decodeURIComponent(qM[1].replace(/\+/g,' '));}
     const cM=urlStr.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
     if(cM){lat=parseFloat(cM[1]);lng=parseFloat(cM[2]);}
     if(!lat){const d3=urlStr.match(/!3d(-?\d+\.\d+)/),d4=urlStr.match(/!4d(-?\d+\.\d+)/);if(d3&&d4){lat=parseFloat(d3[1]);lng=parseFloat(d4[1]);}}
-    return{name,lat,lng};
+    /* חלץ placeId בפורמט ChIJ מה-URL אם קיים */
+    const pidM=urlStr.match(/!1s(ChIJ[A-Za-z0-9_\-]+)/);
+    if(pidM) placeId=decodeURIComponent(pidM[1]);
+    return{name,lat,lng,placeId};
   };
 
   /* ─── שליפת תוכן + URL הסופי דרך proxy (allorigins → corsproxy.io) ─── */
@@ -4272,33 +4275,74 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
   };
 
   /* ─── פרסור תגובת ה-API של רשימת מקומות ─── */
-  /* מבנה: data[0][4]=שם הרשימה, data[0][8]=מערך מקומות                  */
-  /* כל מקום: p[2]=שם, p[1][2]=כתובת מלאה, p[1][5]=[null,null,lat,lng]  */
+  /* שולף את כל השדות הזמינים — ללא קריאה נוספת ל-Places API             */
   const parseGmapsListResponse=text=>{
     const cleaned=text.replace(/^\)\]\}'\n?/,'').trim();
     const data=JSON.parse(cleaned);
     const listData=data[0];
     const listName=listData[4]||'רשימה';
     const placeEntries=listData[8]||[];
-    /* total count מה-metadata (ייתכן שרשימה גדולה חוזרת חלקית) */
     const totalInList=typeof listData[12]==='number'?listData[12]:placeEntries.length;
+
+    /* חילוץ בטוח — מחזיר null בכל שגיאה */
+    const sf=fn=>{try{const v=fn();return v??null;}catch{return null;}};
+    const sStr=fn=>{const v=sf(fn);return typeof v==='string'&&v.trim()?v.trim():'';};
+    const sNum=fn=>{const v=sf(fn);return typeof v==='number'&&isFinite(v)?v:null;};
+
+    /* חילוץ placeId בפורמט ChIJ מנתיב ה-URL */
+    const extractPlaceId=path=>{
+      if(!path)return'';
+      const m=path.match(/!1s(ChIJ[A-Za-z0-9_\-]+)/);
+      return m?decodeURIComponent(m[1]):'';
+    };
+
+    /* חילוץ סוג מקום ממערך types */
+    const extractType=raw=>{
+      if(!raw||!Array.isArray(raw))return'';
+      const types=raw.map(t=>typeof t==='string'?t:Array.isArray(t)?t[0]:null).filter(Boolean);
+      return getPlaceTypeLabel(types)||'';
+    };
+
     const places=[];
     for(const p of placeEntries){
       try{
         const name=(p[2]||'').trim();
-        if(!name) continue;
+        if(!name)continue;
         const loc=p[1]||[];
-        const address=loc[2]||'';
-        const coords=loc[5];
-        const lat=coords?.[2]??null;
-        const lng=coords?.[3]??null;
-        const googlePath=loc[7]||'';
-        const googleNote=typeof p[3]==='string'?p[3].trim():'';
+
+        const address  =sStr(()=>loc[2]);
+        const coords   =sf(()=>loc[5]);
+        const lat      =sNum(()=>coords?.[2]);
+        const lng      =sNum(()=>coords?.[3]);
+        const googlePath=sStr(()=>loc[7]);
+        const note     =typeof p[3]==='string'?p[3].trim():'';
+
+        /* שדות עשירים — מה שגוגל כבר שלח, ללא עלות נוספת */
+        const rating          =sNum(()=>loc[3]);
+        const userRatingsTotal=sNum(()=>loc[4]);
+        const phone           =sStr(()=>loc[6]);
+        const website         =sStr(()=>loc[9]);
+        const placeType       =extractType(sf(()=>loc[8]));
+
+        /* placeId — מתוך loc[12] (ישיר) או מתוך ה-URL */
+        const placeIdDirect=sStr(()=>typeof loc[12]==='string'&&loc[12].startsWith('ChIJ')?loc[12]:'');
+        const placeId=placeIdDirect||extractPlaceId(googlePath);
+
+        /* אם קיבלנו נתונים עשירים — הגדר lastFetched כדי שלא תיפתח קריאת API אוטומטית */
+        const hasMeaningfulData=!!(rating||phone||website||placeType||placeId);
+
         places.push({
           id:uid(),name,address,lat,lng,
           _noCoords:!lat,
           url:googlePath?`https://www.google.com${googlePath}`:'',
-          googleNote,
+          placeId:placeId||'',
+          rating:rating||null,
+          userRatingsTotal:userRatingsTotal||null,
+          phone:phone||'',
+          website:website||'',
+          placeType:placeType||'',
+          note:note||'',
+          lastFetched:hasMeaningfulData?Math.floor(Date.now()/1000):undefined,
         });
       }catch{}
     }
@@ -4396,15 +4440,16 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
           setShowLinkImport(false);setLinkUrl('');setLinkImporting(false);return;
         }
         /* מקום בודד — מלא */
-        const{name,lat,lng}=parseMapsUrl(url);
+        const{name,lat,lng,placeId:urlPlaceId}=parseMapsUrl(url);
         if(!name&&!lat) throw new Error('לא ניתן לפרש את הקישור');
-        const base={id:uid(),name:name||'מקום מגוגל מפות',address:'',lat,lng,url,_listSource:listSrc,_noCoords:!lat};
-        const _known=lookupKnown(base);
-      const enriched=_known?{...base,..._known}:(window.google?.maps?.places?await enrichOneAsync(base):null);
-        const fi=enriched?{...enriched,_listSource:listSrc,url}:base;
+        const _known=lookupKnown({name,lat,lng});
+        /* שמירה ישירה — ללא קריאת Places API אוטומטית (לחץ 🔍 להשלמה ידנית) */
+        const fi={id:uid(),name:name||'מקום מגוגל מפות',address:'',lat,lng,url,
+          placeId:urlPlaceId||'',_listSource:listSrc,_noCoords:!lat,
+          ...(_known||{})};
         if(tripRef.current.interestBank.some(ex=>isTakeoutDup(fi,ex))){toast(`"${fi.name}" כבר קיים`,'error');setLinkImporting(false);return;}
         onUpdate({...tripRef.current,interestBank:[...tripRef.current.interestBank,fi]});
-        toast(`✓ "${fi.name}" נוסף לאטרקציות`,'success');
+        toast(`✓ "${fi.name}" נוסף לאטרקציות — לחץ 🔍 להשלמת פרטים`,'success');
         setShowLinkImport(false);setLinkUrl('');setLinkImporting(false);return;
       }
 
@@ -4433,18 +4478,18 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       }
 
       /* מקום בודד */
-      let placeName='',lat=null,lng=null;
-      if(resolvedUrl){const p=parseMapsUrl(resolvedUrl);if(p.name)placeName=p.name;if(p.lat){lat=p.lat;lng=p.lng;}}
+      let placeName='',lat=null,lng=null,urlPlaceId='';
+      if(resolvedUrl){const p=parseMapsUrl(resolvedUrl);if(p.name)placeName=p.name;if(p.lat){lat=p.lat;lng=p.lng;}if(p.placeId)urlPlaceId=p.placeId;}
       if(!placeName&&html) placeName=extractNameFromHtml(html);
       if(!lat&&html){const cM=html.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);if(cM){lat=parseFloat(cM[1]);lng=parseFloat(cM[2]);}}
       if(!placeName) throw new Error('לא ניתן לפרש את הקישור — נסה קישור ישיר מגוגל מפות');
-      const base={id:uid(),name:placeName,address:'',lat,lng,url,_listSource:listSrc,_noCoords:!lat};
-      const _known=lookupKnown(base);
-      const enriched=_known?{...base,..._known}:(window.google?.maps?.places?await enrichOneAsync(base):null);
-      const fi=enriched?{...enriched,_listSource:listSrc,url}:base;
+      const _known=lookupKnown({name:placeName,lat,lng});
+      /* שמירה ישירה — ללא קריאת Places API אוטומטית (לחץ 🔍 להשלמה ידנית) */
+      const fi={id:uid(),name:placeName,address:'',lat,lng,url,placeId:urlPlaceId||'',
+        _listSource:listSrc,_noCoords:!lat,...(_known||{})};
       if(tripRef.current.interestBank.some(ex=>isTakeoutDup(fi,ex))){toast(`"${fi.name}" כבר קיים`,'error');setLinkImporting(false);return;}
       onUpdate({...tripRef.current,interestBank:[...tripRef.current.interestBank,fi]});
-      toast(`✓ "${fi.name}" נוסף לאטרקציות`,'success');
+      toast(`✓ "${fi.name}" נוסף לאטרקציות — לחץ 🔍 להשלמת פרטים`,'success');
       setShowLinkImport(false);setLinkUrl('');
     }catch(e){
       toast('שגיאה: '+e.message,'error');

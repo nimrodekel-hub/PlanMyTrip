@@ -230,7 +230,7 @@
 const{useState,useEffect,useRef,useMemo,useCallback}=React;
 
 /* ─── constants ─── */
-const MOB_VER='m95';
+const MOB_VER='m98';
 
 const genSyncKey=()=>{
   const c='abcdefghjkmnpqrstuvwxyz23456789';
@@ -803,8 +803,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
     }
 
     if(!placeId){
-      // no placeId — already showed bank data above; try refresh by name
-      if(bankItem?.name&&lat&&lng)tryRefresh(bankItem.name,lat,lng,bankItem.id);
+      // no placeId — הצג נתוני בנק בלבד; לחץ 🔍 בבנק האטרקציות להשלמה ידנית
       return;
     }
 
@@ -901,8 +900,7 @@ function MapScreen({trip,active,mapsReady,onUpdate,mapFocusRef,mapPickCallbackRe
           // שמור ב-session cache — לא נצטרך לקרוא שוב ל-Google בסשן הזה
           window.__placeCache[placeId]=parsed;
         } else {
-          // placeId stale — already showing bank data; try to find fresh placeId once
-          if(bankItem?.name&&lat&&lng)tryRefresh(bankItem.name,lat,lng,bankItem.id);
+          // placeId stale — הצג נתוני בנק; לחץ 🔍 להשלמה ידנית
         }
         setLoading(false);
       });
