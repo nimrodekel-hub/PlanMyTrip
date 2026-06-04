@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v187';
+const APP_VERSION = 'v188';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -6622,6 +6622,9 @@ function App(){
       setSyncStatus('syncing');
       fbRead(fbUrl,syncKey)
         .then(data=>{
+          if(data?.githubToken&&!settings.githubToken){
+            setSettings(s=>({...s,githubToken:data.githubToken}));
+          }
           if(data?.trips?.length>0){
             const loaded=data.trips.map(normTrip).filter(Boolean);
             if(loaded.length>0){
@@ -6634,7 +6637,7 @@ function App(){
           } else if(trips.length>0){
             // Firebase ריק אבל יש נתונים מקומיים — דחוף אוטומטית
             toast('☁️ מעלה נתונים ל-Firebase...','info');
-            fbWrite(fbUrl,syncKey,{trips,activeId,savedAt:new Date().toISOString()})
+            fbWrite(fbUrl,syncKey,{trips,activeId,savedAt:new Date().toISOString(),githubToken:settings.githubToken||''})
               .then(()=>{setSyncStatus('synced');toast('☁️ נתונים נשלחו ל-Firebase — ניתן לטעון מהמכשיר השני ✓','success');})
               .catch(e=>{
                 setSyncStatus('error');
@@ -6677,6 +6680,9 @@ function App(){
       const{firebaseUrl:fbUrl,syncKey}=settings;
       if(!fbUrl||!syncKey)return;
       fbRead(fbUrl,syncKey).then(data=>{
+        if(data?.githubToken&&!settings.githubToken){
+          setSettings(s=>({...s,githubToken:data.githubToken}));
+        }
         if(!data?.trips?.length)return;
         const remote=data.trips.map(normTrip).filter(Boolean);
         if(!remote.length)return;
@@ -6711,7 +6717,7 @@ function App(){
     autoSyncTimer.current=setTimeout(async()=>{
       try{
         if(fbUrl&&syncKey){
-          await fbWrite(fbUrl,syncKey,{trips,activeId,savedAt:new Date().toISOString()});
+          await fbWrite(fbUrl,syncKey,{trips,activeId,savedAt:new Date().toISOString(),githubToken:settings.githubToken||''});
           lastPushTime.current=Date.now();
         } else if(tok&&user&&repo){
           if(!ghSha.current){try{const r=await ghLoad(tok,user,repo,'trip_data.json');ghSha.current=r.sha;}catch{}}
@@ -6855,7 +6861,7 @@ function App(){
     setGhBusy(true); setSyncStatus('syncing');
     try{
       if(s.firebaseUrl&&s.syncKey){
-        await fbWrite(s.firebaseUrl,s.syncKey,{trips,activeId,savedAt:new Date().toISOString()});
+        await fbWrite(s.firebaseUrl,s.syncKey,{trips,activeId,savedAt:new Date().toISOString(),githubToken:s.githubToken||''});
         lastPushTime.current=Date.now();
         toast('נשמר ב-Firebase ✓','success');
       } else {
@@ -6888,6 +6894,9 @@ function App(){
       } else {
         const{content,sha}=await ghLoad(s.githubToken,s.githubUsername,s.githubRepo,'trip_data.json');
         ghSha.current=sha; data=content;
+      }
+      if(data?.githubToken&&!settings.githubToken){
+        setSettings(sv=>({...sv,githubToken:data.githubToken}));
       }
       if(data?.trips){
         const remote=data.trips.map(normTrip).filter(Boolean);
