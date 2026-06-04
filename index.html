@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v193';
+const APP_VERSION = 'v194';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -1410,8 +1410,8 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
           p._enrichHint='לחץ 🔍 בבנק האטרקציות להשלמת כתובת / דירוג / שעות';
         }
         window.__gmShowSheet?.(p);
-        // שלח ל-Google רק אם: לא בcache סשן AND הנתונים ישנים (יותר מ-7 ימים)
-        const _staleSec=7*24*3600;
+        // שלח ל-Google רק אם: לא בcache סשן AND הנתונים ישנים (יותר מ-30 ימים)
+        const _staleSec=30*24*3600;
         const _nowSec=Math.floor(Date.now()/1000);
         const _isStale=!item.lastFetched||((_nowSec-item.lastFetched)>_staleSec);
         if(item.placeId&&!cached&&_isStale&&window.__gmShowPlace){
