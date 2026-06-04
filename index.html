@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v186';
+const APP_VERSION = 'v187';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4398,7 +4398,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       if(!tok){
         /* אין token — הסבר ברור */
         throw new Error(
-          'הפרוקסים חסומים כרגע. להוסיף GitHub Personal Access Token בהגדרות ⚙️ → יאפשר ייבוא אמין דרך GitHub'
+          'הפרוקסים חסומים כרגע ✋\n\nכדי לייבא, הוסף GitHub Personal Access Token:\n🔗 לשונית "חיבוריות" → שדה "GitHub Token" (בראש הדף) → הדבק את ה-Token → לחץ מחוץ לשדה לשמירה'
         );
       }
       setLinkStatus('⏳ GitHub שולף מגוגל... (עד 120 שניות)');
@@ -4855,6 +4855,18 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* סטטוס GitHub Token */}
+          <div style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',borderRadius:8,
+            background:settings?.githubToken?'rgba(34,197,94,0.08)':'rgba(245,158,11,0.08)',
+            border:`1px solid ${settings?.githubToken?'rgba(34,197,94,0.25)':'rgba(245,158,11,0.25)'}`}}>
+            <span style={{fontSize:14}}>{settings?.githubToken?'🐙✅':'🐙⚠️'}</span>
+            <span style={{fontSize:11,color:'var(--text2)',flex:1}}>
+              {settings?.githubToken
+                ?'GitHub Token מוגדר — ייבוא אמין דרך GitHub זמין'
+                :'GitHub Token לא מוגדר — ייבוא יסתמך על פרוקסים בלבד (עלול להיכשל). הגדר בלשונית 🔗 חיבוריות'}
+            </span>
           </div>
 
           {/* כפתור ייבוא */}
@@ -5827,6 +5839,31 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
 
         </div>
       </details>
+    </div>
+
+    {/* ══ GitHub Token — ייבוא מגוגל מפות (גלוי לכולם, נשמר אוטומטית) ══ */}
+    <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',background:'var(--surface2)'}}>
+      <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+        <span style={{fontSize:13,fontWeight:700,flexShrink:0}}>🐙 GitHub Token</span>
+        <span style={{fontSize:11,color:'var(--text3)',flexShrink:0}}>— ייבוא רשימות ממועדפי גוגל מפות</span>
+        <div style={{display:'flex',gap:6,alignItems:'center',flex:1,minWidth:180}}>
+          <input className="input" type="password"
+            value={s.githubToken||''}
+            onChange={e=>upd('githubToken',e.target.value)}
+            onBlur={e=>{const v=e.target.value;if(v!==settings.githubToken)onSettings({...settings,...s,githubToken:v});}}
+            placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autoComplete="off"
+            style={{flex:1,minWidth:0,maxWidth:300,direction:'ltr'}}/>
+          {s.githubToken
+            ?<span style={{color:'var(--green)',fontSize:12,fontWeight:700,flexShrink:0}}>✓ מוגדר</span>
+            :<a href="https://github.com/settings/tokens/new?scopes=repo&description=PlanMyTrip" target="_blank" rel="noreferrer"
+                style={{fontSize:11,color:'var(--accent)',flexShrink:0,whiteSpace:'nowrap'}}>+ צור Token</a>}
+        </div>
+      </div>
+      <div style={{fontSize:10,color:'var(--text3)',marginTop:4}}>
+        {s.githubToken
+          ?'✅ Token מוגדר — ייבוא יפעל דרך GitHub Action אם הפרוקסים חסומים'
+          :'לא מוגדר — ייבוא יסתמך על פרוקסים בלבד (עלול להיכשל). Token נשמר בדפדפן בלבד ולא מועלה לשום שרת.'}
+      </div>
     </div>
 
     {/* ══ שלוש עמודות ══ */}
