@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v194';
+const APP_VERSION = 'v195';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -3913,24 +3913,30 @@ const enrichPlacesBatch=async(places,settings,onStatus,onResult)=>{
   const idUrl  =`${repoBase}/contents/_cache/enrich_id.txt`;
   const respUrl=`${repoBase}/contents/_cache/enrich_response.txt`;
 
-  /* סקור כל 6 שניות, עד 9 דקות */
-  for(let i=0;i<90;i++){
+  /* סקור כל 6 שניות, עד 10 דקות */
+  console.log('[Enrich] polling started, reqId=',reqId,'places=',places.length);
+  for(let i=0;i<100;i++){
     await new Promise(r=>setTimeout(r,6000));
     try{
       const idR=await fetch(idUrl+'?t='+Date.now(),{headers:hdr});
       if(!idR.ok) continue;
       const savedId=b64ToUtf8((await idR.json()).content).trim();
-      if(savedId!==reqId) continue;
+      if(savedId!==reqId){console.log('[Enrich] poll',i+1,'— id mismatch:',savedId?.slice(0,20));continue;}
+      console.log('[Enrich] id matched — fetching results');
       const rR=await fetch(respUrl+'?t='+Date.now(),{headers:hdr});
-      if(!rR.ok) continue;
+      if(!rR.ok){console.error('[Enrich] response fetch failed',rR.status);continue;}
       const text=b64ToUtf8((await rR.json()).content);
       const enriched=JSON.parse(text);
+      console.log('[Enrich] received',enriched?.length,'items, sample:',enriched?.[0]);
       onStatus?.('');
       onResult?.(enriched);
       return;
-    }catch{}
+    }catch(e){console.warn('[Enrich] poll error:',e?.message);}
   }
-  onStatus?.(''); // timeout
+  /* timeout */
+  console.error('[Enrich] timed out after 10 min — check GitHub Actions');
+  onStatus?.('');
+  throw new Error('timeout');
 };
 
 /* ══════════════════════════════════
@@ -4531,11 +4537,22 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     /* רץ ברקע — לא חוסם את ממשק המשתמש */
     const toEnrich=newPlaces.filter(p=>p._cid||p.lat);
     if(toEnrich.length>0&&settings?.githubToken){
+      console.log('[Enrich] triggering batch for',toEnrich.length,'places');
       enrichPlacesBatch(
         toEnrich, settings,
         msg=>setEnrichStatus(msg),
         enriched=>{
-          if(!Array.isArray(enriched)||!enriched.length) return;
+          console.log('[Enrich] callback received',enriched?.length,'items');
+          if(!Array.isArray(enriched)||!enriched.length){
+            toast('⚠️ העשרת פרטים הסתיימה בלי נתונים — בדוק ב-GitHub Actions','error');
+            return;
+          }
+          const withData=enriched.filter(e=>e.address||e.rating||e.phone||e.website);
+          console.log('[Enrich] items with useful data:',withData.length);
+          if(!withData.length){
+            toast('⚠️ Playwright לא הצליח לחלץ נתונים — בדוק ב-Actions','error');
+            return;
+          }
           const map=Object.fromEntries(enriched.map(e=>[e.id,e]));
           onUpdate(prev=>{
             const bank=(prev.interestBank||[]).map(item=>{
@@ -4560,7 +4577,14 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
           const rateCount=enriched.filter(e=>e.rating).length;
           toast(`✅ פרטים עודכנו: ${addrCount} כתובות, ${rateCount} דירוגים`,'success');
         }
-      ).catch(()=>{setEnrichStatus('');});
+      ).catch(e=>{
+        console.error('[Enrich] failed:',e?.message);
+        setEnrichStatus('');
+        if(e?.message==='timeout')
+          toast('⏱ העשרת פרטים לא הסתיימה בזמן — פתח GitHub Actions לבדיקה','error');
+        else
+          toast('⚠️ שגיאה בהעשרת פרטים: '+e?.message,'error');
+      });
     }
   };
 

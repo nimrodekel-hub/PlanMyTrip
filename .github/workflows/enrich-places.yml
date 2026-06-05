@@ -16,9 +16,44 @@ jobs:
         run: |
           pip install playwright --quiet
           playwright install chromium --with-deps --quiet
-          echo "Playwright ready"
+          echo "✅ Playwright ready"
 
-      - name: Enrich place details (headless Chrome)
+      - name: Smoke-test Playwright (single CID)
+        run: |
+          python3 << 'PYEOF'
+from playwright.sync_api import sync_playwright
+import json
+
+print("--- Playwright smoke test ---")
+with sync_playwright() as pw:
+    b = pw.chromium.launch(headless=True, args=['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage'])
+    ctx = b.new_context(user_agent='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', locale='en-US')
+    page = ctx.new_page()
+    # retaW store HARAJUKU — known test CID
+    url = "https://www.google.com/maps?cid=6924439061189454415&hl=en"
+    print(f"Navigating to: {url}")
+    page.goto(url, wait_until='domcontentloaded', timeout=25000)
+    page.wait_for_timeout(3000)
+    # Wait for address element
+    try:
+        page.wait_for_selector('[data-item-id="address"]', timeout=12000)
+        print("✅ [data-item-id=address] found!")
+    except Exception:
+        print("⚠️  [data-item-id=address] NOT found — checking what IS on page...")
+        items = page.query_selector_all('[data-item-id]')
+        print(f"  data-item-id elements present: {len(items)}")
+        for el in items[:10]:
+            print(f"  → {el.get_attribute('data-item-id')}: {el.text_content()[:60]}")
+    addr_el = page.query_selector('[data-item-id="address"]')
+    if addr_el:
+        print("Address text:", addr_el.text_content().strip())
+    else:
+        print("No address element found")
+    b.close()
+print("--- smoke test done ---")
+PYEOF
+
+      - name: Enrich all places (headless Chrome + Nominatim fallback)
         env:
           PLACES_B64: ${{ github.event.client_payload.places_b64 }}
           REQ_ID: ${{ github.event.client_payload.req_id }}
@@ -26,10 +61,10 @@ jobs:
         run: |
           echo "$PLACES_B64" | base64 -d > /tmp/places.json
           COUNT=$(python3 -c 'import json; print(len(json.load(open("/tmp/places.json"))))')
-          echo "Enriching $COUNT places with Playwright..."
+          echo "Enriching $COUNT places..."
 
           python3 << 'PYEOF'
-import asyncio, json, re, time, urllib.parse, urllib.request
+import asyncio, json, re, time, urllib.parse, urllib.request, sys
 
 # ── JavaScript injected into each place page ──────────────────────────────────
 EXTRACT_JS = """
@@ -39,53 +74,51 @@ EXTRACT_JS = """
   const q   = sel => document.querySelector(sel);
   const qa  = sel => Array.from(document.querySelectorAll(sel));
 
-  // ── Rating: aria-label "X.X stars" ──
+  // Rating: aria-label "X.X stars"
   for (const el of qa('[aria-label]')) {
     const lbl = el.getAttribute('aria-label') || '';
     const m = lbl.match(/^(\\d\\.\\d)\\s*stars?/i);
     if (m) { r.rating = parseFloat(m[1]); break; }
   }
 
-  // ── Review count: aria-label "NNN reviews" ──
+  // Review count: aria-label "NNN reviews"
   for (const el of qa('[aria-label]')) {
     const lbl = el.getAttribute('aria-label') || '';
     const m = lbl.match(/^([\\d,]+)\\s+reviews?$/i);
     if (m) { r.userRatingsTotal = parseInt(m[1].replace(/,/g,'')); break; }
   }
 
-  // ── Category / type (subtitle below name) ──
-  const catEl = q('button.DkEaL') || q('span.DkEaL')
-             || qa('span').find(el => el.parentElement && el.parentElement.tagName === 'BUTTON' && el.closest('[jsaction*="category"]'));
+  // Category / type
+  const catEl = q('button.DkEaL') || q('span.DkEaL');
   if (catEl) r.placeType = txt(catEl);
 
-  // ── Address: data-item-id="address" ──
+  // Address
   const addrEl = q('[data-item-id="address"]');
-  if (addrEl) {
-    r.address = txt(addrEl)
-      .replace(/Copy address/gi,'')
-      .replace(/^(Get directions|Directions)\\b.*$/gi,'')
-      .trim();
-  }
+  if (addrEl) r.address = txt(addrEl).replace(/Copy address/gi,'').trim();
 
-  // ── Phone: data-item-id contains "phone:tel" ──
+  // Phone
   const phoneEl = qa('[data-item-id]').find(e => (e.getAttribute('data-item-id')||'').includes('phone:tel'));
   if (phoneEl) r.phone = txt(phoneEl).replace(/Copy phone number/gi,'').trim();
 
-  // ── Website: data-item-id="authority" ──
+  // Website
   const webEl = q('[data-item-id="authority"]');
   if (webEl) {
-    const a = webEl.tagName==='A' ? webEl : webEl.querySelector('a');
+    const a = webEl.tagName === 'A' ? webEl : webEl.querySelector('a');
     r.website = (a && a.href && !a.href.includes('google.com')) ? a.href : txt(webEl);
   }
 
-  // ── Hours: open/closed status ──
+  // Hours
   const ohBtn = q('[data-item-id="oh"]');
   if (ohBtn) {
-    const hoursText = txt(ohBtn);
-    r.todayHours = hoursText.split(/[·•]/)[0].trim() || hoursText;
-    r.openStatus = /open/i.test(hoursText) ? 'פתוח עכשיו' :
-                   /clos/i.test(hoursText)  ? 'סגור עכשיו'  : '';
+    const ht = txt(ohBtn);
+    r.todayHours = ht.split(/[·•]/)[0].trim() || ht;
+    r.openStatus = /open/i.test(ht) ? 'פתוח עכשיו' : /clos/i.test(ht) ? 'סגור עכשיו' : '';
   }
+
+  // Diagnostic: log what data-item-id values are present
+  const itemIds = Array.from(document.querySelectorAll('[data-item-id]'))
+    .map(e => e.getAttribute('data-item-id')).filter(Boolean).slice(0,10);
+  r._debug_itemIds = itemIds;
 
   return r;
 }
@@ -94,55 +127,64 @@ EXTRACT_JS = """
 async def run(places):
     from playwright.async_api import async_playwright
 
-    enriched = []
-    sem = asyncio.Semaphore(5)   # 5 concurrent Chrome pages
-
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(
             headless=True,
-            args=['--no-sandbox','--disable-setuid-sandbox',
-                  '--disable-dev-shm-usage','--disable-gpu']
+            args=['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage']
         )
         ctx = await browser.new_context(
             user_agent='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             locale='en-US'
         )
 
+        sem = asyncio.Semaphore(5)
+        enriched = []
+        done_count = [0]
+
         async def enrich_one(place):
-            pid  = place.get('id','')
-            cid  = str(place.get('_cid','')).strip()
-            name = place.get('name','')
-            lat  = place.get('lat')
-            lng  = place.get('lng')
+            pid  = place.get('id', '')
+            cid  = str(place.get('_cid', '')).strip()
+            name = place.get('name', '')
 
             async with sem:
                 page = await ctx.new_page()
                 try:
-                    if cid:
-                        url = f"https://www.google.com/maps?cid={cid}&hl=en"
-                    elif lat and lng:
-                        url = f"https://www.google.com/maps/place/{urllib.parse.quote(name)}/@{lat},{lng},17z?hl=en"
-                    else:
+                    if not cid:
                         return {'id': pid}
 
+                    url = f"https://www.google.com/maps?cid={cid}&hl=en"
                     await page.goto(url, wait_until='domcontentloaded', timeout=25000)
+                    await page.wait_for_timeout(2000)  # let JS initialize
 
-                    # Wait for the place detail card to appear
+                    # Wait specifically for address OR any data-item-id element
                     try:
-                        await page.wait_for_selector(
-                            '[data-item-id], [aria-label*="stars"], .DkEaL',
-                            timeout=8000
-                        )
+                        await page.wait_for_selector('[data-item-id="address"]', timeout=12000)
                     except Exception:
-                        pass  # continue anyway — might still have partial data
+                        try:
+                            await page.wait_for_selector('[data-item-id]', timeout=5000)
+                        except Exception:
+                            pass
 
                     data = await page.evaluate(EXTRACT_JS)
-                    result = {k: v for k, v in data.items() if v}  # drop empty values
+
+                    # Log first place in detail for debugging
+                    done_count[0] += 1
+                    if done_count[0] == 1:
+                        print(f"  [first place] {name}")
+                        print(f"    data-item-ids on page: {data.get('_debug_itemIds','none')}")
+                        print(f"    address: {data.get('address','—')}")
+                        print(f"    rating:  {data.get('rating','—')}")
+                        print(f"    phone:   {data.get('phone','—')}")
+                        print(f"    website: {data.get('website','—')}")
+                    elif done_count[0] % 20 == 0:
+                        print(f"  [{done_count[0]}/{len(places)}] processed...")
+
+                    result = {k: v for k, v in data.items() if v and k != '_debug_itemIds'}
                     result['id'] = pid
                     return result
 
                 except Exception as e:
-                    print(f"  ✗ {name}: {e}")
+                    print(f"  ✗ [{name}]: {e}", file=sys.stderr)
                     return {'id': pid}
                 finally:
                     await page.close()
@@ -151,15 +193,15 @@ async def run(places):
         results = await asyncio.gather(*tasks, return_exceptions=True)
         await browser.close()
 
+    out = []
     for i, r in enumerate(results):
         if isinstance(r, Exception):
-            enriched.append({'id': places[i].get('id','')})
+            out.append({'id': places[i].get('id', '')})
         else:
-            enriched.append(r)
-    return enriched
+            out.append(r)
+    return out
 
 
-# ── Nominatim fallback (address only) ─────────────────────────────────────────
 def nominatim_reverse(lat, lng):
     url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json&zoom=18&accept-language=en"
     req = urllib.request.Request(url, headers={'User-Agent': 'PlanMyTrip/1.0'})
@@ -184,33 +226,42 @@ def nominatim_reverse(lat, lng):
         return ''
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
 places = json.load(open('/tmp/places.json'))
-enriched = asyncio.run(run(places))
+print(f"Loaded {len(places)} places, first CID: {places[0].get('_cid','MISSING') if places else 'n/a'}")
 
-# Nominatim fallback for places without address
-nom_done = 0
-for item in enriched:
-    if not item.get('address'):
-        place = next((p for p in places if p.get('id') == item.get('id')), None)
-        if place and place.get('lat') and place.get('lng'):
-            if nom_done > 0:
-                time.sleep(1.1)          # Nominatim rate limit: 1 req/s
-            addr = nominatim_reverse(place['lat'], place['lng'])
-            if addr:
-                item['address'] = addr
-            nom_done += 1
+# Always write results — even on failure — so JS polling gets notified
+try:
+    enriched = asyncio.run(run(places))
+    print(f"Playwright done: {len(enriched)} results")
+
+    # Nominatim fallback for missing addresses
+    nom_done = 0
+    for item in enriched:
+        if not item.get('address'):
+            place = next((p for p in places if p.get('id') == item.get('id')), None)
+            if place and place.get('lat') and place.get('lng'):
+                if nom_done > 0:
+                    time.sleep(1.1)
+                addr = nominatim_reverse(place['lat'], place['lng'])
+                if addr:
+                    item['address'] = addr
+                nom_done += 1
+    print(f"Nominatim filled {nom_done} addresses")
+
+except Exception as e:
+    print(f"❌ Script error: {e}", file=sys.stderr)
+    # Write minimal results so JS polling doesn't time out
+    enriched = [{'id': p.get('id', ''), '_failed': True} for p in places]
 
 json.dump(enriched, open('/tmp/enriched.json', 'w'), ensure_ascii=False)
 
 addr_c  = sum(1 for r in enriched if r.get('address'))
 rate_c  = sum(1 for r in enriched if r.get('rating'))
 phone_c = sum(1 for r in enriched if r.get('phone'))
-web_c   = sum(1 for r in enriched if r.get('website'))
-print(f"✅ Done: {len(enriched)} places | address:{addr_c} | rating:{rate_c} | phone:{phone_c} | website:{web_c}")
+print(f"✅ Results: {len(enriched)} places | address:{addr_c} | rating:{rate_c} | phone:{phone_c}")
 PYEOF
 
-          # ── Upload results via GitHub API ──────────────────────────────────
+          # ── Upload results ──────────────────────────────────────────────────
           gh_upload() {
             local API_PATH="$1" CONTENT="$2"
             local SHA BODY
@@ -224,7 +275,6 @@ PYEOF
           RESULT_B64=$(base64 -w0 /tmp/enriched.json)
           ID_B64=$(printf '%s' "$REQ_ID" | base64 -w0)
 
-          # response first, id last (id = "ready" signal for the app)
           gh_upload "_cache/enrich_response.txt" "$RESULT_B64"
           gh_upload "_cache/enrich_id.txt" "$ID_B64"
-          echo "Uploaded — reqId: $REQ_ID"
+          echo "✅ Uploaded results — reqId: $REQ_ID"
