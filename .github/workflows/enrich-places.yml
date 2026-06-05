@@ -20,36 +20,28 @@ jobs:
           PLACES_B64: ${{ github.event.client_payload.places_b64 }}
         run: |
           printf '%s' "$PLACES_B64" | base64 -d > /tmp/places.json
-          echo "places.json: $(wc -c < /tmp/places.json) bytes, $(python3 -c "import json; d=json.load(open('/tmp/places.json')); print(len(d),'places')" 2>/dev/null || echo '?')"
+          echo "places.json: $(wc -c < /tmp/places.json) bytes"
+          python3 -c "import json; d=json.load(open('/tmp/places.json')); print(len(d),'places, first:',d[0].get('name','?') if d else '(empty)')"
 
-      - name: Geocode addresses
+      - name: Enrich places (BigDataCloud + Overpass/OSM)
         run: python3 .github/scripts/enrich.py
 
-      - name: Upload results
+      - name: Upload result as unique per-request file
         env:
           REQ_ID: ${{ github.event.client_payload.req_id }}
           REPO:   ${{ github.repository }}
         run: |
-          gh_upload() {
-            local API_PATH="$1" CONTENT="$2"
-            local SHA BODY
-            SHA=$(gh api "repos/$REPO/contents/$API_PATH" --jq '.sha' 2>/dev/null || true)
-            BODY="{\"message\":\"enrich [skip ci]\",\"content\":\"$CONTENT\""
-            [ -n "$SHA" ] && BODY="$BODY,\"sha\":\"$SHA\""
-            BODY="$BODY}"
-            if gh api "repos/$REPO/contents/$API_PATH" -X PUT --input - <<< "$BODY" > /dev/null 2>&1; then
-              echo "  OK: uploaded $API_PATH"
-            else
-              echo "  WARN: upload failed for $API_PATH — retrying once"
-              sleep 3
-              gh api "repos/$REPO/contents/$API_PATH" -X PUT --input - <<< "$BODY" > /dev/null || true
-            fi
-          }
-
           RESULT_B64=$(base64 -w0 /tmp/enriched.json)
-          ID_B64=$(printf '%s' "$REQ_ID" | base64 -w0)
-          echo "Uploading results (${#RESULT_B64} chars) for reqId=$REQ_ID"
+          echo "Uploading _cache/${REQ_ID}.json (${#RESULT_B64} chars)"
 
-          gh_upload "_cache/enrich_response.txt" "$RESULT_B64"
-          gh_upload "_cache/enrich_id.txt"       "$ID_B64"
-          echo "All done."
+          BODY="{\"message\":\"enrich result [skip ci]\",\"content\":\"$RESULT_B64\"}"
+          if gh api "repos/$REPO/contents/_cache/${REQ_ID}.json" \
+               -X PUT --input - <<< "$BODY" > /dev/null 2>&1; then
+            echo "Upload OK — reqId: $REQ_ID"
+          else
+            echo "WARN: first upload failed, retrying in 5s..."
+            sleep 5
+            gh api "repos/$REPO/contents/_cache/${REQ_ID}.json" \
+               -X PUT --input - <<< "$BODY" > /dev/null 2>&1 \
+               && echo "Retry OK" || echo "ERROR: upload failed"
+          fi

@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v199';
+const APP_VERSION = 'v200';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -3888,11 +3888,9 @@ const enrichPlacesBatch=async(places,settings,onStatus,onResult)=>{
   const tok=settings?.githubToken||'';
   const user=settings?.githubUsername||'nimrodekel-hub';
   const repo=settings?.githubRepo||'PlanMyTrip';
-  if(!tok||!user||!repo) return; // ללא token — דילוג שקט
+  if(!tok||!user||!repo) return;
 
   const hdr={'Authorization':'token '+tok,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'};
-  /* headers לפולינג: no-cache כדי לעקוף CDN cache של GitHub */
-  const pollHdr={...hdr,'Cache-Control':'no-cache','Pragma':'no-cache'};
   const repoBase=`https://api.github.com/repos/${user}/${repo}`;
 
   /* קידוד בטוח ל-Base64 (תמיכה מלאה ב-Unicode) */
@@ -3904,7 +3902,7 @@ const enrichPlacesBatch=async(places,settings,onStatus,onResult)=>{
   const placesB64=btoa(b64raw);
 
   const reqId='enrich_'+Date.now();
-  console.log('[Enrich] dispatching, reqId=',reqId,'places=',places.length,'payload_kb=',Math.round(placesB64.length/1024));
+  console.log('[Enrich] dispatching reqId=',reqId,'places=',places.length,'payload_kb≈',Math.round(placesB64.length/1024));
   const dispR=await fetch(`${repoBase}/dispatches`,{
     method:'POST',headers:hdr,
     body:JSON.stringify({event_type:'enrich-places',client_payload:{places_b64:placesB64,req_id:reqId}})
@@ -3913,36 +3911,32 @@ const enrichPlacesBatch=async(places,settings,onStatus,onResult)=>{
     const errTxt=await dispR.text().catch(()=>'');
     console.error('[Enrich] dispatch failed',dispR.status,errTxt);
     onStatus?.('');
-    throw new Error('dispatch failed: '+dispR.status+' '+errTxt.slice(0,80));
+    throw new Error('dispatch failed '+dispR.status+': '+errTxt.slice(0,100));
   }
+  console.log('[Enrich] dispatch OK (204)');
+  onStatus?.('⏳ מעשיר פרטי '+places.length+' מקומות... (~3 דק)');
 
-  onStatus?.('⏳ מעשיר פרטי '+places.length+' מקומות... (~2 דק)');
-
-  const idUrl  =`${repoBase}/contents/_cache/enrich_id.txt`;
-  const respUrl=`${repoBase}/contents/_cache/enrich_response.txt`;
-
-  /* סקור כל 6 שניות, עד 10 דקות */
-  console.log('[Enrich] polling started');
+  /* ── Poll for _cache/{reqId}.json — file is created only when Action completes ──
+     No caching issue: we poll for a NEW file that does not exist yet (404→200). */
+  const resultUrl=`${repoBase}/contents/_cache/${reqId}.json`;
+  console.log('[Enrich] polling',resultUrl);
   for(let i=0;i<100;i++){
-    await new Promise(r=>setTimeout(r,6000));
+    await new Promise(r=>setTimeout(r,8000)); // poll every 8 s
     try{
-      const idR=await fetch(idUrl+'?nocache='+Date.now(),{headers:pollHdr});
-      if(!idR.ok){console.log('[Enrich] poll',i+1,'idUrl',idR.status);continue;}
-      const savedId=b64ToUtf8((await idR.json()).content).trim();
-      if(savedId!==reqId){console.log('[Enrich] poll',i+1,'id mismatch – saved:',savedId?.slice(0,24),'expected:',reqId.slice(0,24));continue;}
-      console.log('[Enrich] id matched at poll',i+1,'— fetching results');
-      const rR=await fetch(respUrl+'?nocache='+Date.now(),{headers:pollHdr});
-      if(!rR.ok){console.error('[Enrich] response fetch failed',rR.status);continue;}
-      const text=b64ToUtf8((await rR.json()).content);
+      const r=await fetch(resultUrl,{headers:hdr});
+      console.log('[Enrich] poll',i+1,'→',r.status);
+      if(r.status===404) continue; // not ready yet
+      if(!r.ok){console.warn('[Enrich] unexpected status',r.status);continue;}
+      const j=await r.json();
+      const text=b64ToUtf8(j.content);
       const enriched=JSON.parse(text);
-      console.log('[Enrich] received',enriched?.length,'items, sample:',JSON.stringify(enriched?.[0])?.slice(0,120));
+      console.log('[Enrich] received',enriched?.length,'items, sample:',JSON.stringify(enriched?.[0])?.slice(0,150));
       onStatus?.('');
       onResult?.(enriched);
       return;
     }catch(e){console.warn('[Enrich] poll',i+1,'error:',e?.message);}
   }
-  /* timeout */
-  console.error('[Enrich] timed out after 10 min — check GitHub Actions');
+  console.error('[Enrich] timed out (13 min) — check GitHub Actions');
   onStatus?.('');
   throw new Error('timeout');
 };
