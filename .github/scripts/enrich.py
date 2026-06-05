@@ -1,5 +1,5 @@
 """
-enrich.py — BigDataCloud (address, parallel) + Overpass/OSM (phone, hours, website, type)
+enrich.py — BigDataCloud (address) + Overpass/OSM (phone, hours, website, type)
 Target runtime: <3 minutes for 150 places.
 """
 import json
@@ -12,7 +12,7 @@ from urllib.request import Request, urlopen
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
-# ── BigDataCloud: reverse-geocode lat/lng → address (parallel, ~15s) ─────────
+# ── BigDataCloud: reverse-geocode lat/lng → readable address ─────────────────
 def bigdatacloud_address(place):
     pid = place.get("id", "")
     lat, lng = place.get("lat"), place.get("lng")
@@ -25,27 +25,39 @@ def bigdatacloud_address(place):
     try:
         with urlopen(Request(url, headers={"User-Agent": "PlanMyTrip/1.0"}), timeout=10) as r:
             d = json.loads(r.read())
-        infos = (d.get("localityInfo") or {}).get("informative") or []
-        names = [
-            i["name"] for i in infos
-            if isinstance(i, dict) and i.get("name")
-            and isinstance(i.get("order"), (int, float)) and i["order"] <= 4
-        ]
-        if names:
-            return {"id": pid, "address": ", ".join(names[:4])}
+
+        # Use flat fields — reliable, local-level address
+        # locality = neighborhood/ward, city = city, principalSubdivision = state/province
+        # countryName = country. Deduplicate while preserving order.
         parts = []
         for key in ("locality", "city", "principalSubdivision", "countryName"):
             v = (d.get(key) or "").strip()
             if v and v not in parts:
                 parts.append(v)
-        addr = ", ".join(parts[:3])
-        return {"id": pid, "address": addr} if addr else {"id": pid}
+
+        # Deduplicate consecutive duplicates (Tokyo often appears twice)
+        addr = ", ".join(parts[:4])
+        if addr:
+            return {"id": pid, "address": addr}
+
+        # Last resort: display_name from administrative hierarchy
+        admin = (d.get("localityInfo") or {}).get("administrative") or []
+        admin_names = [
+            i.get("name", "") for i in admin
+            if isinstance(i, dict) and i.get("name")
+            and isinstance(i.get("order"), (int, float))
+            and 6 <= i["order"] <= 12  # city/district level, not continent
+        ]
+        if admin_names:
+            return {"id": pid, "address": ", ".join(admin_names[:3])}
+
+        return {"id": pid}
     except Exception as exc:
         print(f"  BDC err [{place.get('name','')}]: {exc}", file=sys.stderr)
         return {"id": pid}
 
 
-# ── Overpass/OSM: get phone, hours, website, type ────────────────────────────
+# ── Overpass/OSM: phone, hours, website, type ────────────────────────────────
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
 OSM_TYPE_MAP = {
@@ -63,20 +75,21 @@ OSM_TYPE_MAP = {
     "park": "Park", "garden": "Garden",
 }
 
+
 def _name_score(a, b):
     def tok(s):
-        return set(re.split(r"[\s\-_\./\\,]+", s.lower())) - {"the","a","of","in","at"}
+        return set(re.split(r"[\s\-_\./\\,]+", s.lower())) - {"the", "a", "of", "in", "at"}
     qt, ct = tok(a), tok(b)
     if not qt or not ct:
         return 0.0
     return len(qt & ct) / max(len(qt), len(ct))
+
 
 def overpass_enrich(place, radius=80):
     lat, lng = place.get("lat"), place.get("lng")
     name = place.get("name", "")
     if not lat or not lng:
         return {}
-    # Server-side timeout=5s keeps each request fast; Python timeout=8s
     query = (
         f"[out:json][timeout:5];"
         f"(node(around:{radius},{lat},{lng})[\"name\"];"
@@ -99,36 +112,31 @@ def overpass_enrich(place, radius=80):
         if not best_tags:
             return {}
         result = {}
-        # Address
         addr_parts = [best_tags.get(k, "").strip()
-                      for k in ("addr:housenumber","addr:street","addr:city","addr:country")
+                      for k in ("addr:housenumber", "addr:street", "addr:city", "addr:country")
                       if best_tags.get(k)]
         if addr_parts:
             result["address"] = ", ".join(addr_parts)
-        # Phone
         phone = (best_tags.get("contact:phone") or best_tags.get("phone")
                  or best_tags.get("contact:mobile"))
         if phone:
             result["phone"] = phone.strip()
-        # Website
         web = best_tags.get("website") or best_tags.get("contact:website") or best_tags.get("url")
         if web:
             result["website"] = web.strip()
-        # Hours
         hours = best_tags.get("opening_hours")
         if hours:
             result["todayHours"] = hours.strip()
-        # Type
-        for tk in ("amenity","shop","tourism","leisure","office"):
-            raw = best_tags.get(tk,"")
+        for tk in ("amenity", "shop", "tourism", "leisure", "office"):
+            raw = best_tags.get(tk, "")
             if raw:
-                result["placeType"] = OSM_TYPE_MAP.get(raw, raw.replace("_"," ").title())
+                result["placeType"] = OSM_TYPE_MAP.get(raw, raw.replace("_", " ").title())
                 break
         if result:
-            print(f"  OSM [{name[:20]}] score={best_score:.2f} "
-                  f"P={'Y' if result.get('phone') else 'N'} "
-                  f"W={'Y' if result.get('website') else 'N'} "
-                  f"H={'Y' if result.get('todayHours') else 'N'}")
+            print(f"  OSM [{name[:25]}] score={best_score:.2f} "
+                  f"ph={'Y' if result.get('phone') else 'N'} "
+                  f"wb={'Y' if result.get('website') else 'N'} "
+                  f"hr={'Y' if result.get('todayHours') else 'N'}")
         return result
     except Exception as exc:
         print(f"  OSM err [{name[:20]}]: {exc}", file=sys.stderr)
@@ -136,12 +144,11 @@ def overpass_enrich(place, radius=80):
 
 
 def overpass_worker(subset):
-    """Sequential Overpass queries with 0.5s gap (2 workers → 1 req/s total, within ToS)."""
     results = {}
     for i, place in enumerate(subset):
         if i > 0:
             time.sleep(0.5)
-        results[place.get("id","")] = overpass_enrich(place)
+        results[place.get("id", "")] = overpass_enrich(place)
     return results
 
 
@@ -151,13 +158,15 @@ def main():
         with open("/tmp/places.json", encoding="utf-8") as f:
             places = json.load(f)
         print(f"Loaded {len(places)} places")
+        if places:
+            print(f"  sample: {places[0].get('name')} lat={places[0].get('lat')} lng={places[0].get('lng')}")
     except Exception as exc:
         print(f"FATAL: {exc}", file=sys.stderr)
         json.dump([], open("/tmp/enriched.json", "w"))
         sys.exit(0)
 
     # Phase 1: BigDataCloud — addresses in parallel (~15s)
-    print("Phase 1: BigDataCloud (parallel)...")
+    print("Phase 1: BigDataCloud addresses (parallel, 20 workers)...")
     enriched_map = {}
     with ThreadPoolExecutor(max_workers=20) as ex:
         futs = {ex.submit(bigdatacloud_address, p): p for p in places}
@@ -167,12 +176,17 @@ def main():
                 enriched_map[r["id"]] = r
             except Exception:
                 p = futs[fut]
-                enriched_map[p.get("id","")] = {"id": p.get("id","")}
+                enriched_map[p.get("id", "")] = {"id": p.get("id", "")}
     addr_c = sum(1 for r in enriched_map.values() if r.get("address"))
-    print(f"  Phase 1: {addr_c}/{len(places)} addresses")
+    # Show sample addresses for verification
+    samples = [(r.get("address",""), places[i].get("name",""))
+               for i, r in enumerate(list(enriched_map.values())[:3]) if r.get("address")]
+    for addr, nm in samples:
+        print(f"  sample address [{nm[:20]}]: {addr}")
+    print(f"  Phase 1 done: {addr_c}/{len(places)} addresses")
 
     # Phase 2: Overpass — phone/hours/website via 2 parallel workers (~90s)
-    print("Phase 2: Overpass/OSM (2 workers, 5s timeout each)...")
+    print("Phase 2: Overpass/OSM phone+hours+website (2 workers, 5s timeout)...")
     mid = len(places) // 2
     subsets = [places[:mid], places[mid:]]
     osm_map = {}
@@ -182,7 +196,7 @@ def main():
             try:
                 osm_map.update(fut.result())
             except Exception as exc:
-                print(f"  worker err: {exc}", file=sys.stderr)
+                print(f"  OSM worker err: {exc}", file=sys.stderr)
 
     osm_hits = 0
     for pid, osm_data in osm_map.items():
@@ -194,18 +208,18 @@ def main():
             if v and not r.get(k):
                 r[k] = v
         enriched_map[pid] = r
-    print(f"  Phase 2: OSM data for {osm_hits}/{len(places)} places")
+    print(f"  Phase 2 done: OSM data for {osm_hits}/{len(places)} places")
 
     enriched = list(enriched_map.values())
     addr_c  = sum(1 for r in enriched if r.get("address"))
     phone_c = sum(1 for r in enriched if r.get("phone"))
     web_c   = sum(1 for r in enriched if r.get("website"))
     hours_c = sum(1 for r in enriched if r.get("todayHours"))
-    print(f"Done: addr={addr_c} phone={phone_c} web={web_c} hours={hours_c}")
+    print(f"Final: {len(enriched)} places | addr={addr_c} phone={phone_c} web={web_c} hours={hours_c}")
 
     with open("/tmp/enriched.json", "w", encoding="utf-8") as f:
         json.dump(enriched, f, ensure_ascii=False)
-    print(f"Wrote {os.path.getsize('/tmp/enriched.json')} bytes")
+    print(f"Wrote {os.path.getsize('/tmp/enriched.json')} bytes to /tmp/enriched.json")
 
 
 if __name__ == "__main__":

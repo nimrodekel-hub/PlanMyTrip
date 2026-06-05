@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v201';
+const APP_VERSION = 'v202';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4546,13 +4546,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
         enriched=>{
           console.log('[Enrich] callback received',enriched?.length,'items');
           if(!Array.isArray(enriched)||!enriched.length){
-            toast('⚠️ העשרת פרטים הסתיימה בלי נתונים — בדוק ב-GitHub Actions','error');
-            return;
-          }
-          const withData=enriched.filter(e=>e.address||e.rating||e.phone||e.website);
-          console.log('[Enrich] items with useful data:',withData.length);
-          if(!withData.length){
-            toast('⚠️ Playwright לא הצליח לחלץ נתונים — בדוק ב-Actions','error');
+            toast('⚠️ העשרת פרטים הסתיימה בלי נתונים','error');
             return;
           }
           const map=Object.fromEntries(enriched.map(e=>[e.id,e]));
@@ -4562,13 +4556,15 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
               if(!e) return item;
               return{
                 ...item,
-                ...(e.address       &&!item.address       ?{address:e.address}:{}),
-                ...(e.rating        &&!item.rating        ?{rating:e.rating}:{}),
-                ...(e.phone         &&!item.phone         ?{phone:e.phone}:{}),
-                ...(e.website       &&!item.website       ?{website:e.website}:{}),
-                ...(e.placeType     &&!item.placeType     ?{placeType:e.placeType}:{}),
-                ...(e.todayHours    &&!item.todayHours    ?{todayHours:e.todayHours}:{}),
-                ...(e.openStatus    &&!item.openStatus    ?{openStatus:e.openStatus}:{}),
+                /* כתובת: תמיד דרוס (כולל כתובות גרועות מריצה קודמת) */
+                ...(e.address                               ?{address:e.address}:{}),
+                /* שאר השדות: מלא רק אם חסר */
+                ...(e.rating        &&!item.rating         ?{rating:e.rating}:{}),
+                ...(e.phone         &&!item.phone          ?{phone:e.phone}:{}),
+                ...(e.website       &&!item.website        ?{website:e.website}:{}),
+                ...(e.placeType     &&!item.placeType      ?{placeType:e.placeType}:{}),
+                ...(e.todayHours    &&!item.todayHours     ?{todayHours:e.todayHours}:{}),
+                ...(e.openStatus    &&!item.openStatus     ?{openStatus:e.openStatus}:{}),
                 ...(e.userRatingsTotal&&!item.userRatingsTotal?{userRatingsTotal:e.userRatingsTotal}:{}),
                 lastFetched:Math.floor(Date.now()/1000),
               };
@@ -4576,8 +4572,10 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
             return{...prev,interestBank:bank};
           });
           const addrCount=enriched.filter(e=>e.address).length;
-          const rateCount=enriched.filter(e=>e.rating).length;
-          toast(`✅ פרטים עודכנו: ${addrCount} כתובות, ${rateCount} דירוגים`,'success');
+          const phoneCount=enriched.filter(e=>e.phone).length;
+          const webCount=enriched.filter(e=>e.website).length;
+          const hoursCount=enriched.filter(e=>e.todayHours).length;
+          toast(`✅ פרטים עודכנו: ${addrCount} כתובות${phoneCount?', '+phoneCount+' טלפונים':''}${webCount?', '+webCount+' אתרים':''}${hoursCount?', '+hoursCount+' שעות':''}`,'success');
         }
       ).catch(e=>{
         console.error('[Enrich] failed:',e?.message);
