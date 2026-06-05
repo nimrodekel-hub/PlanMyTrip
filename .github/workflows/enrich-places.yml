@@ -12,82 +12,18 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      - name: Checkout repo (to get enrich.py script)
+        uses: actions/checkout@v4
+
       - name: Decode payload
         env:
           PLACES_B64: ${{ github.event.client_payload.places_b64 }}
         run: |
           printf '%s' "$PLACES_B64" | base64 -d > /tmp/places.json
-          echo "places.json size: $(wc -c < /tmp/places.json) bytes"
-          head -c 200 /tmp/places.json
+          echo "places.json: $(wc -c < /tmp/places.json) bytes, $(python3 -c "import json; d=json.load(open('/tmp/places.json')); print(len(d),'places')" 2>/dev/null || echo '?')"
 
-      - name: Geocode addresses (BigDataCloud, parallel)
-        env:
-          REQ_ID: ${{ github.event.client_payload.req_id }}
-          REPO:   ${{ github.repository }}
-        run: |
-          python3 << 'PYEOF'
-import json, sys, os
-from urllib.request import Request, urlopen
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-OUT = "/tmp/enriched.json"
-
-def geocode(place):
-    pid  = place.get("id", "")
-    lat  = place.get("lat")
-    lng  = place.get("lng")
-    name = place.get("name", "")
-    if not lat or not lng:
-        return {"id": pid}
-    url = (f"https://api.bigdatacloud.net/data/reverse-geocode-client"
-           f"?latitude={lat}&longitude={lng}&localityLanguage=en")
-    try:
-        with urlopen(Request(url, headers={"User-Agent": "PlanMyTrip/1.0"}), timeout=10) as r:
-            d = json.loads(r.read())
-        # Try informative hierarchy first
-        infos = (d.get("localityInfo") or {}).get("informative") or []
-        names = [i["name"] for i in infos
-                 if isinstance(i, dict) and i.get("name") and isinstance(i.get("order"), (int,float)) and i["order"] <= 4]
-        if names:
-            return {"id": pid, "address": ", ".join(names[:4])}
-        # Fallback: city / subdivision / country
-        parts = [x for x in [
-            d.get("locality") or "",
-            d.get("city") or d.get("principalSubdivision") or "",
-            d.get("countryName") or "",
-        ] if x]
-        addr = ", ".join(dict.fromkeys(parts))  # deduplicate while preserving order
-        return {"id": pid, "address": addr} if addr else {"id": pid}
-    except Exception as e:
-        print(f"  geocode error {name}: {e}", file=sys.stderr)
-        return {"id": pid}
-
-try:
-    places = json.loads(open("/tmp/places.json").read())
-    print(f"Loaded {len(places)} places")
-    enriched = []
-    with ThreadPoolExecutor(max_workers=20) as ex:
-        futs = {ex.submit(geocode, p): p for p in places}
-        done = 0
-        for fut in as_completed(futs):
-            done += 1
-            try:
-                enriched.append(fut.result())
-            except Exception as e:
-                enriched.append({"id": futs[fut].get("id","")})
-                print(f"  future error: {e}", file=sys.stderr)
-            if done % 30 == 0:
-                print(f"  geocoded {done}/{len(places)}")
-    addr_c = sum(1 for r in enriched if r.get("address"))
-    print(f"Done: {len(enriched)} places | {addr_c} addresses")
-except Exception as e:
-    print(f"FATAL: {e}", file=sys.stderr)
-    enriched = []
-
-json.dump(enriched, open(OUT, "w"), ensure_ascii=False)
-print(f"Wrote {os.path.getsize(OUT)} bytes to {OUT}")
-PYEOF
-          echo "Python exit code: $?"
+      - name: Geocode addresses
+        run: python3 .github/scripts/enrich.py
 
       - name: Upload results
         env:
@@ -96,22 +32,24 @@ PYEOF
         run: |
           gh_upload() {
             local API_PATH="$1" CONTENT="$2"
-            local SHA BODY STATUS
-            SHA=$(gh api "repos/$REPO/contents/$API_PATH" --jq '.sha' 2>/dev/null || echo "")
+            local SHA BODY
+            SHA=$(gh api "repos/$REPO/contents/$API_PATH" --jq '.sha' 2>/dev/null || true)
             BODY="{\"message\":\"enrich [skip ci]\",\"content\":\"$CONTENT\""
             [ -n "$SHA" ] && BODY="$BODY,\"sha\":\"$SHA\""
             BODY="$BODY}"
-            STATUS=$(gh api "repos/$REPO/contents/$API_PATH" -X PUT \
-              --input - <<< "$BODY" \
-              --jq '.content.sha' 2>&1) && \
-              echo "  uploaded $API_PATH (sha: ${STATUS:0:8})" || \
-              echo "  WARN: upload failed for $API_PATH: $STATUS"
+            if gh api "repos/$REPO/contents/$API_PATH" -X PUT --input - <<< "$BODY" > /dev/null 2>&1; then
+              echo "  OK: uploaded $API_PATH"
+            else
+              echo "  WARN: upload failed for $API_PATH — retrying once"
+              sleep 3
+              gh api "repos/$REPO/contents/$API_PATH" -X PUT --input - <<< "$BODY" > /dev/null || true
+            fi
           }
 
           RESULT_B64=$(base64 -w0 /tmp/enriched.json)
           ID_B64=$(printf '%s' "$REQ_ID" | base64 -w0)
-          echo "Uploading: response=${#RESULT_B64} bytes, reqId=$REQ_ID"
+          echo "Uploading results (${#RESULT_B64} chars) for reqId=$REQ_ID"
 
           gh_upload "_cache/enrich_response.txt" "$RESULT_B64"
           gh_upload "_cache/enrich_id.txt"       "$ID_B64"
-          echo "All done — reqId: $REQ_ID"
+          echo "All done."
