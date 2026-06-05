@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v202';
+const APP_VERSION = 'v203';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4527,6 +4527,9 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     const dupCount=places.length-newPlaces.length;
     if(newPlaces.length>0){
       onUpdate({...tripRef.current,interestBank:[...existing,...newPlaces]});
+      /* פתח אוטומטית את קבוצות שאליהן נוספו הפריטים החדשים */
+      const importedCountries=new Set(newPlaces.map(p=>getCountry(p)));
+      setExpanded(prev=>new Set([...prev,...importedCountries]));
     }
     /* אם קיבלנו פחות מהסה"כ — הצג אזהרה */
     const partial=totalInList>places.length;
@@ -4576,6 +4579,11 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
           const webCount=enriched.filter(e=>e.website).length;
           const hoursCount=enriched.filter(e=>e.todayHours).length;
           toast(`✅ פרטים עודכנו: ${addrCount} כתובות${phoneCount?', '+phoneCount+' טלפונים':''}${webCount?', '+webCount+' אתרים':''}${hoursCount?', '+hoursCount+' שעות':''}`,'success');
+          /* פתח אוטומטית את קבוצות המדינה שקיבלו כתובת */
+          if(addrCount>0){
+            const enrichedCountries=new Set(enriched.filter(e=>e.address).map(e=>getCountry({address:e.address})));
+            setExpanded(prev=>new Set([...prev,...enrichedCountries]));
+          }
         }
       ).catch(e=>{
         console.error('[Enrich] failed:',e?.message);
@@ -4726,6 +4734,9 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
           return;
         }
         onUpdate({...trip,interestBank:[...existing,...unique]});
+        /* פתח אוטומטית את קבוצות שאליהן יובאו הפריטים */
+        const importedCountries=new Set(unique.map(p=>getCountry(p)));
+        setExpanded(prev=>new Set([...prev,...importedCountries]));
         const parts=[];
         if(jsonCount) parts.push(`${unique.filter(i=>!i._noCoords).length} עם GPS`);
         if(csvCount)  parts.push(`${unique.filter(i=>i._noCoords).length} ללא GPS (לחץ 🔍)`);
