@@ -12,253 +12,180 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Install Playwright + Chromium
-        run: |
-          pip install playwright --quiet
-          playwright install chromium --with-deps --quiet
-          echo "✅ Playwright ready"
-
-      - name: Smoke-test Playwright (single CID)
-        run: |
-          python3 << 'PYEOF'
-from playwright.sync_api import sync_playwright
-import json
-
-print("--- Playwright smoke test ---")
-with sync_playwright() as pw:
-    b = pw.chromium.launch(headless=True, args=['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage'])
-    ctx = b.new_context(user_agent='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', locale='en-US')
-    page = ctx.new_page()
-    # retaW store HARAJUKU — known test CID
-    url = "https://www.google.com/maps?cid=6924439061189454415&hl=en"
-    print(f"Navigating to: {url}")
-    page.goto(url, wait_until='domcontentloaded', timeout=25000)
-    page.wait_for_timeout(3000)
-    # Wait for address element
-    try:
-        page.wait_for_selector('[data-item-id="address"]', timeout=12000)
-        print("✅ [data-item-id=address] found!")
-    except Exception:
-        print("⚠️  [data-item-id=address] NOT found — checking what IS on page...")
-        items = page.query_selector_all('[data-item-id]')
-        print(f"  data-item-id elements present: {len(items)}")
-        for el in items[:10]:
-            print(f"  → {el.get_attribute('data-item-id')}: {el.text_content()[:60]}")
-    addr_el = page.query_selector('[data-item-id="address"]')
-    if addr_el:
-        print("Address text:", addr_el.text_content().strip())
-    else:
-        print("No address element found")
-    b.close()
-print("--- smoke test done ---")
-PYEOF
-
-      - name: Enrich all places (headless Chrome + Nominatim fallback)
+      - name: Enrich place details (Nominatim + HTML scraping)
         env:
           PLACES_B64: ${{ github.event.client_payload.places_b64 }}
-          REQ_ID: ${{ github.event.client_payload.req_id }}
-          REPO: ${{ github.repository }}
+          REQ_ID:     ${{ github.event.client_payload.req_id }}
+          REPO:       ${{ github.repository }}
         run: |
+          set -e
           echo "$PLACES_B64" | base64 -d > /tmp/places.json
-          COUNT=$(python3 -c 'import json; print(len(json.load(open("/tmp/places.json"))))')
-          echo "Enriching $COUNT places..."
+          python3 - << 'PYEOF'
+import json, re, time, urllib.request, urllib.parse, sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-          python3 << 'PYEOF'
-import asyncio, json, re, time, urllib.parse, urllib.request, sys
-
-# ── JavaScript injected into each place page ──────────────────────────────────
-EXTRACT_JS = """
-() => {
-  const r = {};
-  const txt = el => el ? el.textContent.trim().replace(/\\s+/g,' ') : '';
-  const q   = sel => document.querySelector(sel);
-  const qa  = sel => Array.from(document.querySelectorAll(sel));
-
-  // Rating: aria-label "X.X stars"
-  for (const el of qa('[aria-label]')) {
-    const lbl = el.getAttribute('aria-label') || '';
-    const m = lbl.match(/^(\\d\\.\\d)\\s*stars?/i);
-    if (m) { r.rating = parseFloat(m[1]); break; }
-  }
-
-  // Review count: aria-label "NNN reviews"
-  for (const el of qa('[aria-label]')) {
-    const lbl = el.getAttribute('aria-label') || '';
-    const m = lbl.match(/^([\\d,]+)\\s+reviews?$/i);
-    if (m) { r.userRatingsTotal = parseInt(m[1].replace(/,/g,'')); break; }
-  }
-
-  // Category / type
-  const catEl = q('button.DkEaL') || q('span.DkEaL');
-  if (catEl) r.placeType = txt(catEl);
-
-  // Address
-  const addrEl = q('[data-item-id="address"]');
-  if (addrEl) r.address = txt(addrEl).replace(/Copy address/gi,'').trim();
-
-  // Phone
-  const phoneEl = qa('[data-item-id]').find(e => (e.getAttribute('data-item-id')||'').includes('phone:tel'));
-  if (phoneEl) r.phone = txt(phoneEl).replace(/Copy phone number/gi,'').trim();
-
-  // Website
-  const webEl = q('[data-item-id="authority"]');
-  if (webEl) {
-    const a = webEl.tagName === 'A' ? webEl : webEl.querySelector('a');
-    r.website = (a && a.href && !a.href.includes('google.com')) ? a.href : txt(webEl);
-  }
-
-  // Hours
-  const ohBtn = q('[data-item-id="oh"]');
-  if (ohBtn) {
-    const ht = txt(ohBtn);
-    r.todayHours = ht.split(/[·•]/)[0].trim() || ht;
-    r.openStatus = /open/i.test(ht) ? 'פתוח עכשיו' : /clos/i.test(ht) ? 'סגור עכשיו' : '';
-  }
-
-  // Diagnostic: log what data-item-id values are present
-  const itemIds = Array.from(document.querySelectorAll('[data-item-id]'))
-    .map(e => e.getAttribute('data-item-id')).filter(Boolean).slice(0,10);
-  r._debug_itemIds = itemIds;
-
-  return r;
-}
-"""
-
-async def run(places):
-    from playwright.async_api import async_playwright
-
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch(
-            headless=True,
-            args=['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage']
-        )
-        ctx = await browser.new_context(
-            user_agent='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            locale='en-US'
-        )
-
-        sem = asyncio.Semaphore(5)
-        enriched = []
-        done_count = [0]
-
-        async def enrich_one(place):
-            pid  = place.get('id', '')
-            cid  = str(place.get('_cid', '')).strip()
-            name = place.get('name', '')
-
-            async with sem:
-                page = await ctx.new_page()
-                try:
-                    if not cid:
-                        return {'id': pid}
-
-                    url = f"https://www.google.com/maps?cid={cid}&hl=en"
-                    await page.goto(url, wait_until='domcontentloaded', timeout=25000)
-                    await page.wait_for_timeout(2000)  # let JS initialize
-
-                    # Wait specifically for address OR any data-item-id element
-                    try:
-                        await page.wait_for_selector('[data-item-id="address"]', timeout=12000)
-                    except Exception:
-                        try:
-                            await page.wait_for_selector('[data-item-id]', timeout=5000)
-                        except Exception:
-                            pass
-
-                    data = await page.evaluate(EXTRACT_JS)
-
-                    # Log first place in detail for debugging
-                    done_count[0] += 1
-                    if done_count[0] == 1:
-                        print(f"  [first place] {name}")
-                        print(f"    data-item-ids on page: {data.get('_debug_itemIds','none')}")
-                        print(f"    address: {data.get('address','—')}")
-                        print(f"    rating:  {data.get('rating','—')}")
-                        print(f"    phone:   {data.get('phone','—')}")
-                        print(f"    website: {data.get('website','—')}")
-                    elif done_count[0] % 20 == 0:
-                        print(f"  [{done_count[0]}/{len(places)}] processed...")
-
-                    result = {k: v for k, v in data.items() if v and k != '_debug_itemIds'}
-                    result['id'] = pid
-                    return result
-
-                except Exception as e:
-                    print(f"  ✗ [{name}]: {e}", file=sys.stderr)
-                    return {'id': pid}
-                finally:
-                    await page.close()
-
-        tasks = [enrich_one(p) for p in places]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        await browser.close()
-
-    out = []
-    for i, r in enumerate(results):
-        if isinstance(r, Exception):
-            out.append({'id': places[i].get('id', '')})
-        else:
-            out.append(r)
-    return out
-
-
+# ── Nominatim reverse geocoding (address from lat/lng) ───────────────────────
 def nominatim_reverse(lat, lng):
-    url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json&zoom=18&accept-language=en"
-    req = urllib.request.Request(url, headers={'User-Agent': 'PlanMyTrip/1.0'})
+    url = (f"https://nominatim.openstreetmap.org/reverse"
+           f"?lat={lat}&lon={lng}&format=json&zoom=18&accept-language=en")
+    req = urllib.request.Request(url, headers={"User-Agent": "PlanMyTrip/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             d = json.loads(resp.read())
-        a = d.get('address', {})
-        road   = a.get('road') or a.get('pedestrian') or a.get('footway') or ''
-        num    = a.get('house_number', '')
-        suburb = a.get('neighbourhood') or a.get('suburb') or ''
-        city   = a.get('city') or a.get('town') or a.get('village') or ''
-        state  = a.get('state', '')
-        country= a.get('country', '')
-        parts = []
-        if road: parts.append((num+' '+road).strip() if num else road)
+        a = d.get("address", {})
+        road    = a.get("road") or a.get("pedestrian") or a.get("footway") or ""
+        num     = a.get("house_number", "")
+        suburb  = a.get("neighbourhood") or a.get("suburb") or ""
+        city    = a.get("city") or a.get("town") or a.get("village") or ""
+        state   = a.get("state", "")
+        country = a.get("country", "")
+        parts   = []
+        if road:   parts.append((num + " " + road).strip() if num else road)
         if suburb and suburb != city: parts.append(suburb)
-        if city: parts.append(city)
-        if state and state != city: parts.append(state)
+        if city:   parts.append(city)
+        if state and state != city:   parts.append(state)
         if country: parts.append(country)
-        return ', '.join(parts[:5]) if parts else ''
+        return ", ".join(parts[:5]) if parts else d.get("display_name", "").split(",")[0]
+    except Exception as e:
+        print(f"  nominatim error {lat},{lng}: {e}", file=sys.stderr)
+        return ""
+
+# ── Fetch Google Maps CID page and extract data ───────────────────────────────
+GMAPS_HDR = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+}
+
+def fetch_html(url, timeout=15):
+    req = urllib.request.Request(url, headers=GMAPS_HDR)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read().decode("utf-8", errors="replace")
     except Exception:
-        return ''
+        return ""
 
+def scrape_gmaps(html):
+    """Best-effort extraction from Google Maps HTML (no JS rendering)."""
+    result = {}
+    if not html or len(html) < 500:
+        return result
 
-places = json.load(open('/tmp/places.json'))
-print(f"Loaded {len(places)} places, first CID: {places[0].get('_cid','MISSING') if places else 'n/a'}")
+    # ── JSON-LD (most reliable when present) ──────────────────────────────────
+    for m in re.finditer(
+        r"<script[^>]*type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>",
+        html, re.DOTALL | re.IGNORECASE
+    ):
+        try:
+            d = json.loads(m.group(1))
+            if isinstance(d, list): d = d[0] if d else {}
+            if not isinstance(d, dict): continue
+            t = str(d.get("@type", ""))
+            addr = d.get("address", {})
+            if isinstance(addr, dict):
+                parts = [addr.get("streetAddress",""), addr.get("addressLocality",""),
+                         addr.get("addressRegion",""), addr.get("addressCountry","")]
+                a = ", ".join(p for p in parts if p)
+                if a: result["address"] = a
+            elif isinstance(addr, str) and addr:
+                result["address"] = addr
+            if d.get("telephone"):   result["phone"]   = str(d["telephone"])
+            url = d.get("url","")
+            if url and "google.com" not in url: result["website"] = url
+            ag = d.get("aggregateRating", {})
+            if isinstance(ag, dict) and ag.get("ratingValue"):
+                result["rating"] = round(float(ag["ratingValue"]), 1)
+                if ag.get("ratingCount") or ag.get("reviewCount"):
+                    result["userRatingsTotal"] = int(ag.get("ratingCount") or ag.get("reviewCount"))
+            if t: result["placeType"] = t
+            break
+        except Exception:
+            pass
 
-# Always write results — even on failure — so JS polling gets notified
-try:
-    enriched = asyncio.run(run(places))
-    print(f"Playwright done: {len(enriched)} results")
+    # ── Phone from tel: href ──────────────────────────────────────────────────
+    if not result.get("phone"):
+        m = re.search(r'href=["\']tel:([+\d\s\(\)\-\.]{7,25})["\']', html)
+        if m: result["phone"] = m.group(1).strip()
 
-    # Nominatim fallback for missing addresses
-    nom_done = 0
-    for item in enriched:
-        if not item.get('address'):
-            place = next((p for p in places if p.get('id') == item.get('id')), None)
-            if place and place.get('lat') and place.get('lng'):
-                if nom_done > 0:
-                    time.sleep(1.1)
-                addr = nominatim_reverse(place['lat'], place['lng'])
-                if addr:
-                    item['address'] = addr
-                nom_done += 1
-    print(f"Nominatim filled {nom_done} addresses")
+    # ── Website (non-Google URL) ──────────────────────────────────────────────
+    if not result.get("website"):
+        SKIP = r"(?:google|goo\.gl|schema\.org|w3\.org|apple\.com|fb\.com|twitter|instagram)"
+        m = re.search(
+            r'"(https?://(?!' + SKIP + r')[\w\-]{2,}\.[\w\-]{2,10}[^\s"\'\\<>]{0,120})"',
+            html
+        )
+        if m:
+            u = m.group(1)
+            if len(u) > 8 and "\\" not in u:
+                result["website"] = u
 
-except Exception as e:
-    print(f"❌ Script error: {e}", file=sys.stderr)
-    # Write minimal results so JS polling doesn't time out
-    enriched = [{'id': p.get('id', ''), '_failed': True} for p in places]
+    # ── Rating from context ───────────────────────────────────────────────────
+    if not result.get("rating"):
+        m = re.search(r'([1-4]\.[0-9])\s*(?:stars?|★|out of 5|\([\d,]+ review)',
+                      html, re.IGNORECASE)
+        if m:
+            v = float(m.group(1))
+            if 1.0 <= v <= 5.0:
+                result["rating"] = v
 
-json.dump(enriched, open('/tmp/enriched.json', 'w'), ensure_ascii=False)
+    return result
 
-addr_c  = sum(1 for r in enriched if r.get('address'))
-rate_c  = sum(1 for r in enriched if r.get('rating'))
-phone_c = sum(1 for r in enriched if r.get('phone'))
-print(f"✅ Results: {len(enriched)} places | address:{addr_c} | rating:{rate_c} | phone:{phone_c}")
+def enrich_one(place):
+    pid = place.get("id", "")
+    cid = str(place.get("_cid", "")).strip()
+    if cid:
+        html = fetch_html(f"https://www.google.com/maps?cid={cid}&hl=en")
+        if html:
+            data = scrape_gmaps(html)
+            if data:
+                data["id"] = pid
+                return data
+    return {"id": pid}
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+places = json.load(open("/tmp/places.json"))
+print(f"Loaded {len(places)} places")
+if places:
+    print(f"  first CID: {places[0].get('_cid','(empty)')}")
+
+enriched = []
+
+# Parallel HTML scraping (5 workers)
+with ThreadPoolExecutor(max_workers=5) as ex:
+    future_map = {ex.submit(enrich_one, p): p for p in places}
+    done = 0
+    for fut in as_completed(future_map):
+        done += 1
+        try:
+            enriched.append(fut.result())
+        except Exception:
+            enriched.append({"id": future_map[fut].get("id", "")})
+        if done % 25 == 0:
+            print(f"  HTML scraped {done}/{len(places)}")
+
+# Nominatim for missing addresses (1 req/s rate limit)
+nom_done = 0
+for item in enriched:
+    if not item.get("address"):
+        p = next((x for x in places if x.get("id") == item.get("id")), None)
+        if p and p.get("lat") and p.get("lng"):
+            if nom_done > 0:
+                time.sleep(1.1)
+            addr = nominatim_reverse(p["lat"], p["lng"])
+            if addr:
+                item["address"] = addr
+            nom_done += 1
+
+json.dump(enriched, open("/tmp/enriched.json", "w"), ensure_ascii=False)
+
+addr_c  = sum(1 for r in enriched if r.get("address"))
+rate_c  = sum(1 for r in enriched if r.get("rating"))
+phone_c = sum(1 for r in enriched if r.get("phone"))
+web_c   = sum(1 for r in enriched if r.get("website"))
+print(f"Done: {len(enriched)} | address:{addr_c} | rating:{rate_c} | phone:{phone_c} | website:{web_c}")
 PYEOF
 
           # ── Upload results ──────────────────────────────────────────────────
@@ -277,4 +204,4 @@ PYEOF
 
           gh_upload "_cache/enrich_response.txt" "$RESULT_B64"
           gh_upload "_cache/enrich_id.txt" "$ID_B64"
-          echo "✅ Uploaded results — reqId: $REQ_ID"
+          echo "Done — reqId: $REQ_ID"
