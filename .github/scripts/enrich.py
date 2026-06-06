@@ -85,13 +85,13 @@ def _name_score(a, b):
     return len(qt & ct) / max(len(qt), len(ct))
 
 
-def overpass_enrich(place, radius=80):
+def overpass_enrich(place, radius=150):
     lat, lng = place.get("lat"), place.get("lng")
     name = place.get("name", "")
     if not lat or not lng:
         return {}
     query = (
-        f"[out:json][timeout:5];"
+        f"[out:json][timeout:6];"
         f"(node(around:{radius},{lat},{lng})[\"name\"];"
         f"way(around:{radius},{lat},{lng})[\"name\"];);"
         f"out body;"
@@ -99,14 +99,20 @@ def overpass_enrich(place, radius=80):
     try:
         data = urlencode({"data": query}).encode()
         req = Request(OVERPASS_URL, data=data, headers={"User-Agent": "PlanMyTrip/1.0"})
-        with urlopen(req, timeout=8) as r:
+        with urlopen(req, timeout=10) as r:
             resp = json.loads(r.read())
         elements = resp.get("elements", [])
-        best_tags, best_score = None, 0.12
+        # Lower threshold 0.12→0.08 to catch partial matches (e.g. "Harajuku" in "Harajuku Gyoen")
+        best_tags, best_score = None, 0.08
         for el in elements:
             tags = el.get("tags", {})
-            el_name = tags.get("name") or tags.get("name:en") or ""
-            score = _name_score(name, el_name) if el_name else 0.0
+            # Prefer name:en for English comparison (critical for Japanese OSM nodes)
+            el_name_en = tags.get("name:en") or tags.get("name:ja_rm") or ""
+            el_name_local = tags.get("name") or ""
+            score = max(
+                _name_score(name, el_name_en) if el_name_en else 0.0,
+                _name_score(name, el_name_local) if el_name_local else 0.0,
+            )
             if score > best_score:
                 best_score, best_tags = score, tags
         if not best_tags:

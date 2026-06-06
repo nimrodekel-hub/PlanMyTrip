@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v205';
+const APP_VERSION = 'v206';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4485,6 +4485,18 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     const scanStr=(arr,test)=>deepStr(arr,test,0);
     const scanNum=(arr,test)=>deepNum(arr,test,0);
 
+    /* ── רשימת סוגי עסק מוכרים של גוגל מפות ── */
+    const GMAPS_TYPES_KNOWN=['restaurant','cafe','bar','bakery','meal_takeaway','meal_delivery',
+      'museum','art_gallery','tourist_attraction','amusement_park','aquarium','zoo','park',
+      'hotel','lodging','hostel','spa','gym','night_club',
+      'clothing_store','shoe_store','jewelry_store','book_store','department_store',
+      'shopping_mall','electronics_store','furniture_store','pet_store','toy_store',
+      'convenience_store','supermarket','grocery_or_supermarket',
+      'hospital','pharmacy','dentist','doctor','health',
+      'train_station','subway_station','transit_station','bus_station','airport',
+      'school','university','library','movie_theater','theater',
+      'place_of_worship','church','temple','mosque'];
+
     const places=[];
     for(const p of placeEntries){
       try{
@@ -4492,62 +4504,103 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
         if(!name)continue;
         const loc=p[1]||[];
 
+        /* ── JSON מסודר לחיפוש regex מהיר על כל מבנה `p` ── */
+        const pJson=JSON.stringify(p);
+        const locJson=JSON.stringify(loc);
+
         /* קואורדינטות */
         const coords=sf(()=>loc[5]);
         const lat=sNum(()=>coords?.[2]);
         const lng=sNum(()=>coords?.[3]);
 
-        /* כתובת — top-level בלבד (deep scan לוקח מחרוזות לא-רלוונטיות) */
-        const address=sStr(()=>loc[2])||scanStr(loc,v=>/[,\d]/.test(v)&&v.length>5&&v.length<120&&!/^https?:\/\//.test(v)&&!v.startsWith('ChIJ')&&!v.startsWith('/'));
+        /* כתובת */
+        const address=sStr(()=>loc[2])||
+          scanStr(loc,v=>/[,\d]/.test(v)&&v.length>5&&v.length<120&&!/^https?:\/\//.test(v)&&!v.startsWith('ChIJ')&&!v.startsWith('/'));
 
-        /* דירוג — deep scan: גוגל שומר ratings בתוך sub-arrays
-           float ייחודי בטווח 1.0-5.0 (קואורדינטות יפן=35-139, מחוץ לטווח) */
-        const rating=
-          sNum(()=>(typeof loc[3]==='number'&&loc[3]>=1&&loc[3]<=5)?loc[3]:null)
-          ||deepNum(loc,v=>v>=1.0&&v<=5.0&&v!==Math.floor(v),5);
+        /* ── דירוג ── float 1.0-4.9 ייחודי (קואורדינטות יפן=35-139, מחוץ לטווח)
+           מחפש ב-pJson כולו (לא רק loc) */
+        const ratingFromDirect=sNum(()=>(typeof loc[3]==='number'&&loc[3]>=1&&loc[3]<=5)?loc[3]:null);
+        const ratingFromDeep=deepNum(loc,v=>v>=1.0&&v<=5.0&&v!==Math.floor(v),6);
+        const ratingFromJson=(m=>m?parseFloat(m[1]):null)(pJson.match(/[,\[:]([1-4]\.\d+)[,\]]/));
+        const rating=ratingFromDirect||ratingFromDeep||ratingFromJson;
 
-        /* מספר ביקורות */
-        const userRatingsTotal=sNum(()=>(typeof loc[4]==='number'&&loc[4]>0)?loc[4]:null)
-          ||deepNum(loc,v=>Number.isInteger(v)&&v>5&&v<50000000,2);
+        /* ── מספר ביקורות — בדרך כלל מיד אחרי ה-rating ב-JSON ── */
+        const revFromDirect=sNum(()=>(typeof loc[4]==='number'&&loc[4]>0)?loc[4]:null);
+        /* אחרי rating X.Y — המספר השלם הבא הוא מספר ביקורות */
+        const revFromJson=(()=>{
+          if(!rating) return null;
+          const rStr=rating.toFixed(1);
+          const m=pJson.match(new RegExp(rStr.replace('.','\\.')+'[,\\]]+?(\\d{1,8})[,\\]]'));
+          return m?parseInt(m[1]):null;
+        })();
+        const userRatingsTotal=revFromDirect||revFromJson||deepNum(loc,v=>Number.isInteger(v)&&v>9&&v<50000000,3);
 
-        /* טלפון + אתר — deep scan 2 רמות */
-        const phone=deepStr(loc,v=>/^[+\d\s\-\(\)]{7,}$/.test(v)&&/\d{4}/.test(v),2);
-        const website=deepStr(loc,v=>/^https?:\/\//.test(v),2);
+        /* ── טלפון — deep scan 4 רמות, ואחר כך regex על pJson ── */
+        const phone=deepStr(loc,v=>/^[+\d\s\-\(\)]{7,}$/.test(v)&&/\d{4}/.test(v),4)
+          ||(m=>m?m[1]:null)(pJson.match(/"(\+\d[\d\s\-\(\)]{6,25})"/));
 
-        /* סוג עסק — נסה loc[8] ואחר כך חפש מערך של strings באנגלית קטנה (טיפוסי לסוגי גוגל) */
-        const placeType=extractType(sf(()=>loc[8]))||extractType(sf(()=>{
-          for(const v of loc){if(Array.isArray(v)&&v.some(x=>typeof x==='string'&&x.length>3&&x.length<40&&/^[a-z_]+$/.test(x)))return v;}
-          return null;
-        })||[]);
+        /* ── אתר — deep scan 6 רמות + regex ── */
+        const website=deepStr(loc,v=>/^https?:\/\//.test(v),6)
+          ||(m=>m?m[1]:null)(pJson.match(/"(https?:\/\/[^"\\]{5,200})"/));
 
-        /* שעות פתיחה — deep scan: מחרוזת עם פורמט שעה (HH:MM או X AM/PM)
-           גוגל שומר "Open · Closes X PM" / "9:00 AM - 10:00 PM" בתוך nested arrays */
-        const HOURS_RE=/(?:\d{1,2}:\d{2}|\d{1,2}\s*(?:AM|PM))/i;
-        const SKIP_HOURS=/^https?:|^ChIJ|^\/maps\//;
-        const todayHours=deepStr(loc,v=>HOURS_RE.test(v)&&!SKIP_HOURS.test(v)&&v.length<120,5);
+        /* ── שעות פתיחה — חיפוש regex ב-pJson כולו ──
+           גוגל מחזיר שעות כמחרוזת כמו "9:00 AM – 10:00 PM" ב-nested location אחרת */
+        const HOURS_TESTS=[
+          /["']([^"']{3,120}(?:\d{1,2}:\d{2}\s*(?:AM|PM|\–|\-)[^"']{0,80}))["']/i, // "9:00 AM - 10:00 PM"
+          /["']([^"']{0,40}(?:Open|Closes?|Hours)[^"']{3,80}(?:AM|PM|\d{1,2}:\d{2})[^"']{0,40})["']/i, // "Open · Closes 10 PM"
+          /["']([^"']{2,60}\d{1,2}:\d{2}[^"']{2,60})["']/,  // any string with HH:MM
+        ];
+        const SKIP_HOURS_RE=/^https?:|ChIJ|^\/maps\//;
+        let todayHours='';
+        for(const re of HOURS_TESTS){
+          const m=pJson.match(re);
+          if(m&&m[1]&&!SKIP_HOURS_RE.test(m[1])&&m[1].length<150){
+            todayHours=m[1].trim();
+            break;
+          }
+        }
+        if(!todayHours){
+          todayHours=deepStr(loc,v=>/\d{1,2}:\d{2}/.test(v)&&!SKIP_HOURS_RE.test(v)&&v.length<150,6);
+        }
 
-        const googlePath=deepStr(loc,v=>v.startsWith('/maps/')&&v.includes('!'),2);
+        /* ── סוג עסק ── */
+        let placeType=extractType(sf(()=>loc[8]));
+        if(!placeType){
+          /* חפש מערך של lowercase_underscore strings (סוגי גוגל) ב-loc */
+          for(const v of loc){
+            if(Array.isArray(v)&&v.some(x=>typeof x==='string'&&/^[a-z][a-z_]+$/.test(x)&&x.length>3)){
+              placeType=extractType(v)||placeType;
+              if(placeType) break;
+            }
+          }
+        }
+        if(!placeType){
+          /* regex ב-pJson — חפש סוג גוגל ידוע */
+          const found=GMAPS_TYPES_KNOWN.find(t=>pJson.includes('"'+t+'"'));
+          if(found) placeType=getPlaceTypeLabel([found])||found.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+        }
 
-        /* placeId */
-        const placeIdDirect=sStr(()=>typeof loc[12]==='string'&&loc[12].startsWith('ChIJ')?loc[12]:'')
-                          ||deepStr(loc,v=>v.startsWith('ChIJ')&&v.length>10,3);
-        const placeId=placeIdDirect||extractPlaceId(googlePath);
+        /* googlePath + placeId */
+        const googlePath=deepStr(loc,v=>v.startsWith('/maps/')&&v.includes('!'),3)
+          ||(m=>m?m[1]:null)(pJson.match(/"(\/maps\/place\/[^"]{5,200})"/));
+        const placeIdDirect=deepStr(loc,v=>v.startsWith('ChIJ')&&v.length>10,4)
+          ||(m=>m?m[1]:null)(pJson.match(/"(ChIJ[A-Za-z0-9_\-]{10,})"/));
+        const placeId=placeIdDirect||extractPlaceId(googlePath||'');
 
-        /* CID פנימי מגוגל */
+        /* CID פנימי */
         const cidArr=sf(()=>loc[6]);
         const _cid=Array.isArray(cidArr)&&cidArr[0]?String(cidArr[0]):'';
 
         const note=typeof p[3]==='string'?p[3].trim():'';
 
-        /* debug: לוג מבנה הרשומה הראשונה + שלישית לאבחון */
+        /* debug: לוג ל-console לאבחון (3 רשומות ראשונות) */
         if(places.length<3){
-          console.log(`[PlanMyTrip] 📍 רשומה ${places.length+1} (${name}):`);
-          console.log('  loc (JSON):', JSON.stringify(loc).slice(0,600));
-          console.log('  → addr=',address,'rating=',rating,'reviews=',userRatingsTotal,
-                      'phone=',phone,'web=',website,'hours=',todayHours,'type=',placeType,'placeId=',placeId);
+          console.log(`[PlanMyTrip] 📍 רשומה ${places.length+1}: ${name}`);
+          console.log('  p (JSON):', pJson.slice(0,800));
+          console.log('  → addr=',address,'⭐',rating,'('+userRatingsTotal+')','📞',phone,'🌐',website,'🕐',todayHours,'🏪',placeType,'placeId=',placeId);
         }
 
-        const hasMeaningfulData=!!(rating||phone||website||address||placeId||todayHours);
+        const hasMeaningfulData=!!(rating||phone||website||address||placeId||todayHours||placeType);
         places.push({
           id:uid(),name,address,lat,lng,
           _cid,
