@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v206';
+const APP_VERSION = 'v207';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4345,6 +4345,44 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     return allKnownPlaces[nk]||(ck&&allKnownPlaces[ck])||null;
   };
 
+  /* ── העשרה אוטומטית של רשימת פריטים ספציפיים דרך Google Places API ──
+     מופעל אוטומטית אחרי ייבוא רשימה — נותן rating, שעות, אתר, טלפון, כתובת מלאה */
+  const batchEnrichItems=useCallback(async(items)=>{
+    if(!window.google?.maps?.places) return;
+    if(batchProgress||enrichingId) return; // כבר מעשיר
+    const toEnrich=(items||[]).filter(i=>!i.placeId&&!i._notFound&&(i.lat||i.name));
+    if(!toEnrich.length) return;
+    let successCount=0,notFoundCount=0,cachedCount=0;
+    for(let idx=0;idx<toEnrich.length;idx++){
+      setBatchProgress({done:idx,total:toEnrich.length,name:toEnrich[idx].name});
+      const known=lookupKnown(toEnrich[idx]);
+      if(known){
+        const fromCache={...toEnrich[idx],...known};
+        onUpdate(prev=>({...prev,interestBank:(prev.interestBank||[]).map(b=>b.id===toEnrich[idx].id?fromCache:b)}));
+        cachedCount++;
+        continue;
+      }
+      const updated=await enrichOneAsync(toEnrich[idx]);
+      if(updated){
+        onUpdate(prev=>({...prev,interestBank:(prev.interestBank||[]).map(b=>b.id===toEnrich[idx].id?updated:b)}));
+        if(updated._notFound) notFoundCount++; else successCount++;
+      }
+      await new Promise(r=>setTimeout(r,400));
+    }
+    setBatchProgress(null);
+    // פתח קבוצות שקיבלו נתונים
+    setExpanded(prev=>{
+      const s=new Set(prev);
+      (items||[]).forEach(i=>{if(i.address)s.add(getCountry(i));});
+      return s;
+    });
+    const parts=[];
+    if(cachedCount) parts.push(`${cachedCount} מטיולים אחרים`);
+    if(successCount) parts.push(`${successCount} ⭐ עם פרטי גוגל`);
+    if(notFoundCount) parts.push(`${notFoundCount} לא נמצאו`);
+    if(parts.length) toast(`✅ עודכן: ${parts.join(' · ')}`,'success');
+  },[batchProgress,enrichingId,onUpdate,lookupKnown,enrichOneAsync,setExpanded]);
+
   /* העשרה קבוצתית — כל הפריטים ללא כתובת, אחד אחרי השני */
   /* אם מקום כבר ידוע מטיול אחר — מעתיק ממנו ללא קריאה לגוגל */
   const batchEnrichMissing=async()=>{
@@ -4703,34 +4741,33 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       +(partial?` ⚠️ הרשימה מכילה ${totalInList} — ייתכן שחלק לא יובא, נסה שוב`:'');
     toast(msg,partial?'error':'success');
 
-    /* ── העשרת פרטים ברקע: כתובת / דירוג / טלפון / אתר ── */
-    /* רץ ברקע — לא חוסם את ממשק המשתמש */
-    const toEnrich=newPlaces.filter(p=>p._cid||p.lat);
-    if(toEnrich.length>0&&settings?.githubToken){
-      console.log('[Enrich] triggering batch for',toEnrich.length,'places');
-      enrichActiveRef.current=true;
-      enrichPlacesBatch(
-        toEnrich, settings,
-        msg=>setEnrichStatus(msg),
-        enriched=>{
-          console.log('[Enrich] callback received',enriched?.length,'items');
-          setEnrichStatus('');
-          enrichActiveRef.current=false;
-          if(!Array.isArray(enriched)||!enriched.length){
-            toast('⚠️ העשרת פרטים הסתיימה בלי נתונים','error');
-            return;
+    /* ── העשרה אוטומטית: דירוג / שעות / אתר / טלפון / כתובת מלאה ──
+       עדיפות 1: Google Places API (מהיר, מדויק — מופעל אוטומטית אם זמין)
+       עדיפות 2: GitHub Actions BigDataCloud+OSM (fallback — רק אם Places לא זמין) */
+    const toEnrich=newPlaces.filter(p=>p.lat||p.name);
+    if(toEnrich.length>0){
+      if(window.google?.maps?.places){
+        /* Places API זמין → מפעיל העשרה מלאה אוטומטית ברקע */
+        console.log('[Enrich] auto Places API enrichment for',toEnrich.length,'places');
+        /* setTimeout כדי לתת ל-state להתעדכן לפני שנתחיל */
+        setTimeout(()=>batchEnrichItems(toEnrich),300);
+      } else if(settings?.githubToken){
+        /* Fallback: GitHub Actions BigDataCloud + Overpass (addresses only) */
+        console.log('[Enrich] fallback GitHub Actions for',toEnrich.length,'places');
+        enrichActiveRef.current=true;
+        enrichPlacesBatch(
+          toEnrich,settings,
+          msg=>setEnrichStatus(msg),
+          enriched=>{
+            setEnrichStatus('');enrichActiveRef.current=false;
+            if(Array.isArray(enriched)&&enriched.length) applyEnrichResult(enriched);
           }
-          applyEnrichResult(enriched);
-        }
-      ).catch(e=>{
-        enrichActiveRef.current=false;
-        console.error('[Enrich] failed:',e?.message);
-        setEnrichStatus('');
-        if(e?.message==='timeout')
-          toast('⏱ העשרת פרטים לא הסתיימה בזמן — ריענן את הדף, הפרטים יחולו אוטומטית','error');
-        else
-          toast('⚠️ שגיאה בהעשרת פרטים: '+e?.message,'error');
-      });
+        ).catch(e=>{
+          enrichActiveRef.current=false;setEnrichStatus('');
+          if(e?.message==='timeout')
+            toast('⏱ ריענן את הדף — כתובות יחולו אוטומטית','error');
+        });
+      }
     }
   };
 
