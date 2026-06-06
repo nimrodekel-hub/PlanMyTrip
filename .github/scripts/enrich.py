@@ -1,231 +1,189 @@
 """
-enrich.py — BigDataCloud (address) + Overpass/OSM (phone, hours, website, type)
-Target runtime: <3 minutes for 150 places.
+enrich.py — Google Maps internal /maps/preview/place endpoint (NO Places API, NO key).
+
+Each place in the imported list carries two decimal IDs (the Feature ID parts,
+from entitylist/getlist loc[6]). We rebuild the FID `0xHEX1:0xHEX2`, query the
+public /maps/preview/place endpoint, and parse the rich data array:
+
+  d6[39]  full formatted address
+  d6[166] short locality ("Shibuya, Tokyo, Japan")
+  d6[4][7] rating (float 1-5)
+  d6[13][0] category ("Perfume store", "Japanese restaurant", "Cafe")
+  d6[178][0][0] phone ("+81 3-6804-5470")
+  d6[7][1] website domain ("retaw.tokyo")
+  d6[203] weekly opening hours
+  d6[11]  exact place name
+  d6[78]  Google Place ID (ChIJ...)
+
+Target runtime: <2 minutes for 150 places (8 parallel workers).
 """
+import datetime
 import json
 import os
-import re
 import sys
 import time
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday",
+            "Friday", "Saturday", "Sunday"]
 
-# ── BigDataCloud: reverse-geocode lat/lng → readable address ─────────────────
-def bigdatacloud_address(place):
-    pid = place.get("id", "")
-    lat, lng = place.get("lat"), place.get("lng")
-    if not lat or not lng:
-        return {"id": pid}
-    url = (
-        "https://api.bigdatacloud.net/data/reverse-geocode-client"
-        f"?latitude={lat}&longitude={lng}&localityLanguage=en"
-    )
+
+def to_hex(n):
+    """Decimal (possibly signed 64-bit) → unsigned hex string."""
+    n = int(n)
+    if n < 0:
+        n += 2 ** 64
+    return format(n, "x")
+
+
+def _g(arr, i):
     try:
-        with urlopen(Request(url, headers={"User-Agent": "PlanMyTrip/1.0"}), timeout=10) as r:
-            d = json.loads(r.read())
-
-        # Use flat fields — reliable, local-level address
-        # locality = neighborhood/ward, city = city, principalSubdivision = state/province
-        # countryName = country. Deduplicate while preserving order.
-        parts = []
-        for key in ("locality", "city", "principalSubdivision", "countryName"):
-            v = (d.get(key) or "").strip()
-            if v and v not in parts:
-                parts.append(v)
-
-        # Deduplicate consecutive duplicates (Tokyo often appears twice)
-        addr = ", ".join(parts[:4])
-        if addr:
-            return {"id": pid, "address": addr}
-
-        # Last resort: display_name from administrative hierarchy
-        admin = (d.get("localityInfo") or {}).get("administrative") or []
-        admin_names = [
-            i.get("name", "") for i in admin
-            if isinstance(i, dict) and i.get("name")
-            and isinstance(i.get("order"), (int, float))
-            and 6 <= i["order"] <= 12  # city/district level, not continent
-        ]
-        if admin_names:
-            return {"id": pid, "address": ", ".join(admin_names[:3])}
-
-        return {"id": pid}
-    except Exception as exc:
-        print(f"  BDC err [{place.get('name','')}]: {exc}", file=sys.stderr)
-        return {"id": pid}
+        return arr[i]
+    except Exception:
+        return None
 
 
-# ── Overpass/OSM: phone, hours, website, type ────────────────────────────────
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
-
-OSM_TYPE_MAP = {
-    "restaurant": "Restaurant", "cafe": "Café", "bar": "Bar",
-    "fast_food": "Fast Food", "hotel": "Hotel", "hostel": "Hostel",
-    "museum": "Museum", "gallery": "Gallery", "theatre": "Theatre",
-    "cinema": "Cinema", "hospital": "Hospital", "pharmacy": "Pharmacy",
-    "clothes": "Clothing Store", "supermarket": "Supermarket",
-    "convenience": "Convenience Store", "bakery": "Bakery",
-    "mall": "Shopping Mall", "department_store": "Department Store",
-    "shoes": "Shoe Store", "books": "Bookstore", "electronics": "Electronics",
-    "toys": "Toy Store", "gift": "Gift Shop",
-    "attraction": "Attraction", "viewpoint": "Viewpoint",
-    "zoo": "Zoo", "theme_park": "Theme Park",
-    "park": "Park", "garden": "Garden",
-}
-
-
-def _name_score(a, b):
-    def tok(s):
-        return set(re.split(r"[\s\-_\./\\,]+", s.lower())) - {"the", "a", "of", "in", "at"}
-    qt, ct = tok(a), tok(b)
-    if not qt or not ct:
-        return 0.0
-    return len(qt & ct) / max(len(qt), len(ct))
-
-
-def overpass_enrich(place, radius=150):
-    lat, lng = place.get("lat"), place.get("lng")
-    name = place.get("name", "")
-    if not lat or not lng:
+def extract_place(data):
+    """Parse the /maps/preview/place response array → flat dict."""
+    try:
+        d6 = data[6]
+    except Exception:
         return {}
-    query = (
-        f"[out:json][timeout:6];"
-        f"(node(around:{radius},{lat},{lng})[\"name\"];"
-        f"way(around:{radius},{lat},{lng})[\"name\"];);"
-        f"out body;"
-    )
+    out = {}
+
+    # ── exact name ──
+    name = _g(d6, 11)
+    if isinstance(name, str) and name.strip():
+        out["name"] = name.strip()
+
+    # ── address: prefer full formatted (d6[39]); fall back to short (d6[166]) ──
+    addr = _g(d6, 39)
+    if isinstance(addr, str) and addr.strip():
+        out["address"] = addr.strip()
+    else:
+        short = _g(d6, 166)
+        if isinstance(short, str) and short.strip():
+            out["address"] = short.strip()
+
+    # ── rating: d6[4][7] ──
+    r4 = _g(d6, 4)
+    if isinstance(r4, list) and len(r4) > 7 and isinstance(r4[7], (int, float)):
+        if 1.0 <= r4[7] <= 5.0:
+            out["rating"] = round(float(r4[7]), 1)
+
+    # ── category / place type: d6[13][0] ──
+    t13 = _g(d6, 13)
+    if isinstance(t13, list) and t13 and isinstance(t13[0], str):
+        out["placeType"] = t13[0].strip()
+
+    # ── phone: d6[178][0][0] ──
+    p178 = _g(d6, 178)
     try:
-        data = urlencode({"data": query}).encode()
-        req = Request(OVERPASS_URL, data=data, headers={"User-Agent": "PlanMyTrip/1.0"})
-        with urlopen(req, timeout=10) as r:
-            resp = json.loads(r.read())
-        elements = resp.get("elements", [])
-        # Lower threshold 0.12→0.08 to catch partial matches (e.g. "Harajuku" in "Harajuku Gyoen")
-        best_tags, best_score = None, 0.08
-        for el in elements:
-            tags = el.get("tags", {})
-            # Prefer name:en for English comparison (critical for Japanese OSM nodes)
-            el_name_en = tags.get("name:en") or tags.get("name:ja_rm") or ""
-            el_name_local = tags.get("name") or ""
-            score = max(
-                _name_score(name, el_name_en) if el_name_en else 0.0,
-                _name_score(name, el_name_local) if el_name_local else 0.0,
-            )
-            if score > best_score:
-                best_score, best_tags = score, tags
-        if not best_tags:
-            return {}
-        result = {}
-        addr_parts = [best_tags.get(k, "").strip()
-                      for k in ("addr:housenumber", "addr:street", "addr:city", "addr:country")
-                      if best_tags.get(k)]
-        if addr_parts:
-            result["address"] = ", ".join(addr_parts)
-        phone = (best_tags.get("contact:phone") or best_tags.get("phone")
-                 or best_tags.get("contact:mobile"))
-        if phone:
-            result["phone"] = phone.strip()
-        web = best_tags.get("website") or best_tags.get("contact:website") or best_tags.get("url")
-        if web:
-            result["website"] = web.strip()
-        hours = best_tags.get("opening_hours")
-        if hours:
-            result["todayHours"] = hours.strip()
-        for tk in ("amenity", "shop", "tourism", "leisure", "office"):
-            raw = best_tags.get(tk, "")
-            if raw:
-                result["placeType"] = OSM_TYPE_MAP.get(raw, raw.replace("_", " ").title())
-                break
-        if result:
-            print(f"  OSM [{name[:25]}] score={best_score:.2f} "
-                  f"ph={'Y' if result.get('phone') else 'N'} "
-                  f"wb={'Y' if result.get('website') else 'N'} "
-                  f"hr={'Y' if result.get('todayHours') else 'N'}")
+        phone = p178[0][0]
+        if isinstance(phone, str) and phone.strip():
+            out["phone"] = phone.strip()
+    except Exception:
+        pass
+
+    # ── website: d6[7][1] (clean domain) ──
+    w7 = _g(d6, 7)
+    if isinstance(w7, list) and len(w7) > 1 and isinstance(w7[1], str) and w7[1].strip():
+        site = w7[1].strip()
+        out["website"] = site if site.startswith("http") else "https://" + site
+
+    # ── Google Place ID: d6[78] ──
+    pid = _g(d6, 78)
+    if isinstance(pid, str) and pid.startswith("ChIJ"):
+        out["placeId"] = pid
+
+    # ── opening hours: d6[203] → today's hours string ──
+    h = _g(d6, 203)
+    if isinstance(h, list):
+        today_name = WEEKDAYS[datetime.date.today().weekday()]
+        for el in h:
+            try:
+                day = el[0]
+                if day[0] == today_name:
+                    hrs = day[3][0][0]  # e.g. "12–7:30 PM"
+                    if isinstance(hrs, str) and hrs.strip():
+                        out["todayHours"] = hrs.strip()
+                    break
+            except Exception:
+                continue
+
+    return out
+
+
+def fetch_one(place):
+    pid = place.get("id", "")
+    cid1 = place.get("_cid1")
+    cid2 = place.get("_cid2")
+    lat = place.get("lat")
+    lng = place.get("lng")
+    if cid1 is None or cid2 is None or lat is None or lng is None:
+        return {"id": pid}
+    fid = "0x" + to_hex(cid1) + ":0x" + to_hex(cid2)
+    pb = (
+        f"!1m18!1s{fid}!3m12!1m3!1d1000!2d{lng}!3d{lat}"
+        f"!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1"
+        f"!4m2!3d{lat}!4d{lng}!5e0!12m1!1e1"
+    )
+    url = "https://www.google.com/maps/preview/place?authuser=0&hl=en&gl=us&pb=" + pb
+    try:
+        req = Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        with urlopen(req, timeout=20) as r:
+            txt = r.read().decode("utf-8", "replace")
+        start = txt.index("[")
+        data = json.loads(txt[start:])
+        result = extract_place(data)
+        result["id"] = pid
+        fields = [k for k in ("address", "rating", "phone", "website", "todayHours", "placeType") if result.get(k)]
+        print(f"  [{place.get('name','')[:25]}] → {', '.join(fields) or '(no data)'}")
         return result
     except Exception as exc:
-        print(f"  OSM err [{name[:20]}]: {exc}", file=sys.stderr)
-        return {}
+        print(f"  ERR [{place.get('name','')[:20]}]: {exc}", file=sys.stderr)
+        return {"id": pid}
 
 
-def overpass_worker(subset):
-    results = {}
-    for i, place in enumerate(subset):
-        if i > 0:
-            time.sleep(0.5)
-        results[place.get("id", "")] = overpass_enrich(place)
-    return results
-
-
-# ── Main ─────────────────────────────────────────────────────────────────────
 def main():
     try:
         with open("/tmp/places.json", encoding="utf-8") as f:
             places = json.load(f)
         print(f"Loaded {len(places)} places")
         if places:
-            print(f"  sample: {places[0].get('name')} lat={places[0].get('lat')} lng={places[0].get('lng')}")
+            p0 = places[0]
+            print(f"  sample: {p0.get('name')} cid=({p0.get('_cid1')},{p0.get('_cid2')}) "
+                  f"lat={p0.get('lat')} lng={p0.get('lng')}")
     except Exception as exc:
         print(f"FATAL: {exc}", file=sys.stderr)
         json.dump([], open("/tmp/enriched.json", "w"))
         sys.exit(0)
 
-    # Phase 1: BigDataCloud — addresses in parallel (~15s)
-    print("Phase 1: BigDataCloud addresses (parallel, 20 workers)...")
-    enriched_map = {}
-    with ThreadPoolExecutor(max_workers=20) as ex:
-        futs = {ex.submit(bigdatacloud_address, p): p for p in places}
+    print("Fetching place details via /maps/preview/place (8 workers)...")
+    enriched = []
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futs = {ex.submit(fetch_one, p): p for p in places}
         for fut in as_completed(futs):
             try:
-                r = fut.result()
-                enriched_map[r["id"]] = r
+                enriched.append(fut.result())
             except Exception:
                 p = futs[fut]
-                enriched_map[p.get("id", "")] = {"id": p.get("id", "")}
-    addr_c = sum(1 for r in enriched_map.values() if r.get("address"))
-    # Show sample addresses for verification
-    samples = [(r.get("address",""), places[i].get("name",""))
-               for i, r in enumerate(list(enriched_map.values())[:3]) if r.get("address")]
-    for addr, nm in samples:
-        print(f"  sample address [{nm[:20]}]: {addr}")
-    print(f"  Phase 1 done: {addr_c}/{len(places)} addresses")
+                enriched.append({"id": p.get("id", "")})
 
-    # Phase 2: Overpass — phone/hours/website via 2 parallel workers (~90s)
-    print("Phase 2: Overpass/OSM phone+hours+website (2 workers, 5s timeout)...")
-    mid = len(places) // 2
-    subsets = [places[:mid], places[mid:]]
-    osm_map = {}
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        futs2 = [ex.submit(overpass_worker, s) for s in subsets]
-        for fut in as_completed(futs2):
-            try:
-                osm_map.update(fut.result())
-            except Exception as exc:
-                print(f"  OSM worker err: {exc}", file=sys.stderr)
-
-    osm_hits = 0
-    for pid, osm_data in osm_map.items():
-        if not osm_data:
-            continue
-        osm_hits += 1
-        r = enriched_map.get(pid, {"id": pid})
-        for k, v in osm_data.items():
-            if v and not r.get(k):
-                r[k] = v
-        enriched_map[pid] = r
-    print(f"  Phase 2 done: OSM data for {osm_hits}/{len(places)} places")
-
-    enriched = list(enriched_map.values())
-    addr_c  = sum(1 for r in enriched if r.get("address"))
+    addr_c = sum(1 for r in enriched if r.get("address"))
+    rate_c = sum(1 for r in enriched if r.get("rating"))
     phone_c = sum(1 for r in enriched if r.get("phone"))
-    web_c   = sum(1 for r in enriched if r.get("website"))
+    web_c = sum(1 for r in enriched if r.get("website"))
     hours_c = sum(1 for r in enriched if r.get("todayHours"))
-    print(f"Final: {len(enriched)} places | addr={addr_c} phone={phone_c} web={web_c} hours={hours_c}")
+    type_c = sum(1 for r in enriched if r.get("placeType"))
+    print(f"Final: {len(enriched)} places | addr={addr_c} rating={rate_c} "
+          f"phone={phone_c} web={web_c} hours={hours_c} type={type_c}")
 
     with open("/tmp/enriched.json", "w", encoding="utf-8") as f:
         json.dump(enriched, f, ensure_ascii=False)
-    print(f"Wrote {os.path.getsize('/tmp/enriched.json')} bytes to /tmp/enriched.json")
+    print(f"Wrote {os.path.getsize('/tmp/enriched.json')} bytes")
 
 
 if __name__ == "__main__":
