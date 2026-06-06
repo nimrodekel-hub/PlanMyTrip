@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v211';
+const APP_VERSION = 'v212';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4393,44 +4393,6 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     return allKnownPlaces[nk]||(ck&&allKnownPlaces[ck])||null;
   };
 
-  /* ── העשרה אוטומטית של רשימת פריטים ספציפיים דרך Google Places API ──
-     מופעל אוטומטית אחרי ייבוא רשימה — נותן rating, שעות, אתר, טלפון, כתובת מלאה */
-  const batchEnrichItems=useCallback(async(items)=>{
-    if(!window.google?.maps?.places) return;
-    if(batchProgress||enrichingId) return; // כבר מעשיר
-    const toEnrich=(items||[]).filter(i=>!i.placeId&&!i._notFound&&(i.lat||i.name));
-    if(!toEnrich.length) return;
-    let successCount=0,notFoundCount=0,cachedCount=0;
-    for(let idx=0;idx<toEnrich.length;idx++){
-      setBatchProgress({done:idx,total:toEnrich.length,name:toEnrich[idx].name});
-      const known=lookupKnown(toEnrich[idx]);
-      if(known){
-        const fromCache={...toEnrich[idx],...known};
-        onUpdate(prev=>({...prev,interestBank:(prev.interestBank||[]).map(b=>b.id===toEnrich[idx].id?fromCache:b)}));
-        cachedCount++;
-        continue;
-      }
-      const updated=await enrichOneAsync(toEnrich[idx]);
-      if(updated){
-        onUpdate(prev=>({...prev,interestBank:(prev.interestBank||[]).map(b=>b.id===toEnrich[idx].id?updated:b)}));
-        if(updated._notFound) notFoundCount++; else successCount++;
-      }
-      await new Promise(r=>setTimeout(r,400));
-    }
-    setBatchProgress(null);
-    // פתח קבוצות שקיבלו נתונים
-    setExpanded(prev=>{
-      const s=new Set(prev);
-      (items||[]).forEach(i=>{if(i.address)s.add(getCountry(i));});
-      return s;
-    });
-    const parts=[];
-    if(cachedCount) parts.push(`${cachedCount} מטיולים אחרים`);
-    if(successCount) parts.push(`${successCount} ⭐ עם פרטי גוגל`);
-    if(notFoundCount) parts.push(`${notFoundCount} לא נמצאו`);
-    if(parts.length) toast(`✅ עודכן: ${parts.join(' · ')}`,'success');
-  },[batchProgress,enrichingId,onUpdate,lookupKnown,enrichOneAsync,setExpanded]);
-
   /* העשרה קבוצתית — כל הפריטים ללא כתובת, אחד אחרי השני */
   /* אם מקום כבר ידוע מטיול אחר — מעתיק ממנו ללא קריאה לגוגל */
   const batchEnrichMissing=async()=>{
@@ -4668,7 +4630,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       +(partial?` ⚠️ הרשימה מכילה ${totalInList} — ייתכן שחלק לא יובא, נסה שוב`:'');
     toast(msg,partial?'error':'success');
 
-    /* ── העשרת כתובות ברקע דרך GitHub Actions (BigDataCloud + Overpass/OSM) ── */
+    /* ── העשרה ברקע דרך GitHub Actions → /maps/preview/place (חינמי, ללא Places API) ── */
     const toEnrich=newPlaces.filter(p=>(p._cid1&&p._cid2)||p.lat);
     if(toEnrich.length>0&&settings?.githubToken){
       enrichActiveRef.current=true;
