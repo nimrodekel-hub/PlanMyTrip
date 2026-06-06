@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v209';
+const APP_VERSION = 'v210';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4163,22 +4163,39 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     return raw;
   };
 
+  /* נקה חלק כתובת ממיקוד (בהתחלה או בסוף) */
+  const stripPostal=s=>(s||'')
+    .replace(/^\d[\d\s\-]{0,9}\s+/,'')   // "1013 הונגריה" → "הונגריה"
+    .replace(/\s+\d[\d\s\-]{0,9}$/,'')   // "הונגריה 1013" → "הונגריה"
+    .replace(/〒[\d\-]+\s*/,'')           // מיקוד יפני "〒150-0001"
+    .trim();
+
   const getCountry=item=>{
     const addr=(item.address||'').trim();
     if(!addr) return 'ללא כתובת';
-    const parts=addr.split(',').map(s=>s.trim()).filter(Boolean);
-    if(parts.length<2) return normalizeCountry(parts[0]||'ללא כתובת',addr);
-    let last=parts[parts.length-1];
-    // הסר מיקוד בתחילה: "1013 הונגריה" → "הונגריה"
-    last=last.replace(/^\d[\d\s\-]{0,9}\s+/,'').trim();
-    // הסר מיקוד בסוף: "הונגריה 1013" → "הונגריה"
-    last=last.replace(/\s+\d[\d\s\-]{0,9}$/,'').trim();
-    // אם נשאר ריק או רק ספרות (מיקוד בלבד) → קח את החלק שלפניו ונקה גם אותו
-    if(!last||/^\d+$/.test(last)){
-      last=parts[parts.length-2]||'';
-      last=last.replace(/^\d[\d\s\-]{0,9}\s+/,'').replace(/\s+\d[\d\s\-]{0,9}$/,'').trim();
+    const parts=addr.split(',').map(s=>stripPostal(s)).filter(Boolean);
+    if(!parts.length) return 'ללא כתובת';
+
+    /* ── שלב 1: סרוק את כל חלקי הכתובת אחר שם מדינה מוכר ──
+       גוגל מחזיר כתובת בשני פורמטים: "Japan, Tokyo, ..." (מדינה ראשונה)
+       וגם "..., Tokyo, Japan" (מדינה אחרונה). לכן נבדוק את כל החלקים. */
+    for(const part of parts){
+      const lo=part.toLowerCase().trim();
+      if(COUNTRY_HE[lo]) return COUNTRY_HE[lo];
     }
-    return normalizeCountry(last||'ללא כתובת',addr);
+    /* ── שלב 2: התאמה חלקית — חלק שמכיל שם מדינה (למשל "United States of America") ── */
+    for(const part of parts){
+      const lo=part.toLowerCase().trim();
+      for(const[en,he] of Object.entries(COUNTRY_HE)){
+        if(en.length>=4&&lo.includes(en)) return he;
+      }
+    }
+    /* ── שלב 3: עיר ישראלית מוכרת בכל אחד מהחלקים → ישראל ── */
+    for(const part of parts){
+      if(ISRAEL_CITIES.has(part.toLowerCase().trim())) return 'ישראל';
+    }
+    /* ── שלב 4: fallback — נרמל את החלק האחרון (לוגיקה ישנה) ── */
+    return normalizeCountry(parts[parts.length-1]||'ללא כתובת',addr);
   };
 
   /* קיבוץ לפי מדינה — ממויין לפי א-ת בתוך כל קבוצה כשנבחר מיון שם */
