@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v203';
+const APP_VERSION = 'v204';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -3914,6 +3914,12 @@ const enrichPlacesBatch=async(places,settings,onStatus,onResult)=>{
     throw new Error('dispatch failed '+dispR.status+': '+errTxt.slice(0,100));
   }
   console.log('[Enrich] dispatch OK (204)');
+
+  /* שמור reqId ב-localStorage — מאפשר המשך גם לאחר ריענון דף */
+  try{localStorage.setItem('pendingEnrich',JSON.stringify({
+    reqId,user,repo,tok,itemIds:places.map(p=>p.id),t:Date.now()
+  }));}catch{}
+
   onStatus?.('⏳ מעשיר פרטי '+places.length+' מקומות... (~3 דק)');
 
   /* ── Poll for _cache/{reqId}.json — file is created only when Action completes ──
@@ -3931,11 +3937,13 @@ const enrichPlacesBatch=async(places,settings,onStatus,onResult)=>{
       const text=b64ToUtf8(j.content);
       const enriched=JSON.parse(text);
       console.log('[Enrich] received',enriched?.length,'items, sample:',JSON.stringify(enriched?.[0])?.slice(0,150));
+      try{localStorage.removeItem('pendingEnrich');}catch{}
       onStatus?.('');
       onResult?.(enriched);
       return;
     }catch(e){console.warn('[Enrich] poll',i+1,'error:',e?.message);}
   }
+  try{localStorage.removeItem('pendingEnrich');}catch{}
   console.error('[Enrich] timed out (13 min) — check GitHub Actions');
   onStatus?.('');
   throw new Error('timeout');
@@ -3956,6 +3964,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
   const[enrichingId,setEnrichingId]=useState(null);
   const[batchProgress,setBatchProgress]=useState(null); // null | {done,total,name}
   const[enrichStatus,setEnrichStatus]=useState(''); // סטטוס העשרה דרך GitHub Action
+  const[lastEnrichInfo,setLastEnrichInfo]=useState(null); // {addrCount,phoneCount,webCount,hoursCount}
   const[bankSearch,setBankSearch]=useState('');
   const[sortMode,setSortMode]=useState('default'); // 'default'|'name'|'distance'
   const[mapCenter,setMapCenter]=useState(null); // {lat,lng} לשימוש במיון לפי מרחק
@@ -3963,9 +3972,88 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
   const[expanded,setExpanded]=useState(()=>new Set());
   const[filterSrc,setFilterSrc]=useState(null);
   const takeoutRef=useRef(null);
+  const enrichActiveRef=useRef(false); // מונע הרצה כפולה של העשרה
   // ref לטיול — מונע stale-closure בלולאות async
   const tripRef=useRef(trip);
   useEffect(()=>{tripRef.current=trip;},[trip]);
+  /* ── פונקציה מרכזית: החלת תוצאות העשרה על הבנק ── */
+  const applyEnrichResult=useCallback((enriched)=>{
+    if(!Array.isArray(enriched)||!enriched.length) return 0;
+    const map=Object.fromEntries(enriched.map(e=>[e.id,e]));
+    onUpdate(prev=>{
+      const bank=(prev.interestBank||[]).map(item=>{
+        const e=map[item.id];
+        if(!e) return item;
+        return{
+          ...item,
+          ...(e.address                                ?{address:e.address}:{}),
+          ...(e.rating        &&!item.rating          ?{rating:e.rating}:{}),
+          ...(e.phone         &&!item.phone           ?{phone:e.phone}:{}),
+          ...(e.website       &&!item.website         ?{website:e.website}:{}),
+          ...(e.placeType     &&!item.placeType       ?{placeType:e.placeType}:{}),
+          ...(e.todayHours    &&!item.todayHours      ?{todayHours:e.todayHours}:{}),
+          ...(e.openStatus    &&!item.openStatus      ?{openStatus:e.openStatus}:{}),
+          ...(e.userRatingsTotal&&!item.userRatingsTotal?{userRatingsTotal:e.userRatingsTotal}:{}),
+          lastFetched:Math.floor(Date.now()/1000),
+        };
+      });
+      return{...prev,interestBank:bank};
+    });
+    const addrCount=enriched.filter(e=>e.address).length;
+    const phoneCount=enriched.filter(e=>e.phone).length;
+    const webCount=enriched.filter(e=>e.website).length;
+    const hoursCount=enriched.filter(e=>e.todayHours).length;
+    setLastEnrichInfo({addrCount,phoneCount,webCount,hoursCount,total:enriched.length,ts:Date.now()});
+    toast(`✅ פרטים עודכנו: ${addrCount} כתובות${phoneCount?', '+phoneCount+' טלפונים':''}${webCount?', '+webCount+' אתרים':''}${hoursCount?', '+hoursCount+' שעות':''}`,'success');
+    if(addrCount>0){
+      const enrichedCountries=new Set(enriched.filter(e=>e.address).map(e=>getCountry({address:e.address})));
+      setExpanded(prev=>new Set([...prev,...enrichedCountries]));
+    }
+    return addrCount;
+  },[onUpdate, setExpanded]);
+
+  /* ── בעת טעינה: בדוק אם יש העשרה ממתינה מלפני ריענון הדף ── */
+  useEffect(()=>{
+    let cancelled=false;
+    const checkPending=async()=>{
+      if(enrichActiveRef.current) return;
+      let pending=null;
+      try{pending=JSON.parse(localStorage.getItem('pendingEnrich')||'null');}catch{return;}
+      if(!pending?.reqId||!pending?.tok) return;
+      // פג תוקף אחרי 30 דקות
+      if(Date.now()-pending.t>30*60*1000){try{localStorage.removeItem('pendingEnrich');}catch{}return;}
+      // בדוק אם יש פריטים תואמים בבנק
+      const bankIds=new Set((tripRef.current?.interestBank||[]).map(i=>i.id));
+      const hasMatch=(pending.itemIds||[]).some(id=>bankIds.has(id));
+      if(!hasMatch){try{localStorage.removeItem('pendingEnrich');}catch{}return;}
+      // נסה לקרוא את קובץ התוצאה מ-GitHub
+      const resultUrl=`https://api.github.com/repos/${pending.user}/${pending.repo}/contents/_cache/${pending.reqId}.json`;
+      const hdr={'Authorization':'token '+pending.tok,'Accept':'application/vnd.github.v3+json'};
+      console.log('[Enrich] resuming pending enrichment',pending.reqId);
+      /* עד 30 ניסיונות (4 דקות) */
+      for(let i=0;i<30;i++){
+        if(cancelled) return;
+        await new Promise(r=>setTimeout(r,8000));
+        try{
+          const r=await fetch(resultUrl,{headers:hdr});
+          console.log('[Enrich] resume poll',i+1,'→',r.status);
+          if(r.status===404){if(i===0)setEnrichStatus('⏳ ממשיך העשרה... (~3 דק)');continue;}
+          if(!r.ok){break;}
+          const j=await r.json();
+          const enriched=JSON.parse(b64ToUtf8(j.content));
+          if(cancelled) return;
+          try{localStorage.removeItem('pendingEnrich');}catch{}
+          setEnrichStatus('');
+          applyEnrichResult(enriched);
+          return;
+        }catch(e){console.warn('[Enrich] resume poll',i+1,'error:',e?.message);}
+      }
+      if(!cancelled){setEnrichStatus('');try{localStorage.removeItem('pendingEnrich');}catch{}}
+    };
+    checkPending();
+    return()=>{cancelled=true;setEnrichStatus('');};
+  },[]);// eslint-disable-line
+
   const saveCustomNameLocal=(placeId,bankItemId,customName)=>{
     const cn=(customName||'').trim()||undefined;
     onUpdate(prev=>({
@@ -4543,53 +4631,26 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     const toEnrich=newPlaces.filter(p=>p._cid||p.lat);
     if(toEnrich.length>0&&settings?.githubToken){
       console.log('[Enrich] triggering batch for',toEnrich.length,'places');
+      enrichActiveRef.current=true;
       enrichPlacesBatch(
         toEnrich, settings,
         msg=>setEnrichStatus(msg),
         enriched=>{
           console.log('[Enrich] callback received',enriched?.length,'items');
+          setEnrichStatus('');
+          enrichActiveRef.current=false;
           if(!Array.isArray(enriched)||!enriched.length){
             toast('⚠️ העשרת פרטים הסתיימה בלי נתונים','error');
             return;
           }
-          const map=Object.fromEntries(enriched.map(e=>[e.id,e]));
-          onUpdate(prev=>{
-            const bank=(prev.interestBank||[]).map(item=>{
-              const e=map[item.id];
-              if(!e) return item;
-              return{
-                ...item,
-                /* כתובת: תמיד דרוס (כולל כתובות גרועות מריצה קודמת) */
-                ...(e.address                               ?{address:e.address}:{}),
-                /* שאר השדות: מלא רק אם חסר */
-                ...(e.rating        &&!item.rating         ?{rating:e.rating}:{}),
-                ...(e.phone         &&!item.phone          ?{phone:e.phone}:{}),
-                ...(e.website       &&!item.website        ?{website:e.website}:{}),
-                ...(e.placeType     &&!item.placeType      ?{placeType:e.placeType}:{}),
-                ...(e.todayHours    &&!item.todayHours     ?{todayHours:e.todayHours}:{}),
-                ...(e.openStatus    &&!item.openStatus     ?{openStatus:e.openStatus}:{}),
-                ...(e.userRatingsTotal&&!item.userRatingsTotal?{userRatingsTotal:e.userRatingsTotal}:{}),
-                lastFetched:Math.floor(Date.now()/1000),
-              };
-            });
-            return{...prev,interestBank:bank};
-          });
-          const addrCount=enriched.filter(e=>e.address).length;
-          const phoneCount=enriched.filter(e=>e.phone).length;
-          const webCount=enriched.filter(e=>e.website).length;
-          const hoursCount=enriched.filter(e=>e.todayHours).length;
-          toast(`✅ פרטים עודכנו: ${addrCount} כתובות${phoneCount?', '+phoneCount+' טלפונים':''}${webCount?', '+webCount+' אתרים':''}${hoursCount?', '+hoursCount+' שעות':''}`,'success');
-          /* פתח אוטומטית את קבוצות המדינה שקיבלו כתובת */
-          if(addrCount>0){
-            const enrichedCountries=new Set(enriched.filter(e=>e.address).map(e=>getCountry({address:e.address})));
-            setExpanded(prev=>new Set([...prev,...enrichedCountries]));
-          }
+          applyEnrichResult(enriched);
         }
       ).catch(e=>{
+        enrichActiveRef.current=false;
         console.error('[Enrich] failed:',e?.message);
         setEnrichStatus('');
         if(e?.message==='timeout')
-          toast('⏱ העשרת פרטים לא הסתיימה בזמן — פתח GitHub Actions לבדיקה','error');
+          toast('⏱ העשרת פרטים לא הסתיימה בזמן — ריענן את הדף, הפרטים יחולו אוטומטית','error');
         else
           toast('⚠️ שגיאה בהעשרת פרטים: '+e?.message,'error');
       });
@@ -4762,6 +4823,18 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       {enrichStatus&&<span style={{fontSize:10,color:'var(--amber)',maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{enrichStatus}</span>}
       {onClose&&<button onClick={onClose} style={{background:'none',border:'none',color:'var(--text3)',fontSize:20,cursor:'pointer',lineHeight:1,padding:'0 2px'}}>✕</button>}
     </div>
+
+    {/* תוצאות העשרה אחרונה */}
+    {lastEnrichInfo&&!enrichStatus&&<div style={{padding:'6px 12px',background:'rgba(34,197,94,.08)',borderBottom:'1px solid rgba(34,197,94,.25)',flexShrink:0,display:'flex',alignItems:'center',gap:6}}>
+      <span style={{fontSize:11,color:'#16a34a',flex:1}}>
+        ✅ <strong>{lastEnrichInfo.addrCount}</strong> כתובות
+        {lastEnrichInfo.phoneCount>0&&<> · <strong>{lastEnrichInfo.phoneCount}</strong> טלפונים</>}
+        {lastEnrichInfo.webCount>0&&<> · <strong>{lastEnrichInfo.webCount}</strong> אתרים</>}
+        {lastEnrichInfo.hoursCount>0&&<> · <strong>{lastEnrichInfo.hoursCount}</strong> שעות</>}
+        {' '}עודכנו (מ-{lastEnrichInfo.total} מקומות)
+      </span>
+      <button onClick={()=>setLastEnrichInfo(null)} style={{background:'none',border:'none',cursor:'pointer',fontSize:13,color:'var(--text3)',lineHeight:1}}>✕</button>
+    </div>}
 
     {/* שורת חיפוש + מיון */}
     {trip.interestBank.length>0&&<div style={{padding:'6px 10px',borderBottom:'1px solid var(--border)',flexShrink:0,display:'flex',flexDirection:'column',gap:5}}>
