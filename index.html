@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v204';
+const APP_VERSION = 'v205';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4467,21 +4467,23 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       return getPlaceTypeLabel(types)||'';
     };
 
-    /* סריקה חכמה: מחפש ערכים לפי סוג/פורמט בכל מערך */
-    const scanStr=(arr,test)=>{
-      if(!Array.isArray(arr))return'';
-      for(const v of arr){
-        if(typeof v==='string'&&v.trim()&&test(v))return v.trim();
-      }
-      return'';
+    /* ── סריקה עמוקה: מחפש בתוך מערכים מקוננים עד maxD רמות ──
+       Google Maps מאחסן ratings ושעות בתוך sub-arrays, לא ברמה הראשית */
+    const deepStr=(obj,test,maxD=4,d=0)=>{
+      if(d>maxD||obj==null) return '';
+      if(typeof obj==='string'){const t=obj.trim();return(t&&test(t))?t:'';}
+      if(Array.isArray(obj)){for(const v of obj){const r=deepStr(v,test,maxD,d+1);if(r)return r;}}
+      return '';
     };
-    const scanNum=(arr,test)=>{
-      if(!Array.isArray(arr))return null;
-      for(const v of arr){
-        if(typeof v==='number'&&isFinite(v)&&test(v))return v;
-      }
+    const deepNum=(obj,test,maxD=4,d=0)=>{
+      if(d>maxD||obj==null) return null;
+      if(typeof obj==='number'&&isFinite(obj)&&test(obj)) return obj;
+      if(Array.isArray(obj)){for(const v of obj){const r=deepNum(v,test,maxD,d+1);if(r!==null)return r;}}
       return null;
     };
+    /* סריקה שטוחה — top-level בלבד */
+    const scanStr=(arr,test)=>deepStr(arr,test,0);
+    const scanNum=(arr,test)=>deepNum(arr,test,0);
 
     const places=[];
     for(const p of placeEntries){
@@ -4495,39 +4497,60 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
         const lat=sNum(()=>coords?.[2]);
         const lng=sNum(()=>coords?.[3]);
 
-        /* נסה אינדקסים ידועים קודם, אחר כך סריקה חכמה */
-        const address=sStr(()=>loc[2])||scanStr(loc,v=>/[,\d]/.test(v)&&v.length>5&&!/^https?:\/\//.test(v)&&!v.startsWith('ChIJ')&&!v.startsWith('/')||false);
-        const rating=sNum(()=>(typeof loc[3]==='number'&&loc[3]>=1&&loc[3]<=5)?loc[3]:null)
-                  ||scanNum(loc,v=>v>=1.0&&v<=5.0&&v!==Math.floor(v));
-        const userRatingsTotal=sNum(()=>(typeof loc[4]==='number'&&loc[4]>0)?loc[4]:null);
-        const phone=sStr(()=>loc[6])||scanStr(loc,v=>/^[+\d\s\-\(\)]{7,}$/.test(v));
-        const website=sStr(()=>loc[9])||scanStr(loc,v=>/^https?:\/\//.test(v));
-        const placeType=extractType(sf(()=>loc[8]));
-        const googlePath=sStr(()=>loc[7])||scanStr(loc,v=>v.startsWith('/maps/')&&v.includes('!'));
+        /* כתובת — top-level בלבד (deep scan לוקח מחרוזות לא-רלוונטיות) */
+        const address=sStr(()=>loc[2])||scanStr(loc,v=>/[,\d]/.test(v)&&v.length>5&&v.length<120&&!/^https?:\/\//.test(v)&&!v.startsWith('ChIJ')&&!v.startsWith('/'));
+
+        /* דירוג — deep scan: גוגל שומר ratings בתוך sub-arrays
+           float ייחודי בטווח 1.0-5.0 (קואורדינטות יפן=35-139, מחוץ לטווח) */
+        const rating=
+          sNum(()=>(typeof loc[3]==='number'&&loc[3]>=1&&loc[3]<=5)?loc[3]:null)
+          ||deepNum(loc,v=>v>=1.0&&v<=5.0&&v!==Math.floor(v),5);
+
+        /* מספר ביקורות */
+        const userRatingsTotal=sNum(()=>(typeof loc[4]==='number'&&loc[4]>0)?loc[4]:null)
+          ||deepNum(loc,v=>Number.isInteger(v)&&v>5&&v<50000000,2);
+
+        /* טלפון + אתר — deep scan 2 רמות */
+        const phone=deepStr(loc,v=>/^[+\d\s\-\(\)]{7,}$/.test(v)&&/\d{4}/.test(v),2);
+        const website=deepStr(loc,v=>/^https?:\/\//.test(v),2);
+
+        /* סוג עסק — נסה loc[8] ואחר כך חפש מערך של strings באנגלית קטנה (טיפוסי לסוגי גוגל) */
+        const placeType=extractType(sf(()=>loc[8]))||extractType(sf(()=>{
+          for(const v of loc){if(Array.isArray(v)&&v.some(x=>typeof x==='string'&&x.length>3&&x.length<40&&/^[a-z_]+$/.test(x)))return v;}
+          return null;
+        })||[]);
+
+        /* שעות פתיחה — deep scan: מחרוזת עם פורמט שעה (HH:MM או X AM/PM)
+           גוגל שומר "Open · Closes X PM" / "9:00 AM - 10:00 PM" בתוך nested arrays */
+        const HOURS_RE=/(?:\d{1,2}:\d{2}|\d{1,2}\s*(?:AM|PM))/i;
+        const SKIP_HOURS=/^https?:|^ChIJ|^\/maps\//;
+        const todayHours=deepStr(loc,v=>HOURS_RE.test(v)&&!SKIP_HOURS.test(v)&&v.length<120,5);
+
+        const googlePath=deepStr(loc,v=>v.startsWith('/maps/')&&v.includes('!'),2);
 
         /* placeId */
         const placeIdDirect=sStr(()=>typeof loc[12]==='string'&&loc[12].startsWith('ChIJ')?loc[12]:'')
-                          ||scanStr(loc,v=>v.startsWith('ChIJ')&&v.length>10);
+                          ||deepStr(loc,v=>v.startsWith('ChIJ')&&v.length>10,3);
         const placeId=placeIdDirect||extractPlaceId(googlePath);
 
-        /* CID פנימי מגוגל — loc[6]=[id1_decimal, id2_decimal] */
+        /* CID פנימי מגוגל */
         const cidArr=sf(()=>loc[6]);
         const _cid=Array.isArray(cidArr)&&cidArr[0]?String(cidArr[0]):'';
 
         const note=typeof p[3]==='string'?p[3].trim():'';
 
-        /* debug: לוג מבנה הרשומה הראשונה בלבד */
-        if(places.length===0){
-          console.log('[PlanMyTrip] 📍 מבנה רשומה ראשונה מ-Google Maps API — לאבחון שדות:');
-          console.log('  p[0]=',sf(()=>p[0]),'  p[1] (loc) =',loc,'  p[2] (name)=',name,'  p[3] (note)=',p[3]);
-          console.log('  loc indices:',Object.fromEntries((loc||[]).map((v,i)=>[i,v])));
-          console.log('  → address=',address,'rating=',rating,'phone=',phone,'website=',website,'placeType=',placeType,'placeId=',placeId);
+        /* debug: לוג מבנה הרשומה הראשונה + שלישית לאבחון */
+        if(places.length<3){
+          console.log(`[PlanMyTrip] 📍 רשומה ${places.length+1} (${name}):`);
+          console.log('  loc (JSON):', JSON.stringify(loc).slice(0,600));
+          console.log('  → addr=',address,'rating=',rating,'reviews=',userRatingsTotal,
+                      'phone=',phone,'web=',website,'hours=',todayHours,'type=',placeType,'placeId=',placeId);
         }
 
-        const hasMeaningfulData=!!(rating||phone||website||address||placeId);
+        const hasMeaningfulData=!!(rating||phone||website||address||placeId||todayHours);
         places.push({
           id:uid(),name,address,lat,lng,
-          _cid,       // מזהה CID פנימי (עשרוני) לשימוש בהעשרה
+          _cid,
           _noCoords:!lat,
           url:googlePath?`https://www.google.com${googlePath}`:'',
           placeId:placeId||'',
@@ -4536,6 +4559,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
           phone:phone||'',
           website:website||'',
           placeType:placeType||'',
+          todayHours:todayHours||'',
           note:note||'',
           lastFetched:hasMeaningfulData?Math.floor(Date.now()/1000):undefined,
         });
