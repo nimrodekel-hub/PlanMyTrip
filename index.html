@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v207';
+const APP_VERSION = 'v208';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4722,6 +4722,33 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     }
     if(!apiResp) throw new Error('לא ניתן לשלוף את נתוני הרשימה מגוגל — נסה שוב');
     const{listName,places,totalInList}=parseGmapsListResponse(apiResp);
+
+    /* ── שמירת מבנה גולמי לאבחון — מאפשר לעדכן את הפרסר ──
+       שומר את 3 הרשומות הראשונות ל-_cache/gmaps_struct.json לצפייה */
+    if(settings?.githubToken&&places.length>0){
+      try{
+        const cleaned=apiResp.replace(/^\)\]\}'\n?/,'').trim();
+        const raw=JSON.parse(cleaned);
+        const entries=(raw?.[0]?.[8]||[]).slice(0,3);
+        const debugPayload=JSON.stringify({
+          listName,totalInList,
+          entries_sample:entries,
+          parsed_sample:places.slice(0,3).map(p=>({name:p.name,rating:p.rating,phone:p.phone,website:p.website,todayHours:p.todayHours,placeType:p.placeType,address:p.address})),
+        },null,2);
+        const b64=btoa(unescape(encodeURIComponent(debugPayload)));
+        const tok=settings.githubToken;
+        const user=settings?.githubUsername||'nimrodekel-hub';
+        const repo=settings?.githubRepo||'PlanMyTrip';
+        const hdr2={'Authorization':'token '+tok,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'};
+        const dbgUrl=`https://api.github.com/repos/${user}/${repo}/contents/_cache/gmaps_struct.json`;
+        const existing=await fetch(dbgUrl,{headers:hdr2}).then(r=>r.ok?r.json():null).catch(()=>null);
+        await fetch(dbgUrl,{method:'PUT',headers:hdr2,body:JSON.stringify({
+          message:'gmaps struct debug [skip ci]',content:b64,
+          ...(existing?.sha?{sha:existing.sha}:{})
+        })}).catch(()=>{});
+        console.log('[Debug] saved gmaps_struct.json to GitHub');
+      }catch(de){console.warn('[Debug] failed to save struct:',de);}
+    }
     if(!places.length) throw new Error('הרשימה ריקה — לא נמצאו מקומות');
     /* שיוך מקור + כפילויות */
     places.forEach(p=>p._listSource=listSrc);
@@ -4741,33 +4768,22 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       +(partial?` ⚠️ הרשימה מכילה ${totalInList} — ייתכן שחלק לא יובא, נסה שוב`:'');
     toast(msg,partial?'error':'success');
 
-    /* ── העשרה אוטומטית: דירוג / שעות / אתר / טלפון / כתובת מלאה ──
-       עדיפות 1: Google Places API (מהיר, מדויק — מופעל אוטומטית אם זמין)
-       עדיפות 2: GitHub Actions BigDataCloud+OSM (fallback — רק אם Places לא זמין) */
-    const toEnrich=newPlaces.filter(p=>p.lat||p.name);
-    if(toEnrich.length>0){
-      if(window.google?.maps?.places){
-        /* Places API זמין → מפעיל העשרה מלאה אוטומטית ברקע */
-        console.log('[Enrich] auto Places API enrichment for',toEnrich.length,'places');
-        /* setTimeout כדי לתת ל-state להתעדכן לפני שנתחיל */
-        setTimeout(()=>batchEnrichItems(toEnrich),300);
-      } else if(settings?.githubToken){
-        /* Fallback: GitHub Actions BigDataCloud + Overpass (addresses only) */
-        console.log('[Enrich] fallback GitHub Actions for',toEnrich.length,'places');
-        enrichActiveRef.current=true;
-        enrichPlacesBatch(
-          toEnrich,settings,
-          msg=>setEnrichStatus(msg),
-          enriched=>{
-            setEnrichStatus('');enrichActiveRef.current=false;
-            if(Array.isArray(enriched)&&enriched.length) applyEnrichResult(enriched);
-          }
-        ).catch(e=>{
-          enrichActiveRef.current=false;setEnrichStatus('');
-          if(e?.message==='timeout')
-            toast('⏱ ריענן את הדף — כתובות יחולו אוטומטית','error');
-        });
-      }
+    /* ── העשרת כתובות ברקע דרך GitHub Actions (BigDataCloud + Overpass/OSM) ── */
+    const toEnrich=newPlaces.filter(p=>p._cid||p.lat);
+    if(toEnrich.length>0&&settings?.githubToken){
+      enrichActiveRef.current=true;
+      enrichPlacesBatch(
+        toEnrich,settings,
+        msg=>setEnrichStatus(msg),
+        enriched=>{
+          setEnrichStatus('');enrichActiveRef.current=false;
+          if(Array.isArray(enriched)&&enriched.length) applyEnrichResult(enriched);
+        }
+      ).catch(e=>{
+        enrichActiveRef.current=false;setEnrichStatus('');
+        if(e?.message==='timeout')
+          toast('⏱ ריענן את הדף — כתובות יחולו אוטומטית','error');
+      });
     }
   };
 
