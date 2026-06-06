@@ -67,6 +67,18 @@ def extract_place(data):
         if isinstance(short, str) and short.strip():
             out["address"] = short.strip()
 
+    # ── country (explicit) — d6[2][0] full name, d6[88][2][1] ISO code ──
+    # This makes country grouping work for EVERY country, not a hardcoded list.
+    comp = _g(d6, 2)
+    if isinstance(comp, list) and comp and isinstance(comp[0], str) and comp[0].strip():
+        out["country"] = comp[0].strip()
+    try:
+        cc = d6[88][2][1]
+        if isinstance(cc, str) and len(cc) == 2:
+            out["countryCode"] = cc.upper()
+    except Exception:
+        pass
+
     # ── rating: d6[4][7] ──
     r4 = _g(d6, 4)
     if isinstance(r4, list) and len(r4) > 7 and isinstance(r4[7], (int, float)):

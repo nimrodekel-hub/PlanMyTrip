@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v210';
+const APP_VERSION = 'v211';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -3995,6 +3995,9 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
           ...(e.openStatus    &&!item.openStatus      ?{openStatus:e.openStatus}:{}),
           ...(e.userRatingsTotal&&!item.userRatingsTotal?{userRatingsTotal:e.userRatingsTotal}:{}),
           ...(e.placeId       &&!item.placeId         ?{placeId:e.placeId}:{}),
+          /* שם מדינה מפורש מגוגל — קיבוץ מדויק לכל מדינה בעולם */
+          ...(e.country                                ?{country:e.country}:{}),
+          ...(e.countryCode                            ?{countryCode:e.countryCode}:{}),
           /* קישור גוגל מפות מדויק מ-placeId */
           ...(e.placeId       &&!item.url             ?{url:`https://www.google.com/maps/place/?q=place_id:${e.placeId}`}:{}),
           lastFetched:Math.floor(Date.now()/1000),
@@ -4100,6 +4103,22 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     'luxembourg':'לוקסמבורג','ireland':'אירלנד','iceland':'איסלנד','canada':'קנדה',
     'australia':'אוסטרליה','japan':'יפן','china':'סין','india':'הודו',
     'thailand':'תאילנד','morocco':'מרוקו','russia':'רוסיה','ukraine':'אוקראינה',
+    // אסיה ואוקיאניה נוספות
+    'south korea':'דרום קוריאה','korea':'דרום קוריאה','republic of korea':'דרום קוריאה',
+    'vietnam':'וייטנאם','viet nam':'וייטנאם','singapore':'סינגפור','malaysia':'מלזיה',
+    'indonesia':'אינדונזיה','philippines':'הפיליפינים','taiwan':'טייוואן',
+    'hong kong':'הונג קונג','macau':'מקאו','cambodia':'קמבודיה','laos':'לאוס',
+    'myanmar':'מיאנמר','nepal':'נפאל','sri lanka':'סרי לנקה','new zealand':'ניו זילנד',
+    'united arab emirates':'איחוד האמירויות','uae':'איחוד האמירויות',
+    'saudi arabia':'ערב הסעודית','qatar':'קטאר','bahrain':'בחריין','kuwait':'כווית',
+    'oman':'עומאן','lebanon':'לבנון','iran':'איראן','iraq':'עיראק',
+    // אמריקה נוספות
+    'chile':'צ\'ילה','colombia':'קולומביה','ecuador':'אקוודור','bolivia':'בוליביה',
+    'uruguay':'אורוגוואי','costa rica':'קוסטה ריקה','panama':'פנמה','cuba':'קובה',
+    'dominican republic':'הרפובליקה הדומיניקנית','guatemala':'גואטמלה',
+    // אפריקה נוספות
+    'kenya':'קניה','tanzania':'טנזניה','ethiopia':'אתיופיה','nigeria':'ניגריה',
+    'ghana':'גאנה','tunisia':'תוניסיה','algeria':'אלג\'יריה',
     'cyprus':'קפריסין','malta':'מלטה','estonia':'אסטוניה','latvia':'לטביה',
     'lithuania':'ליטא','georgia':'גיאורגיה','armenia':'ארמניה','peru':'פרו',
     'brazil':'ברזיל','argentina':'ארגנטינה','mexico':'מקסיקו','south africa':'דרום אפריקה',
@@ -4171,6 +4190,15 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     .trim();
 
   const getCountry=item=>{
+    /* ── שלב 0 (החזק ביותר): שם מדינה מפורש מגוגל ──
+       enrich.py מחזיר item.country ("Japan"/"Vietnam"/"South Korea"...) ישירות
+       מתגובת גוגל. עובד לכל מדינה בעולם, ללא תלות ברשימה קשיחה.
+       ממפים לעברית אם מוכר, אחרת מציגים את השם כמו שגוגל החזיר. */
+    if(item.country&&item.country.trim()){
+      const lo=item.country.toLowerCase().trim();
+      return COUNTRY_HE[lo]||item.country.trim();
+    }
+
     const addr=(item.address||'').trim();
     if(!addr) return 'ללא כתובת';
     const parts=addr.split(',').map(s=>stripPostal(s)).filter(Boolean);
