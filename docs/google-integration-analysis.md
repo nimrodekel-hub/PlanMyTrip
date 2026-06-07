@@ -158,6 +158,43 @@
 - **Cloudflare Worker** (להצעה 1): הרשמה חינם ל-cloudflare.com → צור Worker → אדביק קוד → תן לי את ה-URL.
 - **Google OAuth Client** (להצעה 6): ב-Google Cloud Console → Credentials → OAuth client ID (Web) → להוסיף את כתובת ה-Pages כ-origin מורשה → לתת לי את ה-Client ID.
 
+---
+
+## 🔖 איפה עצרנו — להמשיך מכאן מחר (עודכן 2026-06-07)
+
+### בוצע ונדחף (ב-`index-v2.html` בלבד; `index.html` הישן לא נגעו בו)
+1. ✅ **בסיס v2** — `index-v2.html` עותק מבודד: localStorage `caravanCtrl_he_v2`,
+   Firebase node `/planmytrip_v2/`, תווית `v2.0 🧪`, tag שחזור `stable-v212`.
+2. ✅ **מנוע פרטים חינמי** (top-level בקובץ, אחרי `b64ToUtf8`):
+   - `placeIdToFid(placeId)` — ChIJ→Feature ID (base64+protobuf, מאומת).
+   - `gmFetchViaProxy(url,customProxy)` — פרוקסי גנרי (slot ל-Worker מוכן).
+   - `parsePreviewPlace(text)` — d6[39]כתובת d6[2][0]מדינה d6[4][7]דירוג
+     d6[13][0]סוג d6[178][0][0]טלפון d6[7][1]אתר d6[203]שעות d6[157]תמונה d6[11]שם d6[78]placeId.
+   - `fetchPlaceFree({placeId,cid1,cid2,lat,lng},customProxy)`.
+3. ✅ **לחיצת-מפה חינמית** — `showPlaceById` מנסה קודם `fetchPlaceFree` (hl=he →
+   קטגוריה+מדינה בעברית), נופל ל-Places רק בכישלון. נוספה **תמונה** ל-MapBottomSheet.
+   `window.__gmProxyUrl` מחובר ל-`settings.proxyUrl`.
+
+### הבא בתור (סדר מומלץ למחר)
+- [ ] **#2 העשרת ייבוא רשימה בנתיב החינמי** — להחליף את enrichPlacesBatch (GitHub
+  Action) ב-`fetchPlaceFree` ישירות בדפדפן לכל מקומות הרשימה (cid1/cid2 כבר נשלפים
+  ב-parseGmapsListResponse כ-`_cid1`/`_cid2`). להביא תמונה+דירוג+סוג+שעות לכל הבנק.
+  + להציג תמונות/דירוג בכרטיסי הבנק (BankItem).
+- [ ] **#4 Deep-links** — "🧭 נווט את יום X" (Google Maps directions עם waypoints),
+  "📍 פתח בגוגל מפות" בכל מקום.
+- [ ] **#5 Re-sync** — כפתור רענון רשימה משותפת (dedup, מוסיף חדשים בלבד).
+- [ ] **#6 יומן לכל טיול** — שדה `calendarId` ברמת הטיול + דחיפה ל-Google Calendar.
+  ⚠️ דורש מהמשתמש: OAuth Client ID ב-Google Cloud.
+- [ ] **🔑 Cloudflare Worker** — אני נותן קוד, המשתמש מקים ונותן URL → להזין ב-proxyUrl.
+
+### החלטות שכבר סגורות
+- מפה: **נשארת גוגל** (חיפוש+גילוי). לא OSM.
+- חיפוש בתיבה: נשאר Places (יזום, נדיר). לחיצה/🔍/קשר-הכל → חינם.
+- `hl=he` בנתיב החינמי — קטגוריה ומדינה בעברית (מצוין למשתמש).
+
+### לבדיקה ע"י המשתמש
+פתיחת `…/index-v2.html` → מפה → לחיצה על עסק → כרטיס עם תמונה+פרטים בעברית, ללא חיוב.
+
 ## נקודות פתוחות להחלטה
 - [ ] האם להחליף את תצוגת המפה ל-OSM/Leaflet (חיסכון מלא) או להשאיר Google Maps?
 - [ ] האם להקים פרוקסי Cloudflare Worker?
