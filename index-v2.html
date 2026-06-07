@@ -979,6 +979,13 @@ function MapBottomSheet({place,trip,onClose,onAddToBank,onAddToDay,onAddToDayBan
         <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',fontSize:20,
           color:'var(--text2)',padding:'0 0 0 4px',lineHeight:1}}>✕</button>
       </div>
+      {/* תמונה (מהנתיב החינמי) */}
+      {place.photoUrl&&<div style={{margin:'0 -12px 8px',height:120,overflow:'hidden',background:'var(--bg2)'}}>
+        <img src={/=w\d|=s\d/.test(place.photoUrl)?place.photoUrl:place.photoUrl+'=w800-h240'}
+          alt={place.name||''} loading="lazy"
+          style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}
+          onError={e=>{e.target.parentNode.style.display='none';}}/>
+      </div>}
       {/* שם */}
       <input value={editName} onChange={e=>setEditName(e.target.value)}
         style={{width:'100%',border:'none',borderBottom:'1px solid var(--border)',
@@ -1242,6 +1249,43 @@ function MapView({mapsKey,trip,onAddToBank,onAddToDay,onSetDayLocation,onUpdateB
         return;
       }
       window.__gmShowSheet?.({name:'טוען...',address:'',lat:lat0,lng:lng0,placeId,_loading:true});
+
+      /* ── v2: ניסיון ראשון בנתיב החינמי (/maps/preview/place, ללא Places API) ── */
+      try{
+        const free=await fetchPlaceFree({placeId,lat:lat0,lng:lng0},window.__gmProxyUrl||'');
+        if(free&&(free.name||free.address)){
+          const placeData={
+            name:free.name||'מקום',address:free.address||'',lat:lat0,lng:lng0,
+            placeId:free.placeId||placeId,placeType:free.placeType||'',
+            rating:free.rating||null,openStatus:'',
+            todayHours:free.todayHours||'',
+            allHours:(free.weekHours||[]).join('<br/>'),
+            phone:free.phone||'',website:free.website||'',
+            photoUrl:free.photoUrl||'',country:free.country||'',
+            _free:true,
+          };
+          if(placeId) window.__placeCache[placeId]=placeData;
+          window.__gmShowSheet?.(placeData);
+          /* עדכן פריט תואם בבנק */
+          if(placeId&&onUpdateBankRef.current&&tripRef.current){
+            const bank=tripRef.current.interestBank||[];
+            const idx=bank.findIndex(i=>i.placeId===placeId);
+            if(idx>=0){
+              const item=bank[idx];
+              const patch={rating:free.rating||item.rating||null,
+                todayHours:free.todayHours||item.todayHours||'',
+                phone:free.phone||item.phone||'',website:free.website||item.website||'',
+                placeType:free.placeType||item.placeType||'',
+                photoUrl:free.photoUrl||item.photoUrl||'',
+                lastFetched:Math.floor(Date.now()/1000)};
+              if(Object.keys(patch).some(k=>item[k]!==patch[k])) onUpdateBankRef.current(item.id,patch);
+            }
+          }
+          return; // הצליח חינם — לא קוראים ל-Places
+        }
+      }catch(freeErr){ /* ניפול ל-Places */ }
+
+      /* ── fallback: Places API (רק אם הנתיב החינמי נכשל) ── */
       const svc=new window.google.maps.places.PlacesService(map);
       const OK_ST=window.google.maps.places.PlacesServiceStatus.OK;
       const dow=new Date().getDay(),wdIdx=dow===0?6:dow-1;
@@ -7041,6 +7085,8 @@ function App(){
   },[]);
 
   useEffect(()=>saveState({settings,trips,activeId}),[settings,trips,activeId]);
+  /* v2: חשוף את כתובת הפרוקסי האישי (Cloudflare Worker עתידי) למנוע החינמי */
+  useEffect(()=>{window.__gmProxyUrl=settings.proxyUrl||'';},[settings.proxyUrl]);
   useEffect(()=>{document.body.className=settings.theme==='light'?'light':'';},[settings.theme]);
 
   // ── טעינה אוטומטית בעת פתיחה ──
