@@ -3843,6 +3843,137 @@ const b64ToUtf8=b64=>{
   return new TextDecoder('utf-8').decode(bytes);
 };
 
+/* ══════════════════════════════════════════════════════════════════
+   מנוע פרטי מקום חינמי (v2) — /maps/preview/place
+   שולף שם, כתובת, מדינה, דירוג, סוג, טלפון, אתר, שעות, תמונה —
+   ללא Places API וללא מפתח. במקום Places getDetails שעולה כסף.
+══════════════════════════════════════════════════════════════════ */
+
+/* פרוקסים ציבוריים — יוחלף בעתיד ב-Cloudflare Worker אישי (אמין יותר).
+   אם המשתמש הגדיר proxyUrl בהגדרות — ננסה אותו ראשון. */
+const GM_PROXIES=apiUrl=>{
+  const enc=encodeURIComponent(apiUrl);
+  return [
+    {u:`https://api.allorigins.win/raw?url=${enc}`,j:false},
+    {u:`https://corsproxy.io/?url=${enc}`,j:false},
+    {u:`https://api.codetabs.com/v1/proxy?quest=${enc}`,j:false},
+    {u:`https://api.allorigins.win/get?url=${enc}`,j:true},
+    {u:`https://proxy.cors.sh/${apiUrl}`,j:false},
+    {u:`https://thingproxy.freeboard.io/fetch/${apiUrl}`,j:false},
+  ];
+};
+
+const gmFetchViaProxy=async(apiUrl,customProxy='')=>{
+  const tryOne=async(url,isJson)=>{
+    const ctrl=new AbortController();
+    const t=setTimeout(()=>ctrl.abort(),12000);
+    try{
+      const r=await fetch(url,{signal:ctrl.signal});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const d=isJson?await r.json():await r.text();
+      const text=isJson?(d?.contents||''):d;
+      if(!text.includes(")]}'")) throw new Error('no-data');
+      return text;
+    }finally{clearTimeout(t);}
+  };
+  const list=[...(customProxy?[{u:customProxy.replace('{url}',encodeURIComponent(apiUrl)),j:false}]:[]),...GM_PROXIES(apiUrl)];
+  return Promise.any(list.map(({u,j})=>tryOne(u,j)));
+};
+
+/* ChIJ placeId → Feature ID "0xHEX1:0xHEX2"  (פיענוח base64+protobuf, ללא API) */
+const placeIdToFid=placeId=>{
+  try{
+    if(!placeId||!/^[A-Za-z0-9_\-]+$/.test(placeId)) return '';
+    const pad=placeId+'='.repeat((4-placeId.length%4)%4);
+    const bin=atob(pad.replace(/-/g,'+').replace(/_/g,'/'));
+    const bytes=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+    /* רובד חיצוני: field 1 = bytes (תת-הודעה) */
+    let i=0;
+    const readVarintLen=()=>{let v=0,s=0;while(bytes[i]&0x80){v|=(bytes[i]&0x7f)<<s;s+=7;i++;}v|=(bytes[i]&0x7f)<<s;i++;return v;};
+    if(bytes[i]!==0x0a) return ''; i++;            // tag field1 wiretype2
+    const innerLen=readVarintLen();
+    const inner=bytes.subarray(i,i+innerLen);
+    /* תוך הרובד: field1 fixed64 = cid1, field2 fixed64 = cid2 (little-endian) */
+    const rd64=off=>{let hex='';for(let k=7;k>=0;k--){hex+=inner[off+k].toString(16).padStart(2,'0');}return hex.replace(/^0+/,'')||'0';};
+    let j=0,cid1='',cid2='';
+    while(j<inner.length){
+      const tag=inner[j++]; const field=tag>>3, wt=tag&7;
+      if(wt===1){ const hex=rd64(j); j+=8; if(field===1)cid1=hex; else if(field===2)cid2=hex; }
+      else if(wt===2){ const ln=inner[j++]; j+=ln; }
+      else if(wt===0){ while(inner[j]&0x80)j++; j++; }
+      else break;
+    }
+    return (cid1&&cid2)?`0x${cid1}:0x${cid2}`:'';
+  }catch{ return ''; }
+};
+
+/* פרסור תגובת /maps/preview/place → אובייקט עשיר */
+const parsePreviewPlace=text=>{
+  try{
+    const data=JSON.parse(text.slice(text.indexOf('[')));
+    const d6=data[6];
+    if(!Array.isArray(d6)) return null;
+    const g=i=>{try{return d6[i];}catch{return null;}};
+    const arr4=g(4);
+    const t13=g(13);
+    const p178=g(178);
+    const w7=g(7);
+    const comp=g(2);
+    /* שעות היום */
+    let todayHours='',weekHours=[];
+    const h=g(203);
+    if(Array.isArray(h)){
+      const WD=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const todayName=WD[new Date().getDay()];
+      for(const el of h){
+        try{
+          const day=el[0];
+          if(Array.isArray(day)&&day[0]&&day[3]?.[0]?.[0]){
+            weekHours.push(`${day[0]}: ${day[3][0][0]}`);
+            if(day[0]===todayName) todayHours=day[3][0][0];
+          }
+        }catch{}
+      }
+    }
+    let website=(Array.isArray(w7)&&typeof w7[1]==='string')?w7[1]:'';
+    if(website&&!/^https?:\/\//.test(website)) website='https://'+website;
+    const photo=typeof g(157)==='string'?g(157):'';
+    return {
+      name: typeof g(11)==='string'?g(11):'',
+      address: typeof g(39)==='string'?g(39):(typeof g(166)==='string'?g(166):''),
+      country: (Array.isArray(comp)&&typeof comp[0]==='string')?comp[0]:'',
+      rating: (Array.isArray(arr4)&&typeof arr4[7]==='number'&&arr4[7]>=1&&arr4[7]<=5)?arr4[7]:null,
+      placeType: (Array.isArray(t13)&&typeof t13[0]==='string')?t13[0]:'',
+      phone: (Array.isArray(p178)&&p178[0]&&typeof p178[0][0]==='string')?p178[0][0]:'',
+      website,
+      todayHours,
+      weekHours,
+      photoUrl: photo,
+      placeId: typeof g(78)==='string'?g(78):'',
+    };
+  }catch{ return null; }
+};
+
+/* שליפה חינמית של פרטי מקום מלאים.
+   מקבל placeId (ChIJ) או cid1/cid2, + lat/lng. מחזיר אובייקט עשיר או null. */
+const fetchPlaceFree=async({placeId,cid1,cid2,lat,lng},customProxy='')=>{
+  let fid='';
+  if(cid1&&cid2){
+    const toHex=n=>{let v=BigInt(n); if(v<0n)v+=(1n<<64n); return v.toString(16);};
+    try{ fid=`0x${toHex(cid1)}:0x${toHex(cid2)}`; }catch{}
+  }
+  if(!fid&&placeId&&placeId.startsWith('ChIJ')) fid=placeIdToFid(placeId);
+  if(!fid) return null;
+  const la=lat!=null?lat:0, ln=lng!=null?lng:0;
+  const pb=`!1m18!1s${fid}!3m12!1m3!1d1000!2d${ln}!3d${la}!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!4m2!3d${la}!4d${ln}!5e0!12m1!1e1`;
+  const url=`https://www.google.com/maps/preview/place?authuser=0&hl=he&gl=il&pb=${pb}`;
+  try{
+    const text=await gmFetchViaProxy(url,customProxy);
+    return parsePreviewPlace(text);
+  }catch{ return null; }
+};
+
 const fetchViaGitHubAction=async(apiUrl,settings,onStatus)=>{
   const tok=settings?.githubToken||'';
   const user=settings?.githubUsername||'nimrodekel-hub';
