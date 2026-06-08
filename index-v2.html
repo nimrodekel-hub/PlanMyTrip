@@ -4834,11 +4834,20 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     if(!places.length) throw new Error('הרשימה ריקה — לא נמצאו מקומות');
     /* שיוך מקור + כפילויות */
     places.forEach(p=>p._listSource=listSrc);
+
+    /* v2 #5: רשומת "רשימה מחוברת" לסנכרון עתידי */
+    const listEntry={listId,listName,src:listSrc,url:originalUrl||'',lastSync:Math.floor(Date.now()/1000)};
+
     const existing=tripRef.current.interestBank;
     const newPlaces=places.filter(p=>!existing.some(ex=>isTakeoutDup(p,ex)));
     const dupCount=places.length-newPlaces.length;
+    /* עדכון יחיד (פונקציונלי) — מוסיף מקומות חדשים + שומר את הרשימה המחוברת */
+    onUpdate(prev=>({
+      ...prev,
+      interestBank:newPlaces.length>0?[...(prev.interestBank||[]),...newPlaces]:(prev.interestBank||[]),
+      connectedLists:[...(prev.connectedLists||[]).filter(l=>l.listId!==listId),listEntry],
+    }));
     if(newPlaces.length>0){
-      onUpdate({...tripRef.current,interestBank:[...existing,...newPlaces]});
       /* פתח אוטומטית את קבוצות שאליהן נוספו הפריטים החדשים */
       const importedCountries=new Set(newPlaces.map(p=>getCountry(p)));
       setExpanded(prev=>new Set([...prev,...importedCountries]));
@@ -5243,6 +5252,24 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
           </button>
         </div>
       )}
+      {/* v2 #5: רשימות מחוברות — סנכרון בלחיצה */}
+      {(trip.connectedLists||[]).length>0&&<div style={{background:'var(--bg3)',borderRadius:8,padding:'7px 9px',marginBottom:2}}>
+        <div style={{fontSize:10,color:'var(--text3)',marginBottom:5,fontWeight:600}}>🔗 רשימות מחוברות</div>
+        {(trip.connectedLists||[]).map(list=>(
+          <div key={list.listId} style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
+            <span style={{flex:1,fontSize:11,color:'var(--text2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
+              title={list.listName}>{list.listName||'רשימה'}</span>
+            <button className="btn btn-sm" disabled={!!linkImporting}
+              style={{fontSize:10,padding:'2px 8px',background:'var(--accent)',color:'#fff',border:'none',borderRadius:5,flexShrink:0}}
+              onClick={async()=>{
+                setLinkImporting(true);
+                try{ await importListFromLink(list.listId,'',list.src,list.url); toast('סונכרן: '+(list.listName||'רשימה'),'success'); }
+                catch(e){ toast('סנכרון נכשל: '+e.message,'error'); }
+                setLinkImporting(false);
+              }}>🔄 סנכרן</button>
+          </div>
+        ))}
+      </div>}
       <button className="btn btn-secondary btn-sm" style={{width:'100%'}}
         onClick={()=>{const n=prompt('שם המקום:');if(n)addToBank({name:n,address:'',id:uid()});}}>
         + הוסף ידנית
