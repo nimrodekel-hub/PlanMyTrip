@@ -4822,8 +4822,18 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       +(partial?` ⚠️ הרשימה מכילה ${totalInList} — ייתכן שחלק לא יובא, נסה שוב`:'');
     toast(msg,partial?'error':'success');
 
-    /* ── העשרה ברקע דרך GitHub Actions → /maps/preview/place (חינמי, ללא Places API) ── */
-    const toEnrich=newPlaces.filter(p=>(p._cid1&&p._cid2)||p.lat);
+    /* ── העשרה ברקע דרך GitHub Actions → /maps/preview/place (חינמי, ללא Places API) ──
+       מעשירים: (א) מקומות חדשים, (ב) מקומות קיימים שחסר להם שדה מדינה (נתונים ישנים) —
+       משתמשים ב-Feature ID הטרי מהרשימה אך שומרים את ה-id הקיים כדי לעדכן את הפריט הנכון. */
+    const staleExisting=[];
+    for(const p of places){
+      const match=existing.find(ex=>isTakeoutDup(p,ex));
+      if(match&&!match.country&&((p._cid1&&p._cid2)||match.lat||p.lat)){
+        staleExisting.push({...match,_cid1:p._cid1||match._cid1,_cid2:p._cid2||match._cid2,
+          lat:match.lat||p.lat,lng:match.lng||p.lng});
+      }
+    }
+    const toEnrich=[...newPlaces,...staleExisting].filter(p=>(p._cid1&&p._cid2)||p.lat);
     if(toEnrich.length>0&&settings?.githubToken){
       enrichActiveRef.current=true;
       enrichPlacesBatch(
