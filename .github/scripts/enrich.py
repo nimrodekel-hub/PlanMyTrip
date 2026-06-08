@@ -90,6 +90,11 @@ def extract_place(data):
     if isinstance(t13, list) and t13 and isinstance(t13[0], str):
         out["placeType"] = t13[0].strip()
 
+    # ── photo: d6[157] (googleusercontent thumbnail URL) ──
+    photo = _g(d6, 157)
+    if isinstance(photo, str) and photo.startswith("http"):
+        out["photoUrl"] = photo.strip()
+
     # ── phone: d6[178][0][0] ──
     p178 = _g(d6, 178)
     try:
@@ -142,7 +147,7 @@ def fetch_one(place):
         f"!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1"
         f"!4m2!3d{lat}!4d{lng}!5e0!12m1!1e1"
     )
-    url = "https://www.google.com/maps/preview/place?authuser=0&hl=en&gl=us&pb=" + pb
+    url = "https://www.google.com/maps/preview/place?authuser=0&hl=he&gl=il&pb=" + pb
     try:
         req = Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
         with urlopen(req, timeout=20) as r:
