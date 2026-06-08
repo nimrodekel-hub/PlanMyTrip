@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v2.1 🧪';
+const APP_VERSION = 'v2.2 🧪';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4062,22 +4062,29 @@ const fetchPlaceFree=async({placeId,cid1,cid2,lat,lng},customProxy='')=>{
 
 /* העשרה בצד-לקוח: מעשיר רשימת פריטים דרך fetchPlaceFree, במקביל מוגבל,
    ומחיל כל תוצאה מיד (onItem) — עמיד לריענון, ללא GitHub Action, ללא poll. */
-const enrichBankClientSide=async(items,{onItem,onProgress,concurrency=5,customProxy=''}={})=>{
+const enrichBankClientSide=async(items,{onItem,onProgress,concurrency,customProxy=''}={})=>{
   const queue=items.filter(it=>(it._cid1&&it._cid2)||it.placeId||(it.lat&&it.lng));
   let done=0, ok=0;
   let idx=0;
+  /* פרוקסי אישי (Worker) אמין → אפשר במקביל גבוה; פרוקסים ציבוריים → נמוך כדי לא להיחסם */
+  const conc=concurrency||(customProxy?8:3);
   const worker=async()=>{
     while(idx<queue.length){
       const it=queue[idx++];
-      try{
-        const free=await fetchPlaceFree(
-          {placeId:it.placeId,cid1:it._cid1,cid2:it._cid2,lat:it.lat,lng:it.lng},customProxy);
-        if(free&&(free.name||free.address||free.country)){ ok++; onItem?.(it.id,free); }
-      }catch{}
+      let free=null;
+      /* עד 2 ניסיונות — הפרוקסים הציבוריים נכשלים לעיתים תחת עומס */
+      for(let attempt=0;attempt<2&&!free;attempt++){
+        try{
+          free=await fetchPlaceFree(
+            {placeId:it.placeId,cid1:it._cid1,cid2:it._cid2,lat:it.lat,lng:it.lng},customProxy);
+        }catch{}
+        if(!free&&attempt===0) await new Promise(r=>setTimeout(r,400));
+      }
+      if(free&&(free.name||free.address||free.country)){ ok++; onItem?.(it.id,free); }
       done++; onProgress?.(done,queue.length,it.name);
     }
   };
-  await Promise.all(Array.from({length:Math.min(concurrency,queue.length)},()=>worker()));
+  await Promise.all(Array.from({length:Math.min(conc,queue.length)},()=>worker()));
   return {total:queue.length, ok};
 };
 
@@ -4978,7 +4985,6 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       setBatchProgress({done:0,total:toEnrich.length,name:''});
       enrichBankClientSide(toEnrich,{
         customProxy:settings?.proxyUrl||'',
-        concurrency:5,
         onItem:(id,free)=>patchBankItem(id,free),
         onProgress:(done,total,name)=>setBatchProgress({done,total,name}),
       }).then(({total,ok})=>{
