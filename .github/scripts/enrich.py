@@ -90,9 +90,23 @@ def extract_place(data):
     if isinstance(t13, list) and t13 and isinstance(t13[0], str):
         out["placeType"] = t13[0].strip()
 
-    # ── photo: d6[157] (googleusercontent thumbnail URL) ──
-    photo = _g(d6, 157)
-    if isinstance(photo, str) and photo.startswith("http"):
+    # ── photo: representative gallery photo d6[75] → street view d6[37] → logo d6[157] ──
+    def _find_url(o, needle):
+        if isinstance(o, str):
+            return o if (o.startswith("http") and needle in o) else ""
+        if isinstance(o, list):
+            for x in o:
+                r = _find_url(x, needle)
+                if r:
+                    return r
+        return ""
+    photo = (_find_url(_g(d6, 75), "googleusercontent")
+             or _find_url(_g(d6, 37), "streetviewpixels"))
+    if not photo:
+        logo = _g(d6, 157)
+        if isinstance(logo, str) and logo.startswith("http"):
+            photo = logo
+    if photo:
         out["photoUrl"] = photo.strip()
 
     # ── phone: d6[178][0][0] ──
