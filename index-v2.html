@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v2.0 🧪';
+const APP_VERSION = 'v2.1 🧪';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4226,11 +4226,51 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
   const tripRef=useRef(trip);
   useEffect(()=>{tripRef.current=trip;},[trip]);
   /* ── פונקציה מרכזית: החלת תוצאות העשרה על הבנק ── */
-  /* v2: החלת תוצאת fetchPlaceFree על פריט בודד (העשרה אינקרמנטלית) */
+  /* האם בלוק/פריט-יום תואם לפריט הבנק שהתעשר (placeId / קואורדינטות / שם) */
+  const matchesItem=(b,it)=>
+    (it.placeId&&b.placeId&&b.placeId===it.placeId)
+    ||(it.lat!=null&&b.lat!=null&&Math.abs(b.lat-it.lat)<0.0005&&Math.abs((b.lng||0)-(it.lng||0))<0.0005)
+    ||(!!b.title&&(b.title===it.name||b.title===it.customName))
+    ||(!!b.name&&(b.name===it.name||b.name===it.customName));
+
+  /* פרופגציה: עדכון בלוקים בלו"ז (place* prefixed) שתואמים לפריט שהתעשר */
+  const propagateToBlocks=(days,it,free)=>(days||[]).map(d=>({
+    ...d,
+    blocks:(d.blocks||[]).map(b=>{
+      if(!matchesItem(b,it)) return b;
+      return {...b,
+        ...(free.rating     &&!b.placeRating    ?{placeRating:free.rating}:{}),
+        ...(free.todayHours &&!b.placeTodayHours?{placeTodayHours:free.todayHours}:{}),
+        ...(free.phone      &&!b.placePhone     ?{placePhone:free.phone}:{}),
+        ...(free.website    &&!b.placeWebsite   ?{placeWebsite:free.website}:{}),
+        ...(free.photoUrl   &&!b.placePhotoUrl  ?{placePhotoUrl:free.photoUrl}:{}),
+        ...(free.placeType  &&!b.placeType      ?{placeType:free.placeType}:{}),
+        ...(free.placeId    &&!b.placeId        ?{placeId:free.placeId}:{}),
+        ...(free.address    &&!b.location       ?{location:free.address}:{}),
+      };
+    }),
+    /* גם בנק-יום (dayBank) — פריטים בסגנון item */
+    dayBank:(d.dayBank||[]).map(b=>{
+      if(!matchesItem(b,it)) return b;
+      return {...b,
+        ...(free.address   &&!b.address   ?{address:free.address}:{}),
+        ...(free.country                  ?{country:free.country}:{}),
+        ...(free.rating    &&!b.rating    ?{rating:free.rating}:{}),
+        ...(free.phone     &&!b.phone     ?{phone:free.phone}:{}),
+        ...(free.website   &&!b.website   ?{website:free.website}:{}),
+        ...(free.placeType &&!b.placeType ?{placeType:free.placeType}:{}),
+        ...(free.todayHours&&!b.todayHours?{todayHours:free.todayHours}:{}),
+        ...(free.photoUrl  &&!b.photoUrl  ?{photoUrl:free.photoUrl}:{}),
+        ...(free.placeId   &&!b.placeId   ?{placeId:free.placeId}:{}),
+      };
+    }),
+  }));
+
+  /* v2: החלת תוצאת fetchPlaceFree על פריט בודד + פרופגציה ללו"ז (אינקרמנטלי) */
   const patchBankItem=useCallback((id,free)=>{
-    onUpdate(prev=>({
-      ...prev,
-      interestBank:(prev.interestBank||[]).map(item=>{
+    onUpdate(prev=>{
+      const it=(prev.interestBank||[]).find(i=>i.id===id);
+      const interestBank=(prev.interestBank||[]).map(item=>{
         if(item.id!==id) return item;
         return {
           ...item,
@@ -4246,8 +4286,11 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
           ...(free.placeId    &&!item.url           ?{url:`https://www.google.com/maps/place/?q=place_id:${free.placeId}`}:{}),
           lastFetched:Math.floor(Date.now()/1000),
         };
-      }),
-    }));
+      });
+      /* פרופגציה ללו"ז היומי — משתמשים בנתוני הזיהוי של הפריט (it) */
+      const days=it?propagateToBlocks(prev.days,it,free):prev.days;
+      return {...prev, interestBank, days};
+    });
   },[onUpdate]);
 
   const applyEnrichResult=useCallback((enriched)=>{
@@ -4277,7 +4320,13 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
           lastFetched:Math.floor(Date.now()/1000),
         };
       });
-      return{...prev,interestBank:bank};
+      /* פרופגציה ללו"ז היומי לכל פריט שהתעשר */
+      let days=prev.days;
+      for(const it of (prev.interestBank||[])){
+        const e=map[it.id];
+        if(e) days=propagateToBlocks(days,it,e);
+      }
+      return{...prev,interestBank:bank,days};
     });
     const addrCount=enriched.filter(e=>e.address).length;
     const phoneCount=enriched.filter(e=>e.phone).length;
