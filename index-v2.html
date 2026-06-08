@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v2.3 🧪';
+const APP_VERSION = 'v2.4 🧪';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4969,9 +4969,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       +(partial?` ⚠️ הרשימה מכילה ${totalInList} — ייתכן שחלק לא יובא, נסה שוב`:'');
     toast(msg,partial?'error':'success');
 
-    /* ── העשרה בצד-לקוח דרך /maps/preview/place (חינמי, ללא Places API, ללא GitHub Action) ──
-       כל תוצאה מוחלת מיד — עמיד לריענון. מעשירים: (א) מקומות חדשים,
-       (ב) מקומות קיימים שחסר להם מדינה (נתונים ישנים) — Feature ID טרי מהרשימה, id קיים. */
+    /* ── העשרה — מעשירים: (א) מקומות חדשים, (ב) קיימים שחסר להם מדינה (נתונים ישנים) ── */
     const staleExisting=[];
     for(const p of places){
       const match=existing.find(ex=>isTakeoutDup(p,ex));
@@ -4982,17 +4980,37 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     }
     const toEnrich=[...newPlaces,...staleExisting].filter(p=>(p._cid1&&p._cid2)||p.placeId||(p.lat&&p.lng));
     if(toEnrich.length>0){
-      setBatchProgress({done:0,total:toEnrich.length,name:''});
-      enrichBankClientSide(toEnrich,{
-        customProxy:settings?.proxyUrl||'',
-        onItem:(id,free)=>patchBankItem(id,free),
-        onProgress:(done,total,name)=>setBatchProgress({done,total,name}),
-      }).then(({total,ok})=>{
-        setBatchProgress(null);
-        /* פתח את קבוצות המדינה שהתקבלו */
-        setExpanded(prev=>{const s=new Set(prev);(tripRef.current.interestBank||[]).forEach(i=>{if(i.country)s.add(getCountry(i));});return s;});
-        toast(ok>0?`✅ הועשרו ${ok}/${total} מקומות (כתובת, דירוג, תמונה, שעות)`:'⚠️ ההעשרה נכשלה — נסה שוב או הגדר פרוקסי','success');
-      }).catch(()=>{ setBatchProgress(null); });
+      if(settings?.githubToken){
+        /* ── דרך מועדפת: GitHub Action → /maps/preview/place משרתי GitHub ──
+           אמין (ללא CORS/הגבלת-קצב), מצליח על כל 153 המקומות. התוצאה מוחלת
+           דרך poll (כל עוד הדף פתוח) או resume אוטומטי בפתיחה הבאה. */
+        enrichActiveRef.current=true;
+        setEnrichStatus('⏳ מעשיר '+toEnrich.length+' מקומות דרך GitHub... (~דקה)');
+        enrichPlacesBatch(
+          toEnrich,settings,
+          mssg=>setEnrichStatus(mssg),
+          enriched=>{
+            setEnrichStatus('');enrichActiveRef.current=false;
+            if(Array.isArray(enriched)&&enriched.length) applyEnrichResult(enriched);
+          }
+        ).catch(e=>{
+          enrichActiveRef.current=false;setEnrichStatus('');
+          if(e?.message==='timeout') toast('⏱ ההעשרה נמשכת ברקע — התוצאות יחולו אוטומטית בפתיחה הבאה','error');
+          else toast('שגיאת העשרה: '+(e?.message||''),'error');
+        });
+      } else {
+        /* ── חלופה ללא token: בצד-לקוח דרך פרוקסי ציבורי (פחות אמין) ── */
+        setBatchProgress({done:0,total:toEnrich.length,name:''});
+        enrichBankClientSide(toEnrich,{
+          customProxy:settings?.proxyUrl||'',
+          onItem:(id,free)=>patchBankItem(id,free),
+          onProgress:(done,total,name)=>setBatchProgress({done,total,name}),
+        }).then(({total,ok})=>{
+          setBatchProgress(null);
+          setExpanded(prev=>{const s=new Set(prev);(tripRef.current.interestBank||[]).forEach(i=>{if(i.country)s.add(getCountry(i));});return s;});
+          toast(ok>0?`✅ הועשרו ${ok}/${total} מקומות`:'⚠️ ההעשרה נכשלה — נסה שוב','success');
+        }).catch(()=>{ setBatchProgress(null); });
+      }
     }
   };
 
