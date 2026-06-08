@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v2.2 🧪';
+const APP_VERSION = 'v2.3 🧪';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -6516,6 +6516,22 @@ function ConnectivityTab({settings,onSettings,onPush,onPull,ghBusy,syncStatus,on
         {tokenSyncMsg||(s.githubToken
           ?'✅ Token מוגדר — ייבוא רשימות מגוגל מפות דרך GitHub זמין'
           :'לא מוגדר — ייבוא יסתמך על פרוקסים בלבד (עלול להיכשל)')}
+      </div>
+    </div>
+
+    {/* ══ Cloudflare Worker — פרוקסי אישי אמין להעשרה חינמית ══ */}
+    <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',background:'var(--surface2)'}}>
+      <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>⚡ פרוקסי אישי (Cloudflare Worker) — העשרה אמינה וחינמית</div>
+      <input className="input" type="text"
+        value={s.proxyUrl||''}
+        onChange={e=>upd('proxyUrl',e.target.value.trim())}
+        placeholder="https://NAME.workers.dev/?url={url}"
+        autoComplete="off"
+        style={{width:'100%',direction:'ltr',boxSizing:'border-box'}}/>
+      <div style={{fontSize:11,marginTop:6,color:s.proxyUrl?'var(--green)':'var(--text3)',lineHeight:1.6}}>
+        {s.proxyUrl
+          ?'✅ פרוקסי אישי מוגדר — שליפת פרטים מהירה ואמינה (ללא הגבלת קצב)'
+          :'מומלץ! 100K בקשות/יום בחינם. חייב לכלול {url} בסוף. ראה הוראות הקמה ב-docs/cloudflare-worker.md'}
       </div>
     </div>
 
