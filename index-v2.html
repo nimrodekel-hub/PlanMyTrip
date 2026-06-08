@@ -2444,6 +2444,25 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
   const sorted=[...day.blocks].sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
   // מספור לטיימליין — תואם מספרי פינים במפה (ללא autoTravel, רק פעילויות עם קואורדינטות)
   let _mn=0; const _mapNums=sorted.map(bl=>(bl.lat&&bl.lng&&!bl.isAutoTravel)?++_mn:null);
+
+  /* ── v2: "נווט את היום" — קישור Google Maps directions עם כל תחנות היום ──
+     נפתח באפליקציית גוגל מפות שבה המשתמש מחובר (ניווט אמיתי, ללא עלות). */
+  const buildDayNavUrl=()=>{
+    const pt=(lat,lng,name)=>(lat!=null&&lng!=null)?`${lat},${lng}`:(name?encodeURIComponent(name):'');
+    const stops=[];
+    if(day.startLat!=null||day.startLocation) stops.push(pt(day.startLat,day.startLng,day.startLocation));
+    sorted.forEach(b=>{ if(!b.isAutoTravel){ const s=pt(b.lat,b.lng,b.customName||b.title); if(s)stops.push(s); } });
+    if(day.endLat!=null||day.endLocation) stops.push(pt(day.endLat,day.endLng,day.endLocation));
+    const clean=stops.filter(Boolean);
+    if(clean.length<2) return '';
+    const origin=clean[0], destination=clean[clean.length-1];
+    const waypoints=clean.slice(1,-1).slice(0,9); // גוגל תומך עד ~9 נקודות ביניים
+    let u=`https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}`;
+    if(waypoints.length) u+=`&waypoints=${waypoints.join('|')}`;
+    u+=`&travelmode=${settings?.routeProfile==='walking'?'walking':settings?.routeProfile==='transit'?'transit':'driving'}`;
+    return u;
+  };
+  const dayNavUrl=buildDayNavUrl();
   const dayColor=DAY_COLORS[idx%DAY_COLORS.length];
   // מציאת נקודות מוצא/יעד של בלוק נסיעה והעברתן למפה
   const focusRoute=React.useCallback((block)=>{
@@ -3359,6 +3378,15 @@ function DayPanel({day,idx,onUpdate,onDelete,onFocusDay,onFocusItem,onFocusRoute
           {lastSortedBlock&&` — פעילות אחרונה מסתיימת ב-${addMins(lastSortedBlock.startTime,bDur(lastSortedBlock))}`}
         </span>
       </div>}
+
+      {/* v2: נווט את היום בגוגל מפות */}
+      {dayNavUrl&&<a href={dayNavUrl} target="_blank" rel="noreferrer"
+        style={{display:'flex',alignItems:'center',justifyContent:'center',gap:7,marginTop:12,
+          background:'#1a73e8',color:'#fff',borderRadius:8,padding:'9px 0',fontSize:13,fontWeight:700,
+          textDecoration:'none',fontFamily:'Heebo,Arial,sans-serif'}}
+        title="פתח את מסלול היום בגוגל מפות (ניווט אמיתי, ללא עלות)">
+        🧭 נווט את היום בגוגל מפות
+      </a>}
 
       <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:12}}>
         {BLOCK_TYPES.map(t=>(
