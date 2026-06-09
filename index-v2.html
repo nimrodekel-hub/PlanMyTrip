@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v2.4 🧪';
+const APP_VERSION = 'v2.5 🧪';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4185,7 +4185,9 @@ const enrichPlacesBatch=async(places,settings,onStatus,onResult)=>{
   for(let i=0;i<100;i++){
     await new Promise(r=>setTimeout(r,8000)); // poll every 8 s
     try{
-      const r=await fetch(resultUrl,{headers:hdr});
+      /* cache:'no-store' + cachebust — חובה! אחרת הדפדפן שומר את ה-404 הראשון
+         ומחזיר אותו לכל הפניות, גם אחרי שהקובץ נוצר → התוצאה לעולם לא נמצאת */
+      const r=await fetch(`${resultUrl}?t=${Date.now()}`,{headers:hdr,cache:'no-store'});
       console.log('[Enrich] poll',i+1,'→',r.status);
       if(r.status===404) continue; // not ready yet
       if(!r.ok){console.warn('[Enrich] unexpected status',r.status);continue;}
@@ -4371,7 +4373,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
         if(cancelled) return;
         await new Promise(r=>setTimeout(r,8000));
         try{
-          const r=await fetch(resultUrl,{headers:hdr});
+          const r=await fetch(`${resultUrl}?t=${Date.now()}`,{headers:hdr,cache:'no-store'});
           console.log('[Enrich] resume poll',i+1,'→',r.status);
           if(r.status===404){if(i===0)setEnrichStatus('⏳ ממשיך העשרת פרטים...');continue;}
           if(!r.ok){break;}
