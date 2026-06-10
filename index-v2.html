@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v2.9 🧪';
+const APP_VERSION = 'v2.10 🧪';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4544,6 +4544,8 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     'אלבניה':'אלבניה','מקדוניה':'מקדוניה','בוסניה':'בוסניה','מונטנגרו':'מונטנגרו',
     'אסטוניה':'אסטוניה','לטביה':'לטביה','ליטא':'ליטא',
   };
+  /* קבוצת שמות המדינות המוכרים (עברית) — לסינון שלב 4 ב-getCountry */
+  const KNOWN_COUNTRIES_HE=useMemo(()=>new Set(Object.values(COUNTRY_HE)),[]);
 
   /* ערים ישראליות שעלולות להופיע כחלק אחרון בכתובת */
   const ISRAEL_CITIES=new Set([
@@ -4622,8 +4624,10 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
        מונע לנצח את הפיצול לעשרות קבוצות-רחוב כשהכתובת חסרת-מדינה */
     const geo=countryFromCoords(item.lat,item.lng);
     if(geo) return geo;
-    /* ── שלב 4: fallback — נרמל את החלק האחרון (לוגיקה ישנה) ── */
-    return normalizeCountry(parts[parts.length-1]||'ללא כתובת',addr);
+    /* ── שלב 4: החלק האחרון — אבל רק אם הוא מדינה מוכרת! ──
+       אחרת קבוצה אחת 'ללא כתובת' (לעולם לא קבוצת-רחוב לכל פריט) */
+    const last=normalizeCountry(parts[parts.length-1]||'',addr);
+    return KNOWN_COUNTRIES_HE.has(last)?last:'ללא כתובת';
   };
 
   /* קיבוץ לפי מדינה — ממויין לפי א-ת בתוך כל קבוצה כשנבחר מיון שם */
@@ -7373,6 +7377,30 @@ function App(){
   },[]);
 
   useEffect(()=>saveState({settings,trips,activeId,savedAt:Date.now()}),[settings,trips,activeId]);
+
+  /* ── v2: ריפוי עצמי — השלמת מדינה לפי קואורדינטות לפריטים ישנים ──
+       רץ על כל שינוי ב-trips (כולל אחרי טעינה מהענן!) — כך גם אם הענן מחזיר
+       פריטים בלי country, הם מתוקנים מיד ונדחפים חזרה מרופאים. */
+  useEffect(()=>{
+    let needFix=false;
+    for(const t of trips){
+      for(const i of (t.interestBank||[])){
+        if(i&&!i.country&&i.lat!=null&&countryFromCoords(i.lat,i.lng)){needFix=true;break;}
+      }
+      if(needFix)break;
+    }
+    if(!needFix)return;
+    setTrips(ts=>ts.map(t=>({
+      ...t,
+      interestBank:(t.interestBank||[]).map(i=>{
+        if(i&&!i.country&&i.lat!=null){
+          const c=countryFromCoords(i.lat,i.lng);
+          if(c)return{...i,country:c};
+        }
+        return i;
+      }),
+    })));
+  },[trips]);
   /* v2: חשוף את כתובת הפרוקסי האישי (Cloudflare Worker עתידי) למנוע החינמי */
   useEffect(()=>{window.__gmProxyUrl=settings.proxyUrl||'';},[settings.proxyUrl]);
   useEffect(()=>{document.body.className=settings.theme==='light'?'light':'';},[settings.theme]);
