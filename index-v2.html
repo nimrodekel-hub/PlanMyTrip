@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v2.8 🧪';
+const APP_VERSION = 'v2.9 🧪';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -527,6 +527,66 @@ const normTrip = t => {
 const genSyncKey=()=>{
   const c='abcdefghjkmnpqrstuvwxyz23456789'; // ללא תווים מבלבלים (0/O, 1/l/I)
   return Array.from({length:6},()=>c[Math.random()*c.length|0]).join(''); // פורמט: xxxxxx
+};
+
+/* ══ v2: מיזוג שדות העשרה — מגן על country/photo/rating מדריסת סנכרון ══
+   בכל טעינה מהענן: לכל פריט בנק, אם לגרסה המקומית יש שדה מועשר שלענן אין —
+   שומרים את המקומי. התאמה לפי id, ואם אין — לפי placeId או שם+קואורדינטות. */
+const ENRICH_FIELDS=['country','countryCode','photoUrl','rating','userRatingsTotal',
+  'phone','website','placeType','todayHours','openStatus','placeId','url','lastFetched','address'];
+const mergeEnrichInto=(remoteTrips,localTrips)=>{
+  try{
+    const byId={},byPid={},byNC={};
+    (localTrips||[]).forEach(lt=>(lt.interestBank||[]).forEach(i=>{
+      if(!i)return;
+      if(i.id)byId[i.id]=i;
+      if(i.placeId)byPid[i.placeId]=i;
+      if(i.name&&i.lat!=null)byNC[i.name+'|'+Math.round(i.lat*1e4)]=i;
+    }));
+    return (remoteTrips||[]).map(t=>({
+      ...t,
+      interestBank:(t.interestBank||[]).map(item=>{
+        if(!item)return item;
+        const loc=byId[item.id]
+          ||(item.placeId&&byPid[item.placeId])
+          ||(item.name&&item.lat!=null&&byNC[item.name+'|'+Math.round(item.lat*1e4)]);
+        if(!loc)return item;
+        const patch={};
+        ENRICH_FIELDS.forEach(f=>{if(loc[f]&&!item[f])patch[f]=loc[f];});
+        return Object.keys(patch).length?{...item,...patch}:item;
+      }),
+    }));
+  }catch(e){console.warn('[Merge] failed, using remote as-is:',e?.message);return remoteTrips;}
+};
+
+/* ══ v2: זיהוי מדינה לפי קואורדינטות — fallback שלא תלוי בנתונים ══
+   תיבות תוחמות מקורבות; מדינות קטנות נבדקות ראשונות (חפיפות). */
+const GEO_COUNTRIES=[
+  ['ישראל',29.3,33.5,34.2,35.95],
+  ['שווייץ',45.8,47.9,5.9,10.5],
+  ['אוסטריה',46.3,49.1,9.5,17.2],
+  ['הולנד',50.7,53.6,3.3,7.3],
+  ['בלגיה',49.4,51.6,2.5,6.4],
+  ['פורטוגל',36.9,42.2,-9.6,-6.2],
+  ['יוון',34.7,41.8,19.3,28.3],
+  ['דרום קוריאה',33.1,38.7,125.9,129.6],
+  ['יפן',24.0,45.8,122.5,146.2],
+  ['תאילנד',5.5,20.5,97.3,105.7],
+  ['וייטנאם',8.4,23.4,102.1,109.5],
+  ['איטליה',36.5,47.1,6.6,18.6],
+  ['ספרד',35.9,43.9,-9.4,4.4],
+  ['צרפת',41.3,51.2,-5.2,9.7],
+  ['גרמניה',47.2,55.1,5.8,15.1],
+  ['בריטניה',49.9,60.9,-8.7,1.8],
+  ['טורקיה',35.8,42.2,25.9,44.8],
+  ['ארצות הברית',24.5,49.4,-125.0,-66.9],
+];
+const countryFromCoords=(lat,lng)=>{
+  if(lat==null||lng==null)return '';
+  for(const[name,s,n,w,e] of GEO_COUNTRIES){
+    if(lat>=s&&lat<=n&&lng>=w&&lng<=e)return name;
+  }
+  return '';
 };
 
 /* ── Google Takeout parser ──
@@ -4536,9 +4596,9 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     }
 
     const addr=(item.address||'').trim();
-    if(!addr) return 'ללא כתובת';
+    if(!addr) return countryFromCoords(item.lat,item.lng)||'ללא כתובת';
     const parts=addr.split(',').map(s=>stripPostal(s)).filter(Boolean);
-    if(!parts.length) return 'ללא כתובת';
+    if(!parts.length) return countryFromCoords(item.lat,item.lng)||'ללא כתובת';
 
     /* ── שלב 1: סרוק את כל חלקי הכתובת אחר שם מדינה מוכר ──
        גוגל מחזיר כתובת בשני פורמטים: "Japan, Tokyo, ..." (מדינה ראשונה)
@@ -4558,6 +4618,10 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     for(const part of parts){
       if(ISRAEL_CITIES.has(part.toLowerCase().trim())) return 'ישראל';
     }
+    /* ── שלב 3.5: זיהוי לפי קואורדינטות — לא תלוי באיכות הכתובת/הסנכרון ──
+       מונע לנצח את הפיצול לעשרות קבוצות-רחוב כשהכתובת חסרת-מדינה */
+    const geo=countryFromCoords(item.lat,item.lng);
+    if(geo) return geo;
     /* ── שלב 4: fallback — נרמל את החלק האחרון (לוגיקה ישנה) ── */
     return normalizeCountry(parts[parts.length-1]||'ללא כתובת',addr);
   };
@@ -4979,7 +5043,7 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
     const staleExisting=[];
     for(const p of places){
       const match=existing.find(ex=>isTakeoutDup(p,ex));
-      if(match&&!match.country&&((p._cid1&&p._cid2)||p.placeId||match.lat||p.lat)){
+      if(match&&(!match.country||!match.photoUrl)&&((p._cid1&&p._cid2)||p.placeId||match.lat||p.lat)){
         staleExisting.push({...match,_cid1:p._cid1||match._cid1,_cid2:p._cid2||match._cid2,
           placeId:match.placeId||p.placeId,lat:match.lat||p.lat,lng:match.lng||p.lng});
       }
@@ -7327,28 +7391,11 @@ function App(){
           }
           if(data?.trips?.length>0){
             const loaded=data.trips.map(normTrip).filter(Boolean);
-            /* ── מיזוג חכם: לוקחים מבנה מהענן + שדות העשרה מהמקומי ──
-               הבאג הישן: טעינה מהענן דרסה country/photoUrl/rating שנשמרו מקומית.
-               הפתרון: תמיד מוזגים. לכל פריט בנק שיש לו גרסה מקומית עם שדות עשירים,
-               מחזירים את השדות האלה גם על גרסת הענן. */
-            const ENRICH_FIELDS=['country','countryCode','photoUrl','rating','userRatingsTotal',
-              'phone','website','placeType','todayHours','openStatus','placeId','url','lastFetched'];
-            /* מפה מהירה id→item מהנתונים המקומיים */
-            const localMap={};
-            (trips||[]).forEach(lt=>(lt.interestBank||[]).forEach(i=>{if(i.id)localMap[i.id]=i;}));
-            const merged=loaded.map(t=>({
-              ...t,
-              interestBank:(t.interestBank||[]).map(item=>{
-                const loc=localMap[item.id];
-                if(!loc) return item;
-                /* לכל שדה העשרה — אם המקומי יש ערך והענן לא, השתמש במקומי */
-                const patch={};
-                ENRICH_FIELDS.forEach(f=>{if(loc[f]&&!item[f]) patch[f]=loc[f];});
-                return Object.keys(patch).length?{...item,...patch}:item;
-              }),
-            }));
+            /* מיזוג חכם: מבנה מהענן + שדות העשרה (country/photo/rating) מהמקומי */
+            const merged=mergeEnrichInto(loaded,trips);
             if(merged.length>0){
-              skipNextPush.current=true;
+              /* לא מדלגים על ה-push הבא — כדי שהמיזוג המועשר יירשם חזרה לענן
+                 וירפא את העותק הישן (אחרת הענן נשאר בלי country לנצח) */
               setTrips(merged);
               if(data.activeId) setActiveId(data.activeId);
               toast('הטיול נטען מ-Firebase ✓','success');
@@ -7411,22 +7458,9 @@ function App(){
         const localTime=lastPushTime.current||0;
         if(remoteTime>localTime){
           skipNextPush.current=true;
-          const ENRICH_FIELDS=['country','countryCode','photoUrl','rating','userRatingsTotal',
-            'phone','website','placeType','todayHours','openStatus','placeId','url','lastFetched'];
           setTrips(prev=>{
-            const localMap={};
-            (prev||[]).forEach(lt=>(lt.interestBank||[]).forEach(i=>{if(i.id)localMap[i.id]=i;}));
             const remoteIds=new Set(remote.map(t=>t.id));
-            const merged=remote.map(t=>({
-              ...t,
-              interestBank:(t.interestBank||[]).map(item=>{
-                const loc=localMap[item.id];
-                if(!loc) return item;
-                const patch={};
-                ENRICH_FIELDS.forEach(f=>{if(loc[f]&&!item[f]) patch[f]=loc[f];});
-                return Object.keys(patch).length?{...item,...patch}:item;
-              }),
-            }));
+            const merged=mergeEnrichInto(remote,prev);
             const localOnly=prev.filter(t=>!remoteIds.has(t.id));
             return [...merged,...localOnly];
           });
@@ -7637,9 +7671,10 @@ function App(){
         if(remote.length>0){
           skipNextPush.current=true;
           // ── Merge: remote גובר על קונפליקטים, טיולים מקומיים-בלבד נשמרים ──
+          // + שדות העשרה (country/photo/rating) מהמקומי לא נדרסים
           const remoteIds=new Set(remote.map(t=>t.id));
           const localOnly=trips.filter(t=>!remoteIds.has(t.id));
-          const merged=[...remote,...localOnly];
+          const merged=[...mergeEnrichInto(remote,trips),...localOnly];
           const added=remote.filter(t=>!trips.find(l=>l.id===t.id)).length;
           const updated=remote.filter(t=> trips.find(l=>l.id===t.id)).length;
           const kept=localOnly.length;
