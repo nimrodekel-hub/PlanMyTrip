@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v2.6 🧪';
+const APP_VERSION = 'v2.7 🧪';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -7308,7 +7308,7 @@ function App(){
     setTab(prevTabRef.current); // return to where we came from
   },[]);
 
-  useEffect(()=>saveState({settings,trips,activeId}),[settings,trips,activeId]);
+  useEffect(()=>saveState({settings,trips,activeId,savedAt:Date.now()}),[settings,trips,activeId]);
   /* v2: חשוף את כתובת הפרוקסי האישי (Cloudflare Worker עתידי) למנוע החינמי */
   useEffect(()=>{window.__gmProxyUrl=settings.proxyUrl||'';},[settings.proxyUrl]);
   useEffect(()=>{document.body.className=settings.theme==='light'?'light':'';},[settings.theme]);
@@ -7327,13 +7327,30 @@ function App(){
           }
           if(data?.trips?.length>0){
             const loaded=data.trips.map(normTrip).filter(Boolean);
-            if(loaded.length>0){
+            /* ── אל תדרוס נתונים מקומיים מעושרים! ──
+               הבאג: בטעינה נמשך עותק ישן מהענן (בלי מדינה/תמונות) ודרס את הנתונים
+               המעושרים המקומיים → הקיבוץ התפצל מ"יפן" לכתובות. הפתרון: השוואת
+               "עושר" (כמה פריטים יש להם country) + חותמת זמן. טוענים מהענן רק אם
+               הוא מעושר לפחות כמו המקומי. אחרת — שומרים מקומי ודוחפים לענן. */
+            const richness=ts=>(ts||[]).reduce((n,t)=>n+(t.interestBank||[]).filter(i=>i&&i.country).length,0);
+            const remoteRich=richness(loaded), localRich=richness(trips);
+            const remoteTime=data.savedAt?new Date(data.savedAt).getTime():0;
+            const localTime=saved?.savedAt||0;
+            const cloudIsBetter = remoteRich>localRich || (remoteRich===localRich && remoteTime>=localTime);
+            if(loaded.length>0 && cloudIsBetter){
               skipNextPush.current=true;
               setTrips(loaded);
               if(data.activeId) setActiveId(data.activeId);
               toast('הטיול נטען מ-Firebase ✓','success');
+              setSyncStatus('synced');
+            } else if(loaded.length>0 && trips.length>0){
+              /* המקומי מעושר יותר — שמור עליו ועדכן את הענן (מונע אובדן העשרה) */
+              console.log('[Sync] local richer than cloud ('+localRich+' vs '+remoteRich+') — keeping local, pushing up');
+              fbWrite(fbUrl,syncKey,{trips,activeId,savedAt:new Date().toISOString(),githubToken:settings.githubToken||''})
+                .then(()=>setSyncStatus('synced')).catch(()=>setSyncStatus('error'));
+            } else {
+              setSyncStatus('synced');
             }
-            setSyncStatus('synced');
           } else if(trips.length>0){
             // Firebase ריק אבל יש נתונים מקומיים — דחוף אוטומטית
             toast('☁️ מעלה נתונים ל-Firebase...','info');
