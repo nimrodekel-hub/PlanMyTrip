@@ -315,7 +315,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ── עזרים ── */
-const APP_VERSION = 'v2.5 🧪';
+const APP_VERSION = 'v2.6 🧪';
 const GMAPS_KEY = 'AIzaSyAZhMPQ3rdplpqNhYx5oNrZV5HJfcTq1Dw';
 
 /* ── קוד אדמין — נשמר בדפדפן בלבד, לא מסונכרן ── */
@@ -4296,8 +4296,10 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
           lastFetched:Math.floor(Date.now()/1000),
         };
       });
-      /* פרופגציה ללו"ז היומי — משתמשים בנתוני הזיהוי של הפריט (it) */
-      const days=it?propagateToBlocks(prev.days,it,free):prev.days;
+      /* פרופגציה ללו"ז — best-effort; לעולם לא תפיל את עדכון הבנק */
+      let days=prev.days;
+      try{ if(it) days=propagateToBlocks(prev.days,it,free); }
+      catch(propErr){ console.warn('[Enrich] propagation skipped:',propErr?.message); days=prev.days; }
       return {...prev, interestBank, days};
     });
   },[onUpdate]);
@@ -4329,12 +4331,14 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
           lastFetched:Math.floor(Date.now()/1000),
         };
       });
-      /* פרופגציה ללו"ז היומי לכל פריט שהתעשר */
+      /* פרופגציה ללו"ז — best-effort בלבד; לעולם לא תפיל את עדכון הבנק (כולל country) */
       let days=prev.days;
-      for(const it of (prev.interestBank||[])){
-        const e=map[it.id];
-        if(e) days=propagateToBlocks(days,it,e);
-      }
+      try{
+        for(const it of (prev.interestBank||[])){
+          const e=map[it.id];
+          if(e) days=propagateToBlocks(days,it,e);
+        }
+      }catch(propErr){ console.warn('[Enrich] propagation skipped:',propErr?.message); days=prev.days; }
       return{...prev,interestBank:bank,days};
     });
     const addrCount=enriched.filter(e=>e.address).length;
@@ -4981,15 +4985,20 @@ function BankPanel({trip,onUpdate,onLocate,onFocusItem,onClose,settings,onSetDay
       }
     }
     const toEnrich=[...newPlaces,...staleExisting].filter(p=>(p._cid1&&p._cid2)||p.placeId||(p.lat&&p.lng));
+    /* ── טוקן יעיל: אם v2 לא קיבל טוקן (אחסון נפרד), נשאל מהגרסה הישנה ── */
+    let effToken=settings?.githubToken||'';
+    if(!effToken){ try{ effToken=JSON.parse(localStorage.getItem('caravanCtrl_he')||'{}')?.settings?.githubToken||''; }catch{} }
+    const effSettings={...settings,githubToken:effToken};
+    console.log('[Enrich] toEnrich=',toEnrich.length,'token?',!!effToken);
     if(toEnrich.length>0){
-      if(settings?.githubToken){
+      if(effToken){
         /* ── דרך מועדפת: GitHub Action → /maps/preview/place משרתי GitHub ──
            אמין (ללא CORS/הגבלת-קצב), מצליח על כל 153 המקומות. התוצאה מוחלת
            דרך poll (כל עוד הדף פתוח) או resume אוטומטי בפתיחה הבאה. */
         enrichActiveRef.current=true;
         setEnrichStatus('⏳ מעשיר '+toEnrich.length+' מקומות דרך GitHub... (~דקה)');
         enrichPlacesBatch(
-          toEnrich,settings,
+          toEnrich,effSettings,
           mssg=>setEnrichStatus(mssg),
           enriched=>{
             setEnrichStatus('');enrichActiveRef.current=false;
